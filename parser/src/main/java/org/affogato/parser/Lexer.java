@@ -1,5 +1,6 @@
 package org.affogato.parser;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /** Mirrors the longest-match rules of Nix's flex lexer (src/libexpr/lexer.l). */
@@ -37,6 +38,7 @@ public final class Lexer {
 
     private final String src;
     private final int len;
+    private final Map<String, String> shared = new HashMap<>();
     int pos;
 
     public Lexer(String src) {
@@ -50,6 +52,12 @@ public final class Lexer {
 
     private char at(int i) {
         return i < len ? src.charAt(i) : '\0';
+    }
+
+    /** One instance per distinct text, so that repeated names and strings share it. */
+    private String share(String s) {
+        String old = shared.putIfAbsent(s, s);
+        return old != null ? old : s;
     }
 
     private boolean startsWith(String s, int i) {
@@ -219,7 +227,7 @@ public final class Lexer {
         }
         if (best != null) {
             pos += bestLen;
-            String text = src.substring(start, pos);
+            String text = share(src.substring(start, pos));
             if (best == TokenType.ID) {
                 TokenType kw = KEYWORDS.get(text);
                 if (kw != null) best = kw;
@@ -238,17 +246,19 @@ public final class Lexer {
             int j = pos;
             while (at(j) == ' ') j++;
             if (at(j) == '\n') pos = j + 1;
-            return tok(TokenType.IND_STR_OPEN, start);
+            return pos == start + 2
+                    ? new Token(TokenType.IND_STR_OPEN, "''", start, pos, false)
+                    : tok(TokenType.IND_STR_OPEN, start);
         }
         if (c == '"') {
             pos++;
-            return tok(TokenType.STR_OPEN, start);
+            return new Token(TokenType.STR_OPEN, "\"", start, pos, false);
         }
         for (Object[] op : OPERATORS) {
             String s = (String) op[0];
             if (startsWith(s, pos)) {
                 pos += s.length();
-                return tok((TokenType) op[1], start);
+                return new Token((TokenType) op[1], s, start, pos, false);
             }
         }
         throw new ParseException("syntax error, unexpected '" + c + "'", start);
@@ -301,7 +311,7 @@ public final class Lexer {
             if (pos >= len) throw new ParseException("unterminated string", pos);
             char c = src.charAt(pos);
             if (c == '"' || c == '$' && at(pos + 1) == '{') {
-                if (!sb.isEmpty()) return new Part(PartKind.LIT, sb.toString(), true);
+                if (!sb.isEmpty()) return new Part(PartKind.LIT, share(sb.toString()), true);
                 pos += c == '"' ? 1 : 2;
                 return new Part(c == '"' ? PartKind.END : PartKind.INTERP, null, false);
             }

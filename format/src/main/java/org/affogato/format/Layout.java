@@ -146,6 +146,7 @@ final class Layout {
                 }
                 go(g.body(), xs);
             }
+            case Nest n -> throw Doc.unresolved();
         }
     }
 
@@ -282,6 +283,7 @@ final class Layout {
                     }
                 }
                 case Group g -> s = Seq.norm(Seq.of(g.body(), s));
+                case Nest n -> throw Doc.unresolved();
             }
         }
     }
@@ -302,6 +304,7 @@ final class Layout {
                     w++;
                 }
                 case Group g -> s = Seq.norm(Seq.of(g.body(), s));
+                case Nest n -> throw Doc.unresolved();
             }
         }
     }
@@ -328,6 +331,7 @@ final class Layout {
                     if (t == null) s = Seq.norm(Seq.of(g.body(), s));
                     else c -= textWidth(t);
                 }
+                case Nest n -> throw Doc.unresolved();
             }
         }
     }

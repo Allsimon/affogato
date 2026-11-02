@@ -22,6 +22,13 @@ public final class Formatter {
      * @throws ParseException if {@code src} is not valid Nix
      */
     public static String format(String src, int width, int indent, boolean strict) {
+        List<Doc.E> doc = Doc.fixup(Doc.removeDisabled(pretty(src, strict)));
+        String out = Layout.layout(width, indent, doc);
+        return endsWithEofRegion(doc) ? Convert.stripStart(out) : Convert.strip(out) + "\n";
+    }
+
+    /** Apart from {@link #format}, so that the tree is garbage before {@link Doc#fixup}. */
+    private static List<Doc.E> pretty(String src, boolean strict) {
         Tree.Whole whole = Convert.file(src, Parser.parseSyntax(src), strict);
         Tree.Expression expr = Tree.mapFirst(
                 new Tree.AnnMap() {
@@ -34,9 +41,7 @@ public final class Formatter {
                     }
                 },
                 whole.expr());
-        List<Doc.E> doc = Doc.fixup(Doc.removeDisabled(Pretty.whole(new Tree.Whole(expr, whole.trivia()))));
-        String out = Layout.layout(width, indent, doc);
-        return endsWithEofRegion(doc) ? Convert.stripStart(out) : Convert.strip(out) + "\n";
+        return Pretty.whole(new Tree.Whole(expr, whole.trivia()));
     }
 
     private static boolean endsWithEofRegion(List<Doc.E> doc) {
@@ -49,6 +54,7 @@ public final class Formatter {
                 case Doc.Group g -> {
                     return endsWithEofRegion(g.body());
                 }
+                case Doc.Nest n -> throw Doc.unresolved();
             }
         }
         return false;

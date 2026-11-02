@@ -43,9 +43,8 @@ final class Convert {
         Scan sc = scan(skipHSpace(0));
         pending.addAll(convertLeading(sc.items));
         Expression e = expr(root);
-        List<Trivium> fin = take();
-        if (pendingDisable >= 0) fin.add(new DisabledToEof(src.substring(pendingDisable)));
-        return new Whole(e, fin);
+        if (pendingDisable >= 0) pending.add(new DisabledToEof(src.substring(pendingDisable)));
+        return new Whole(e, take());
     }
 
     // POSITIONS
@@ -351,6 +350,7 @@ final class Convert {
     }
 
     private List<Trivium> take() {
+        if (pending.isEmpty()) return List.of();
         List<Trivium> t = pending;
         pending = new ArrayList<>();
         return t;
