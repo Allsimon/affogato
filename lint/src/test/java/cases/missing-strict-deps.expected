@@ -1,4 +1,3 @@
-missing-strict-deps.nix:10:10: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
 missing-strict-deps.nix:10:10: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-strict-deps.nix:17:16: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-strict-deps.nix:44:12: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]

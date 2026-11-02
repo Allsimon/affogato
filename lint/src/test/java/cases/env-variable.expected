@@ -1,17 +1,9 @@
-env-variable.nix:7:12: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-env-variable.nix:7:12: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 env-variable.nix:9:5: warning[env-variable]: set 'NIX_CFLAGS_COMPILE' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:10:5: warning[env-variable]: set 'NIX_LDFLAGS' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:12:5: warning[env-variable]: set 'NIX_CFLAGS_LINK' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:16:5: warning[env-variable]: set 'NIX_DEBUG' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:17:5: warning[env-variable]: set 'NIX_ENFORCE_PURITY' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:18:5: warning[env-variable]: set 'NIX_HARDENING_ENABLE' in 'env', or it is not exported with __structuredAttrs
-env-variable.nix:26:12: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-env-variable.nix:26:27: warning[unused-lambda-arg]: unused lambda argument 'finalAttrs' [fix]
 env-variable.nix:31:5: warning[env-variable]: set 'NIX_LDFLAGS' in 'env', or it is not exported with __structuredAttrs [fix]
-env-variable.nix:35:14: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-env-variable.nix:35:14: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 env-variable.nix:38:5: warning[env-variable]: set 'NIX_LDFLAGS' in 'env', or it is not exported with __structuredAttrs
-env-variable.nix:42:14: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-env-variable.nix:42:14: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 env-variable.nix:44:5: warning[env-variable]: set 'NIX_HARDENING_ENABLE' in 'env', or it is not exported with __structuredAttrs

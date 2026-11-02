@@ -19,7 +19,6 @@
     inherit pname version;
 
     __structuredAttrs = true;
-    strictDeps = true;
     meta.description = "${finalAttrs.pname} example";
   });
 
@@ -34,14 +33,12 @@
   set = stdenv.mkDerivation {
     pname = "set";
     __structuredAttrs = true;
-    strictDeps = true;
   };
 
   # Deliberately off.
   off = stdenv.mkDerivation {
     pname = "off";
     __structuredAttrs = false;
-    strictDeps = true;
   };
 
   # Defaults to `true`.

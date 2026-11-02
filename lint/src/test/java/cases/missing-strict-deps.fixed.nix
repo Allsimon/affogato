@@ -11,7 +11,6 @@
     pname = "both";
     version = "1.0";
 
-    __structuredAttrs = true;
     strictDeps = true;
 
     src = ./.;

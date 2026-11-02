@@ -1,3 +1,2 @@
 deprecated-to-path.nix:3:4: warning[deprecated-to-path]: 'builtins.toPath' is deprecated
 deprecated-to-path.nix:4:4: warning[deprecated-to-path]: '__toPath' is deprecated
-deprecated-to-path.nix:4:4: warning[prefixed-builtin]: '__toPath' is 'builtins.toPath' [fix]

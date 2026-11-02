@@ -3,7 +3,7 @@
   builtins.mapAttrs'
   (builtins.fetchClosure or null)
   # Tested first, so the file works where Nix has it.
-  (builtins.getFlakeAttr or null)
+  (if builtins ? getFlakeAttr then builtins.getFlakeAttr else null)
   (
     let
       builtins = { };

@@ -56,9 +56,9 @@ function render(src, name, d) {
 for (const file of list(lintCases).filter(f => f.endsWith(".nix") && !f.endsWith(".fixed.nix"))) {
   const base = file.slice(0, -".nix".length);
   const src = read(path.join(lintCases, file));
-  const result = JSON.parse(g.lint(src));
+  const result = JSON.parse(g.lint(src, base));
   check(file, result.diagnostics.map(d => render(src, file, d)).join(""), read(path.join(lintCases, base + ".expected")));
-  const fixed = JSON.parse(g.fix(src, WIDTH, 2, false));
+  const fixed = JSON.parse(g.fix(src, WIDTH, 2, false, base));
   check(file + " fix", fixed.output ?? fixed.error.message, format(read(path.join(lintCases, base + ".fixed.nix")), 2, false));
 }
 
