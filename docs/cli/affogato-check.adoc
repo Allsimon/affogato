@@ -1,0 +1,74 @@
+// tag::picocli-generated-full-manpage[]
+// tag::picocli-generated-man-section-header[]
+:doctype: manpage
+:revnumber: 
+:manmanual: Affogato Manual
+:mansource: 
+:man-linkstyle: pass:[blue R < >]
+= affogato-check(1)
+
+// end::picocli-generated-man-section-header[]
+
+// tag::picocli-generated-man-section-name[]
+== Name
+
+affogato-check - Report the linter's findings in Nix files without changing them.
+
+// end::picocli-generated-man-section-name[]
+
+// tag::picocli-generated-man-section-synopsis[]
+== Synopsis
+
+*affogato check* [*-h*] [_FILE_...]
+
+// end::picocli-generated-man-section-synopsis[]
+
+// tag::picocli-generated-man-section-description[]
+== Description
+
+Report the linter's findings in Nix files without changing them.
+
+// end::picocli-generated-man-section-description[]
+
+// tag::picocli-generated-man-section-options[]
+== Options
+
+*-h*, *--help*::
+  Show this help and exit.
+
+// end::picocli-generated-man-section-options[]
+
+// tag::picocli-generated-man-section-arguments[]
+== Arguments
+
+[_FILE_...]::
+  Files to check, or directories to search for .nix files; standard input without any.
+
+// end::picocli-generated-man-section-arguments[]
+
+// tag::picocli-generated-man-section-commands[]
+// end::picocli-generated-man-section-commands[]
+
+// tag::picocli-generated-man-section-exit-status[]
+==  Exit status
+
+*0*::
+  No finding is an error or a warning.
+
+*1*::
+  A finding is an error or a warning, or a file cannot be read.
+
+*2*::
+  The command line is invalid.
+
+// end::picocli-generated-man-section-exit-status[]
+
+// tag::picocli-generated-man-section-footer[]
+==  Output
+
+[%hardbreaks]
+Each finding is printed on one line as FILE:LINE:COLUMN: SEVERITY[RULE]: MESSAGE.
+
+// end::picocli-generated-man-section-footer[]
+
+// end::picocli-generated-full-manpage[]

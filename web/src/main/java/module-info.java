@@ -2,8 +2,8 @@
  * The formatter and linter compiled to JavaScript by TeaVM, for the playground page.
  *
  * @jenesis.release 25
- * @jenesis.bom pin-graalnix.properties
- * @jenesis.bom palantir:tool/pin-graalnix.properties
+ * @jenesis.bom pin-affogato.properties
+ * @jenesis.bom palantir:tool/pin-affogato.properties
  * @jenesis.alias org.teavm.jso org.teavm/teavm-jso
  * @jenesis.pin palantir/module/build.jenesis 0.18.0 SHA-256/35a94fc0761110ebcd2fa51b2226a3e7e0a942b14cd69d67cc584bf5f3519f70
  * @jenesis.pin palantir/module/build.jenesis.plugin.palantir 0.2.0 SHA-256/f898acd9e03d753cdcdc7e41e0eeb9f21915496e99eb0317aaf443c8df49b73e
@@ -70,11 +70,11 @@
  * @jenesis.pin plugin.teavm:tool/maven/org.teavm/teavm-tooling 0.16.0 SHA-256/8335feb227d299bf51ba3862e84eb3a2723ff2e9840a885a7537f6454d44ee31
  * @jenesis.pin plugin.teavm:tool/maven/org.teavm/teavm-tooling/pom 0.16.0 SHA-256/3c988e36c9a8dcb5d6c93fd2808d821b3e244009e8887eb68264c13a77b23d6a
  */
-module org.graalnix.web {
-    requires org.graalnix.format;
-    requires org.graalnix.lint;
-    requires org.graalnix.parser;
+module org.affogato.web {
+    requires org.affogato.format;
+    requires org.affogato.lint;
+    requires org.affogato.parser;
     requires org.teavm.jso;
 
-    exports org.graalnix.web;
+    exports org.affogato.web;
 }

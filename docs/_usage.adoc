@@ -5,15 +5,15 @@ against musl), which starts in milliseconds rather than half a second:
 
 [source,sh]
 ----
-nix build .#graalnix          # on OpenJDK 25
-nix build .#graalnix-native   # native image, built with GraalVM
+nix build .#affogato          # on OpenJDK 25
+nix build .#affogato-native   # native image, built with GraalVM
 ----
 
-To format and lint only, `graalnix-lite` and `graalnix-lite-native` provide a
-`graalnix` command with only `format`, `check` and `fix`, without the evaluator
+To format and lint only, `affogato-lite` and `affogato-lite-native` provide a
+`affogato` command with only `format`, `check` and `fix`, without the evaluator
 and Truffle.
 
-Each package installs bash and zsh completions; `graalnix generate-completion`
+Each package installs bash and zsh completions; `affogato generate-completion`
 prints the script, to source in a shell where it is not installed.
 
 To try the formatter and linter in a browser, open the
@@ -29,7 +29,7 @@ Evaluate an expression:
 
 [source,console]
 ----
-$ ./result/bin/graalnix eval --strict -E 'builtins.map (x: x * 2) [ 1 2 3 ]'
+$ ./result/bin/affogato eval --strict -E 'builtins.map (x: x * 2) [ 1 2 3 ]'
 [ 2 4 6 ]
 ----
 
@@ -37,5 +37,5 @@ Compute the derivation path of a nixpkgs attribute:
 
 [source,sh]
 ----
-./result/bin/graalnix drv-path -I nixpkgs=/path/to/nixpkgs -E 'import <nixpkgs> {}' -A hello
+./result/bin/affogato drv-path -I nixpkgs=/path/to/nixpkgs -E 'import <nixpkgs> {}' -A hello
 ----

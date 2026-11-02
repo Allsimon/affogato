@@ -28,14 +28,14 @@ The linter.
 
 == Formatter
 
-`org.graalnix.format.Formatter` ports https://github.com/NixOS/nixfmt[nixfmt]
+`org.affogato.format.Formatter` ports https://github.com/NixOS/nixfmt[nixfmt]
 1.5.0 (MPL-2.0) to the parser's concrete syntax tree. `Formatter.format(src)`
 formats with nixfmt's defaults. `format(src, width, indent, strict)` sets the
 line width, the indentation and nixfmt's strict mode.
 
 == Linter
 
-`org.graalnix.lint.Linter` runs checks in the spirit of
+`org.affogato.lint.Linter` runs checks in the spirit of
 https://github.com/astro/deadnix[deadnix] (unused bindings),
 https://github.com/oppiliappan/statix[statix] (simpler forms) and
 https://github.com/nix-community/nixd[nixd] (undefined variables, unknown
@@ -52,7 +52,7 @@ whenever the data change.
 +
 * `lang/`: NixOS/nix's `tests/functional/lang` (LGPL-2.1).
 * `tvix/`: Tvix's `eval/src/tests/tvix_tests`.
-* `graalnix/`: graalnix's own regression tests.
+* `affogato/`: affogato's own regression tests.
 
 `format/src/test/java/nixfmt/`::
 nixfmt's own test suite.

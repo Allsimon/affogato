@@ -1,10 +1,10 @@
 /**
- * Command line of graalnix without the evaluator: formats and lints Nix files.
+ * Command line of affogato without the evaluator: formats and lints Nix files.
  *
  * @jenesis.release 25
- * @jenesis.bom pin-graalnix.properties
- * @jenesis.bom palantir:tool/pin-graalnix.properties
- * @jenesis.main org.graalnix.cli.Main
+ * @jenesis.bom pin-affogato.properties
+ * @jenesis.bom palantir:tool/pin-affogato.properties
+ * @jenesis.main org.affogato.cli.Main
  * @jenesis.plugin maven/info.picocli/picocli-codegen
  * @jenesis.pin palantir/module/build.jenesis 0.18.0 SHA-256/35a94fc0761110ebcd2fa51b2226a3e7e0a942b14cd69d67cc584bf5f3519f70
  * @jenesis.pin palantir/module/build.jenesis.plugin.palantir 0.2.0 SHA-256/f898acd9e03d753cdcdc7e41e0eeb9f21915496e99eb0317aaf443c8df49b73e
@@ -13,14 +13,14 @@
  * @jenesis.pin plugin/maven/info.picocli/picocli-codegen/pom 4.7.7 SHA-256/26c800a3f6fb767e300ab2db17aaa1cf536cb84629a3d4756d540b9c1d01c12c
  * @jenesis.pin plugin/maven/info.picocli/picocli/pom 4.7.7 SHA-256/1b18d363134df66631d2b9f7475068d734225ba389cdf9082a1bd8bda90d57d3
  */
-module org.graalnix.cli {
+module org.affogato.cli {
     requires info.picocli;
-    requires org.graalnix.format;
-    requires org.graalnix.lint;
-    requires org.graalnix.parser;
+    requires org.affogato.format;
+    requires org.affogato.lint;
+    requires org.affogato.parser;
 
-    exports org.graalnix.cli;
+    exports org.affogato.cli;
 
-    opens org.graalnix.cli to
+    opens org.affogato.cli to
             info.picocli;
 }

@@ -4,7 +4,7 @@ Each command has its own page, generated from the command line itself;
 `-h` or `--help` after any command prints the same.
 
 :relfileprefix: cli/
-include::cli/graalnix.adoc[tags=picocli-generated-man-section-synopsis;picocli-generated-man-section-options;picocli-generated-man-section-commands,leveloffset=+1]
+include::cli/affogato.adoc[tags=picocli-generated-man-section-synopsis;picocli-generated-man-section-options;picocli-generated-man-section-commands,leveloffset=+1]
 :relfileprefix!:
 
 == treefmt
@@ -14,8 +14,8 @@ https://treefmt.com/latest/reference/formatter-spec/[treefmt formatter spec]:
 
 [source,toml]
 ----
-[formatter.graalnix]
-command = "graalnix"
+[formatter.affogato]
+command = "affogato"
 options = ["fix"]
 includes = ["*.nix"]
 ----

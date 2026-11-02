@@ -1,0 +1,70 @@
+// tag::picocli-generated-full-manpage[]
+// tag::picocli-generated-man-section-header[]
+:doctype: manpage
+:revnumber: 
+:manmanual: Affogato Manual
+:mansource: 
+:man-linkstyle: pass:[blue R < >]
+= affogato(1)
+
+// end::picocli-generated-man-section-header[]
+
+// tag::picocli-generated-man-section-name[]
+== Name
+
+affogato - A Nix language implementation on GraalVM.
+
+// end::picocli-generated-man-section-name[]
+
+// tag::picocli-generated-man-section-synopsis[]
+== Synopsis
+
+*affogato* [*-h*] [COMMAND]
+
+// end::picocli-generated-man-section-synopsis[]
+
+// tag::picocli-generated-man-section-description[]
+== Description
+
+A Nix language implementation on GraalVM.
+
+// end::picocli-generated-man-section-description[]
+
+// tag::picocli-generated-man-section-options[]
+== Options
+
+*-h*, *--help*::
+  Show this help and exit.
+
+// end::picocli-generated-man-section-options[]
+
+// tag::picocli-generated-man-section-arguments[]
+// end::picocli-generated-man-section-arguments[]
+
+// tag::picocli-generated-man-section-commands[]
+== Commands
+
+xref:affogato-format.adoc[*format*]::
+  Format Nix files in place, as nixfmt does.
+
+xref:affogato-check.adoc[*check*]::
+  Report the linter's findings in Nix files without changing them.
+
+xref:affogato-fix.adoc[*fix*]::
+  Apply the linter's fixes to Nix files in place, then format them.
+
+xref:affogato-eval.adoc[*eval*]::
+  Evaluate an expression and print the result, like nix-instantiate --eval.
+
+xref:affogato-drv-path.adoc[*drv-path*]::
+  Evaluate an expression to a derivation and print its drvPath.
+
+// end::picocli-generated-man-section-commands[]
+
+// tag::picocli-generated-man-section-exit-status[]
+// end::picocli-generated-man-section-exit-status[]
+
+// tag::picocli-generated-man-section-footer[]
+// end::picocli-generated-man-section-footer[]
+
+// end::picocli-generated-full-manpage[]

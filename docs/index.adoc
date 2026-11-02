@@ -1,4 +1,4 @@
-= graalnix
+= affogato
 :toc: left
 :toclevels: 2
 :sectanchors:
@@ -6,7 +6,7 @@
 :icons: font
 :docinfo: shared
 
-graalnix is an implementation of the Nix language on GraalVM, as a Truffle AST
+affogato is an implementation of the Nix language on GraalVM, as a Truffle AST
 interpreter. It evaluates nixpkgs unmodified and computes store paths and `.drv`
 paths in memory, without writing anything to `/nix/store`.
 

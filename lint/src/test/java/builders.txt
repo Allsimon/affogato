@@ -1,7 +1,7 @@
 # The builders that nixpkgs calls with `finalAttrs:`, and the strictDeps and __structuredAttrs they give a
 # derivation that does not set them. mkDerivation stands for stdenv.mkDerivation and its variants.
 # nix/lint-builders.nix, a check of the flake, compares these values with its nixpkgs, and BuildersTest checks
-# that org.graalnix.lint.Builders agrees with them.
+# that org.affogato.lint.Builders agrees with them.
 # builder                      strictDeps  __structuredAttrs
 mkDerivation                   false       false
 buildDotnetModule              false       false
