@@ -40,6 +40,9 @@ let
     ../language/src/test
     ../launcher/src/test
     ../format/src/test
+    ../format/_versions.adoc
+    ../vendir.yml
+    ../flake.lock
     ../lint/src/test
     ../docs/cli
     ../docs/_lint-rules.adoc

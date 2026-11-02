@@ -19,7 +19,7 @@ graalnix-fix - Apply the linter's fixes to Nix files in place, then format them.
 // tag::picocli-generated-man-section-synopsis[]
 == Synopsis
 
-*graalnix fix* [*-hq*] [*--strict*] [*--indent*=_N_] [*--width*=_N_] [_FILE_...]
+*graalnix fix* [*-chq*] [*--strict*] [*--indent*=_N_] [*--width*=_N_] [_FILE_...]
 
 // end::picocli-generated-man-section-synopsis[]
 
@@ -32,6 +32,9 @@ Apply the linter's fixes to Nix files in place, then format them.
 
 // tag::picocli-generated-man-section-options[]
 == Options
+
+*-c*, *--check*::
+  Write nothing, and fail if a file would change.
 
 *-h*, *--help*::
   Show this help and exit.
@@ -68,7 +71,7 @@ Apply the linter's fixes to Nix files in place, then format them.
   Every file was processed.
 
 *1*::
-  A file cannot be read or does not parse.
+  A file cannot be read or does not parse, or would change under --check.
 
 *2*::
   The command line is invalid.

@@ -1,0 +1,18 @@
+= Formatter
+
+`org.graalnix.format` is a Java port of https://github.com/NixOS/nixfmt[nixfmt],
+built on the lossless syntax tree of `org.graalnix.parser`. Its goal is zero
+deviation from nixfmt: the same output, byte for byte, on every input.
+
+include::_versions.adoc[]
+
+The nixpkgs version is the `nixos-unstable` commit pinned in this repository's
+`flake.lock`, so it moves forward whenever the lock is updated.
+
+Two tests hold the formatter to that goal:
+
+* `FormatTest` runs nixfmt's own test suite, copied from the nixfmt version above
+  (see `vendir.yml`).
+* The `nixpkgs-formatted` flake check runs `graalnix format --check` on all of
+  nixpkgs, which is already formatted with nixfmt. It fails if graalnix would
+  change any file.
