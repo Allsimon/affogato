@@ -7,11 +7,13 @@ A suite of tools for the Nix language, written in Java:
 - a **linter**, with rules drawn from [deadnix](https://github.com/astro/deadnix),
   [statix](https://github.com/oppiliappan/statix) and
   [nixd](https://github.com/nix-community/nixd), many with an automatic fix;
+- a **syntax highlighter**, which works from the lexer alone and so copes with
+  syntax errors;
 - an **evaluator** on GraalVM, as a Truffle AST interpreter, which evaluates
   nixpkgs unmodified and computes store paths and `.drv` paths in memory,
   without writing anything to `/nix/store`;
-- a **playground** that runs the formatter and linter in the browser, compiled
-  to JavaScript with [TeaVM](https://teavm.org/).
+- a **playground** that runs the formatter, linter and highlighter in the
+  browser, compiled to JavaScript with [TeaVM](https://teavm.org/).
 
 ```sh
 nix build .#affogato                  # format, check and fix, on OpenJDK 25

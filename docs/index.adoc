@@ -13,11 +13,13 @@ affogato is a suite of tools for the Nix language, written in Java:
 * a *linter*, with rules drawn from https://github.com/astro/deadnix[deadnix],
   https://github.com/oppiliappan/statix[statix] and
   https://github.com/nix-community/nixd[nixd], many with an automatic fix;
+* a *syntax highlighter*, which works from the lexer alone and so copes with
+  syntax errors;
 * an *evaluator* on GraalVM, as a Truffle AST interpreter, which evaluates
   nixpkgs unmodified and computes store paths and `.drv` paths in memory,
   without writing anything to `/nix/store`;
-* a link:playground/index.html[*playground*] that runs the formatter and linter
-  in the browser, compiled to JavaScript.
+* a link:playground/index.html[*playground*] that runs the formatter, linter and
+  highlighter in the browser, compiled to JavaScript.
 
 include::_usage.adoc[leveloffset=+1]
 
