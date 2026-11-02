@@ -35,6 +35,13 @@ final class Text {
         return new Edit(start, end, merge ? " " : "");
     }
 
+    // TeaVM 0.16.0's String.isBlank() only accepts spaces, so the playground would keep line breaks and tabs.
+    // TODO: use String.isBlank() once TeaVM's matches the JDK.
+    static boolean isBlank(String s) {
+        for (int i = 0; i < s.length(); i++) if (!Character.isWhitespace(s.charAt(i))) return false;
+        return true;
+    }
+
     private static boolean isBlank(char c) {
         return c == ' ' || c == '\t';
     }

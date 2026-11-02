@@ -254,7 +254,7 @@ final class Patterns {
             return edits;
         }
         String outer = indent(start);
-        for (Assign a : as) if (!outer.isBlank() || !indent(Nodes.start(a)).equals(outer)) return List.of();
+        for (Assign a : as) if (!Text.isBlank(outer) || !indent(Nodes.start(a)).equals(outer)) return List.of();
         StringBuilder sb = new StringBuilder(name).append(" = {\n");
         List<Edit> edits = new ArrayList<>();
         int previous = start;
@@ -286,16 +286,14 @@ final class Patterns {
         if (!blankBefore(from) || d.start() == 0 || src.charAt(d.start() - 1) != '\n') return d;
         int next = src.indexOf('\n', d.end());
         String after = src.substring(d.end(), next < 0 ? src.length() : next).strip();
-        boolean moved = src.substring(previous, d.start()).isBlank();
+        boolean moved = Text.isBlank(src.substring(previous, d.start()));
         if (!moved && !after.isEmpty() && !after.startsWith("}")) return d;
         return new Edit(src.lastIndexOf('\n', d.start() - 2) + 1, d.end(), "");
     }
 
     private boolean blankBefore(int at) {
         int lineStart = src.lastIndexOf('\n', at - 1) + 1;
-        return lineStart > 0
-                && src.substring(src.lastIndexOf('\n', lineStart - 2) + 1, lineStart - 1)
-                        .isBlank();
+        return lineStart > 0 && Text.isBlank(src.substring(src.lastIndexOf('\n', lineStart - 2) + 1, lineStart - 1));
     }
 
     /** The binding without the first {@code shared} attributes of its path. */
@@ -358,10 +356,9 @@ final class Patterns {
         }
         return in == null
                 || in.open().type() == TokenType.IND_STR_OPEN
-                        && src.substring(
-                                        in.open().start() + 2,
-                                        src.indexOf('\n', in.open().start()))
-                                .isBlank();
+                        && Text.isBlank(src.substring(
+                                in.open().start() + 2,
+                                src.indexOf('\n', in.open().start())));
     }
 
     private void manualInherit(Assign a, String name, boolean recursive) {
