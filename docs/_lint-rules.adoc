@@ -189,6 +189,8 @@ Bindings that nothing uses, as https://github.com/astro/deadnix[deadnix] finds t
 
 Severity: ⚠️ warning. A `let` binding that the body never reaches. A binding used only by itself, or by other unused bindings, counts as unused too. The fix removes it.
 
+link:playground/index.html?rule=unused-let-binding[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -247,6 +249,8 @@ unused-let-binding.nix:14:3: warning[unused-let-binding]: unused let binding 'de
 
 Severity: ⚠️ warning. A function argument that the body never uses. The fix renames it to `_`, unless the body uses an outer `_`.
 
+link:playground/index.html?rule=unused-lambda-arg[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -294,6 +298,8 @@ unused-lambda-arg.nix:6:16: warning[unused-lambda-arg]: unused lambda argument '
 === `unused-formal`
 
 Severity: ⚠️ warning. An attribute of a function's pattern that the body never uses. It is not reported when the `@` binding is used, as that may pass it on. The fix removes it only when the pattern has `+...+`, so that callers passing it still work.
+
+link:playground/index.html?rule=unused-formal[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -351,6 +357,8 @@ unused-formal.nix:11:7: warning[unused-formal]: unused formal argument 'b' [fix]
 
 Severity: ⚠️ warning. An `@` binding that the body never uses. The fix removes it.
 
+link:playground/index.html?rule=unused-at-pattern[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -387,6 +395,8 @@ Code with a simpler or more idiomatic form, as https://github.com/oppiliappan/st
 
 Severity: ⚠️ warning. A comparison with `true` or `false`. There is no fix: `v == true` is also a type test, where `v` alone fails on other types.
 
+link:playground/index.html?rule=bool-comparison[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -409,6 +419,8 @@ bool-comparison.nix:4:4: warning[bool-comparison]: comparison with 'false'; if t
 === `bool-simplification`
 
 Severity: ⚠️ warning. `!(a == b)`, which is `a != b`, and `!(a != b)`, which is `a == b`.
+
+link:playground/index.html?rule=bool-simplification[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -444,6 +456,8 @@ bool-simplification.nix:4:4: warning[bool-simplification]: negated comparison; u
 
 Severity: ⚠️ warning. A `let` with no bindings.
 
+link:playground/index.html?rule=empty-let-in[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -473,6 +487,8 @@ empty-let-in.nix:4:7: warning[empty-let-in]: 'let' with no bindings [fix]
 === `collapsible-let-in`
 
 Severity: ⚠️ warning. A `let` right in the body of another. The fix merges them unless the outer bindings use or bind a name of the inner ones.
+
+link:playground/index.html?rule=collapsible-let-in[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -534,6 +550,8 @@ collapsible-let-in.nix:16:5: warning[collapsible-let-in]: this 'let' can be merg
 
 Severity: ⚠️ warning. The deprecated `+let { ...; body = ...; }+`. The fix turns it into `+rec { ...; body = ...; }.body+`.
 
+link:playground/index.html?rule=legacy-let-syntax[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -562,6 +580,8 @@ legacy-let-syntax.nix:1:1: warning[legacy-let-syntax]: legacy 'let { }' syntax; 
 === `empty-inherit`
 
 Severity: ⚠️ warning. An `inherit` with no names.
+
+link:playground/index.html?rule=empty-inherit[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -594,6 +614,8 @@ empty-inherit.nix:3:3: warning[empty-inherit]: 'inherit' with no names [fix]
 
 Severity: ⚠️ warning. A function taking `{ }`. There is no fix: `_:` would also accept arguments that are not an empty attribute set.
 
+link:playground/index.html?rule=empty-pattern[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -613,6 +635,8 @@ empty-pattern.nix:2:4: warning[empty-pattern]: empty pattern; use '_' if the arg
 === `redundant-pattern-bind`
 
 Severity: ⚠️ warning. `+{ ... }@x: body+`, which can be written `x: body`.
+
+link:playground/index.html?rule=redundant-pattern-bind[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -645,6 +669,8 @@ redundant-pattern-bind.nix:3:4: warning[redundant-pattern-bind]: '{ ... }@args' 
 === `manual-inherit`
 
 Severity: ⚠️ warning. `a = a;` in an attribute set that is not recursive, which is `inherit a;`.
+
+link:playground/index.html?rule=manual-inherit[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -686,6 +712,8 @@ manual-inherit.nix:4:5: warning[manual-inherit]: 'a = a;' can be written 'inheri
 === `manual-inherit-from`
 
 Severity: ⚠️ warning. `a = e.a;`, which is `inherit (e) a;`.
+
+link:playground/index.html?rule=manual-inherit-from[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -729,6 +757,8 @@ manual-inherit-from.nix:6:3: warning[manual-inherit-from]: can be written 'inher
 
 Severity: 💡 hint. `x: f x`, which is `f` when `f` is a name or an attribute path that does not use `x`.
 
+link:playground/index.html?rule=eta-reduction[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -769,6 +799,8 @@ eta-reduction.nix:8:9: hint[eta-reduction]: 'x: f x' can be written 'f' [fix]
 === `useless-parens`
 
 Severity: ⚠️ warning. Parentheses around a simple expression, or around a whole binding value, `let` body, interpolation or file.
+
+link:playground/index.html?rule=useless-parens[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -829,6 +861,8 @@ useless-parens.nix:13:11: warning[useless-parens]: useless parentheses [fix]
 
 Severity: ⚠️ warning. A URI literal, which is deprecated. The fix quotes it.
 
+link:playground/index.html?rule=unquoted-uri[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -855,6 +889,8 @@ unquoted-uri.nix:2:9: warning[unquoted-uri]: unquoted URI; URI literals are depr
 === `deprecated-is-null`
 
 Severity: ⚠️ warning. `isNull e`, which is `e == null`.
+
+link:playground/index.html?rule=deprecated-is-null[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -891,6 +927,8 @@ deprecated-is-null.nix:5:5: warning[deprecated-is-null]: 'isNull' is deprecated;
 
 Severity: ⚠️ warning. `builtins.toPath`, which is deprecated. There is no fix.
 
+link:playground/index.html?rule=deprecated-to-path[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -912,6 +950,8 @@ deprecated-to-path.nix:4:4: warning[deprecated-to-path]: '__toPath' is deprecate
 === `empty-list-concat`
 
 Severity: ⚠️ warning. A concatenation with `[ ]`.
+
+link:playground/index.html?rule=empty-list-concat[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -948,6 +988,8 @@ empty-list-concat.nix:5:4: warning[empty-list-concat]: concatenation with an emp
 
 Severity: ⚠️ warning. `if x ? a then x.a else d`, which is `x.a or d`.
 
+link:playground/index.html?rule=useless-has-attr[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -981,6 +1023,8 @@ useless-has-attr.nix:4:4: warning[useless-has-attr]: can be written 'x.y.a.b or 
 === `faster-builtin`
 
 Severity: 💡 hint. `lib.groupBy` and `lib.zipAttrsWith`, which the builtins of the same names implement natively.
+
+link:playground/index.html?rule=faster-builtin[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -1019,6 +1063,8 @@ faster-builtin.nix:6:14: hint[faster-builtin]: 'lib.groupBy' can be 'builtins.gr
 
 Severity: 💡 hint. Three or more bindings that start with the same attribute, such as `a.b`, `a.c` and `a.d`, which could form one nested attribute set. There is no fix.
 
+link:playground/index.html?rule=repeated-keys[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -1046,6 +1092,8 @@ Checks that need name resolution, as https://github.com/nix-community/nixd[nixd]
 
 Severity: ❌ error. A variable that no binding defines, outside any `with`. Nix rejects the file before evaluating it.
 
+link:playground/index.html?rule=undefined-variable[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -1071,6 +1119,8 @@ undefined-variable.nix:4:3: error[undefined-variable]: undefined variable 'unkno
 === `unknown-builtin`
 
 Severity: ❌ error. `builtins.x` where `x` is not a builtin, unless the file tests `builtins ? x` or gives an `or` fallback.
+
+link:playground/index.html?rule=unknown-builtin[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -1100,6 +1150,8 @@ unknown-builtin.nix:3:3: error[unknown-builtin]: unknown builtin 'builtins.mapAt
 === `prefixed-builtin`
 
 Severity: ⚠️ warning. `__x` for the builtin `builtins.x`.
+
+link:playground/index.html?rule=prefixed-builtin[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -1143,6 +1195,8 @@ prefixed-builtin.nix:8:5: warning[prefixed-builtin]: '__sub' is 'builtins.sub'
 
 Severity: ⚠️ warning. A binding that hides a global such as `map`, `true` or `builtins`. Attributes of a `rec` set and names inherited from an expression are not reported.
 
+link:playground/index.html?rule=shadowed-builtin[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -1173,6 +1227,8 @@ shadowed-builtin.nix:4:3: warning[shadowed-builtin]: 'true' shadows a builtin
 === `extra-rec`
 
 Severity: ⚠️ warning. A `rec` attribute set whose attributes never refer to each other.
+
+link:playground/index.html?rule=extra-rec[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -1215,6 +1271,8 @@ extra-rec.nix:2:11: warning[extra-rec]: 'rec' is not needed: no attribute refers
 
 Severity: ⚠️ warning. A `with` that no variable can come from.
 
+link:playground/index.html?rule=extra-with[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -1256,6 +1314,8 @@ Conventions of nixpkgs for derivations.
 === `missing-phase-hooks`
 
 Severity: ⚠️ warning. A phase such as `installPhase` set to a string that does not run its hooks: nixpkgs expects `runHook preInstall` first and `runHook postInstall` last, so that `preInstall` and `postInstall` still work. The fix adds the missing calls to strings of several lines.
+
+link:playground/index.html?rule=missing-phase-hooks[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -1338,6 +1398,8 @@ missing-phase-hooks.nix:25:3: warning[missing-phase-hooks]: 'fixupPhase' does no
 === `missing-final-attrs`
 
 Severity: ⚠️ warning. A derivation built from a `rec` set whose attributes refer to each other, such as `+stdenv.mkDerivation rec { ... }+`. With `+finalAttrs: { ... }+`, an override of `version` through `overrideAttrs` also reaches the attributes that use it. The fix rewrites the references to `finalAttrs.version` and the like. For builders other than `stdenv.mkDerivation`, `finalAttrs` holds the attributes the builder made, so the fix is only offered when the references are to `pname`, `version` and `src`.
+
+link:playground/index.html?rule=missing-final-attrs[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -1465,6 +1527,8 @@ missing-final-attrs.nix:38:32: warning[missing-final-attrs]: use 'finalAttrs: { 
 
 Severity: 💡 hint. A derivation that does not set `__structuredAttrs`, which nixpkgs expects to be `true` for new packages. The builders that default it to `true`, such as those for Python, are not reported. The fix adds `__structuredAttrs = true;` after `pname` and `version`; it changes the build, since phases then see lists as Bash arrays, so check that the package still builds.
 
+link:playground/index.html?rule=missing-structured-attrs[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -1589,6 +1653,8 @@ missing-structured-attrs.nix:22:8: hint[missing-structured-attrs]: set '__struct
 
 Severity: 💡 hint. A derivation that does not set `strictDeps`, which nixpkgs expects to be `true` for new packages. The builders that set it already, such as those for Python, Go and Rust, are not reported. The fix adds `strictDeps = true;` after `pname` and `version`, or under `__structuredAttrs`; it changes the build, since tools must then be in `nativeBuildInputs` and libraries in `buildInputs`, so check that the package still builds.
 
+link:playground/index.html?rule=missing-strict-deps[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -1712,6 +1778,8 @@ missing-strict-deps.nix:44:12: hint[missing-strict-deps]: set 'strictDeps = true
 
 Severity: ⚠️ warning. `substituteInPlace` and the other `substitute` functions called with `--replace`, which is deprecated and behaves as `--replace-warn`: a pattern that no longer matches only prints a warning. The fix uses `--replace-fail`, which makes such a build fail instead, so check that the package still builds.
 
+link:playground/index.html?rule=deprecated-replace[Try it in the playground]
+
 [source,nix,role="primary"]
 .Original
 ----
@@ -1801,6 +1869,8 @@ deprecated-replace.nix:26:7: warning[deprecated-replace]: '--replace' is depreca
 === `sri-hash`
 
 Severity: ⚠️ warning. A fetcher given `sha256`, where nixpkgs uses `hash` with an SRI hash such as `sha256-...=`. The fix renames it and converts a literal in Nix base32, hex or base64; `lib.fakeSha256` becomes `lib.fakeHash`. Fetchers that take only `sha256`, such as `fetchHex`, are not reported.
+
+link:playground/index.html?rule=sri-hash[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original
@@ -1948,6 +2018,8 @@ sri-hash.nix:42:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sh
 === `env-variable`
 
 Severity: ⚠️ warning. A `NIX_` variable such as `NIX_CFLAGS_COMPILE` set beside the attributes of a derivation: with `__structuredAttrs`, only `env` is exported, so the compiler wrapper would not see it. The fix moves it to `env`, through `toString` unless it is a string already. It is withheld when `env` is not an attribute set written in place, or the file refers to the variable elsewhere, as `finalAttrs.NIX_LDFLAGS`.
+
+link:playground/index.html?rule=env-variable[Try it in the playground]
 
 [source,nix,role="primary"]
 .Original

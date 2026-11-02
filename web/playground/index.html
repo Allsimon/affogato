@@ -297,11 +297,22 @@ new ResizeObserver(syncScroll).observe(source);
 for (const control of controls) control.addEventListener("input", refresh);
 examples[""] = source.value;
 for (const id of Object.keys(examples).sort()) if (id) rule.add(new Option(id, id));
-rule.addEventListener("change", () => {
+const pick = () => {
   source.value = examples[rule.value];
   source.scrollTop = 0;
+};
+rule.addEventListener("change", () => {
+  pick();
+  const url = new URL(location.href);
+  if (rule.value) url.searchParams.set("rule", rule.value); else url.searchParams.delete("rule");
+  history.replaceState(null, "", url);
   refresh();
 });
+const linked = new URLSearchParams(location.search).get("rule");
+if (linked && Object.hasOwn(examples, linked)) {
+  rule.value = linked;
+  pick();
+}
 refresh();
 </script>
 </body>

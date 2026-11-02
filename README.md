@@ -15,6 +15,7 @@ nix build .#playground        # format, fix and lint in the browser: open result
 ./result/bin/graalnix fix .     # apply the lint fixes, then format like nixfmt
 ```
 
-The documentation lives in [`docs/`](docs/index.adoc): the command line,
-parity status, architecture and how to build. `nix build .#docs` renders it to
-HTML.
+The documentation, published at <https://allsimon.github.io/graalnix/> with
+the [playground](https://allsimon.github.io/graalnix/playground/), lives in
+[`docs/`](docs/index.adoc): the command line, parity status, architecture and
+how to build. `nix build .#site` renders it to HTML.

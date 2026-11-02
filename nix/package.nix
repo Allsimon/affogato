@@ -276,6 +276,13 @@ let
     node ${../web/check.cjs} ${playground}/graalnix.js ${../format/src/test/java} ${../lint/src/test/java/cases} | tee $out
   '';
 
+  # The website published to GitHub Pages: the documentation, with the playground under playground/.
+  site = runCommand "graalnix-site" { } ''
+    cp -r ${docs} $out
+    chmod u+w $out
+    cp -r ${playground} $out/playground
+  '';
+
   lite = {
     pname = "graalnix-lite";
     module = "cli";
@@ -294,6 +301,7 @@ in
       mavenRepo
       playground
       playgroundTests
+      site
       ;
     native = native (
       full

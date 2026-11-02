@@ -110,6 +110,9 @@ class LintDocsTest {
                 .append(". ")
                 .append(r.description())
                 .append("\n\n");
+        if (r != Rule.SYNTAX_ERROR) {
+            sb.append("link:playground/index.html?rule=").append(r.id()).append("[Try it in the playground]\n\n");
+        }
         tab(sb, "primary", "nix", "Original", input);
         if (!fixed.equals(input)) tab(sb, "secondary", "nix", "Fixed", fixed);
         tab(sb, "secondary", "text", "Diagnostics", diagnostics);
