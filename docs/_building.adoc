@@ -1,18 +1,12 @@
 = Building
 
-The build uses https://jenesis.build[Jenesis], vendored in `build/jenesis`. Each
-module's `module-info.java` declares its build, and the tool settings live in
-`META-INF/build.jenesis/` next to the module's sources. The project-wide settings
-live in `build.jenesis/`.
+The build uses https://jenesis.build[Jenesis], vendored in `build/jenesis`.
 
 [source,sh]
 ----
 nix develop
-java build/jenesis/Make.java                                # compile, check formatting (palantir-java-format), run the tests and render these docs
-java -Djenesis.format.rewrite=true build/jenesis/Make.java  # reformat the sources instead
-java build/jenesis/Execute.java eval -E '1 + 1'             # run the launcher on the JVM
-java -Djenesis.make.profiles=native build/jenesis/Make.java stage
-                                                            # native launcher in target/stage/native/output
+java build/jenesis/Make.java                       # compile, test, format and render these docs
+java build/jenesis/Execute.java eval -E '1 + 1'    # run the launcher on the JVM
 ----
 
 The command line comes in two modules. `cli` holds `format`, `check` and `fix`
@@ -81,14 +75,15 @@ new pin needs nothing more.
 
 The flake provides:
 
-`affogato`:: the launcher on OpenJDK 25. It runs the bundle the launcher's
-`packaging.properties` asks for: its jars and the `java` argument file that
-names them. Without GraalVM's compiler, Truffle runs its fallback runtime,
-which only interprets; runtime compilation is off by default anyway.
-`affogato-native`:: the launcher as a static native image, built with GraalVM.
-`affogato-lite`:: the `cli` module on OpenJDK 25: `format`, `check` and `fix`
-only, without Truffle.
-`affogato-lite-native`:: the `cli` module as a static native image.
+`affogato`:: the `cli` module on OpenJDK 25: `format`, `check` and `fix` only,
+without Truffle. It is the default package.
+`affogato-native`:: the `cli` module as a static native image.
+`affogato-truffle`:: the launcher on OpenJDK 25. It runs the bundle the
+launcher's `packaging.properties` asks for: its jars and the `java` argument
+file that names them. Without GraalVM's compiler, Truffle runs its fallback
+runtime, which only interprets; runtime compilation is off by default anyway.
+`affogato-truffle-native`:: the launcher as a static native image, built with
+GraalVM.
 `playground`:: `web/playground/index.html` and `affogato.js`: a page that
 formats, fixes and lints Nix in the browser, opened as a file, with no server.
 Its rule selector loads the linter's cases from `examples.js`, which

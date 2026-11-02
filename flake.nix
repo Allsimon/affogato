@@ -1,5 +1,5 @@
 {
-  description = "affogato: a Nix language implementation on GraalVM/Truffle";
+  description = "affogato: a Nix language implementation on Java";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -16,8 +16,8 @@
       packages = forAllSystems (pkgs: rec {
         affogato = pkgs.callPackage ./nix/package.nix { };
         affogato-native = affogato.native;
-        affogato-lite = affogato.lite;
-        affogato-lite-native = affogato.lite-native;
+        affogato-truffle = affogato.truffle;
+        affogato-truffle-native = affogato.truffle-native;
         inherit (affogato) docs playground site;
         maven-repo = affogato.mavenRepo;
         default = affogato;
@@ -27,8 +27,8 @@
         inherit (self.packages.${pkgs.stdenv.hostPlatform.system})
           affogato
           affogato-native
-          affogato-lite
-          affogato-lite-native
+          affogato-truffle
+          affogato-truffle-native
           ;
         inherit (self.packages.${pkgs.stdenv.hostPlatform.system}.affogato)
           tests
@@ -40,7 +40,7 @@
         playground-tests = self.packages.${pkgs.stdenv.hostPlatform.system}.affogato.playgroundTests;
         lint-builders = pkgs.callPackage ./nix/lint-builders.nix { };
         nixpkgs-formatted = pkgs.runCommand "nixpkgs-formatted" { } ''
-          ${self.packages.${pkgs.stdenv.hostPlatform.system}.affogato-lite-native}/bin/affogato format --check ${nixpkgs}
+          ${self.packages.${pkgs.stdenv.hostPlatform.system}.affogato-native}/bin/affogato format --check ${nixpkgs}
           touch $out
         '';
       });
