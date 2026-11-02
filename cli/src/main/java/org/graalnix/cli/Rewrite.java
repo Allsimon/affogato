@@ -20,7 +20,7 @@ import picocli.CommandLine.Spec;
         exitCodeListHeading = "%nExit status%n",
         exitCodeList = {
             "0:Every file was processed.",
-            "1:A file cannot be read or does not parse.",
+            "1:A file cannot be read or does not parse, or would change under --check.",
             "2:The command line is invalid."
         },
         footerHeading = "%nFiles%n",
@@ -51,6 +51,11 @@ abstract class Rewrite implements Callable<Integer> {
             description = "Print only errors, not the files rewritten and the summary.")
     boolean quiet;
 
+    @Option(
+            names = {"-c", "--check"},
+            description = "Write nothing, and fail if a file would change.")
+    boolean check;
+
     abstract String rewrite(String src);
 
     abstract String verb();
@@ -69,11 +74,13 @@ abstract class Rewrite implements Callable<Integer> {
             }
             String result = rewrite("<stdin>", src, err);
             if (result == null) return 1;
+            if (check) return result.equals(src) ? 0 : 1;
             out.print(result);
             out.flush();
             return 0;
         }
         long start = System.nanoTime();
+        String verb = check ? "would be " + verb() : verb();
         int changed = 0;
         int unchanged = 0;
         int failed = 0;
@@ -86,8 +93,8 @@ abstract class Rewrite implements Callable<Integer> {
                 } else if (result.equals(src)) {
                     unchanged++;
                 } else {
-                    Files.writeString(p, result, StandardCharsets.UTF_8);
-                    if (!quiet) err.println(verb() + " " + p);
+                    if (!check) Files.writeString(p, result, StandardCharsets.UTF_8);
+                    if (!quiet) err.println(verb + " " + p);
                     changed++;
                 }
             } catch (IOException e) {
@@ -96,11 +103,11 @@ abstract class Rewrite implements Callable<Integer> {
             }
         }
         if (!quiet) {
-            err.println(files(changed) + " " + verb() + ", " + unchanged + " unchanged"
+            err.println(files(changed) + " " + verb + ", " + unchanged + " unchanged"
                     + (failed > 0 ? ", " + failed + " failed" : "")
                     + " in " + duration(System.nanoTime() - start));
         }
-        return failed > 0 ? 1 : 0;
+        return failed > 0 || check && changed > 0 ? 1 : 0;
     }
 
     private static String duration(long nanos) {

@@ -60,6 +60,21 @@ class CommandLineTest {
     }
 
     @Test
+    void checkWritesNothingAndFailsOnAFileThatWouldChange() throws IOException {
+        Path ugly = file("ugly.nix", "{a=1;b=2;}");
+        Path pretty = file("pretty.nix", FORMATTED);
+
+        assertThat(run("format", "--check", pretty.toString())).isZero();
+        assertThat(run("format", "--check", ugly.toString(), pretty.toString())).isEqualTo(1);
+
+        assertThat(read(ugly)).isEqualTo("{a=1;b=2;}");
+        assertThat(Files.getLastModifiedTime(ugly)).isEqualTo(EPOCH);
+        assertThat(err.toString())
+                .contains("would be formatted " + ugly + "\n")
+                .containsPattern("\n1 file would be formatted, 1 unchanged in \\d+ms\n");
+    }
+
+    @Test
     void quietPrintsOnlyErrors() throws IOException {
         Path bad = file("bad.nix", "{ a = ; }");
         Path ugly = file("ugly.nix", "{a=1;b=2;}");

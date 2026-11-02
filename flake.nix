@@ -38,6 +38,10 @@
           ;
         playground-tests = self.packages.${pkgs.stdenv.hostPlatform.system}.graalnix.playgroundTests;
         lint-builders = pkgs.callPackage ./nix/lint-builders.nix { };
+        nixpkgs-formatted = pkgs.runCommand "nixpkgs-formatted" { } ''
+          ${self.packages.${pkgs.stdenv.hostPlatform.system}.graalnix-lite-native}/bin/graalnix format --check ${nixpkgs}
+          touch $out
+        '';
       });
 
       devShells = forAllSystems (pkgs: {
