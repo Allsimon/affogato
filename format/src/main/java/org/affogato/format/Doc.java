@@ -8,7 +8,7 @@ import java.util.List;
 final class Doc {
     private Doc() {}
 
-    sealed interface E permits Text, Spacing, Group {}
+    sealed interface E permits Text, Spacing, Group, Nest {}
 
     enum Kind {
         REGULAR,
@@ -38,6 +38,9 @@ final class Doc {
     }
 
     record Group(GroupAnn ann, List<E> body) implements E {}
+
+    /** Adds to the nest and offset of every text in {@code body}; {@link #fixup} removes it. */
+    record Nest(int nest, int offset, List<E> body) implements E {}
 
     static final int SOFTBREAK = 0, BREAK = 1, HARDSPACE = 2, SOFTSPACE = 3, SPACE = 4, HARDLINE = 5, EMPTYLINE = 6;
     static final int NEWLINES = 7;
@@ -90,45 +93,46 @@ final class Doc {
         return List.of(new Text(0, 0, Kind.RAW, t));
     }
 
+    /** Returns the only non-empty part itself, so the result must not be modified. */
     @SafeVarargs
     static List<E> cat(List<E>... parts) {
-        List<E> out = new ArrayList<>();
+        int size = 0;
+        List<E> only = EMPTY;
+        for (List<E> p : parts) {
+            if (p.isEmpty()) continue;
+            only = size == 0 ? p : null;
+            size += p.size();
+        }
+        if (only != null) return only;
+        List<E> out = new ArrayList<>(size);
         for (List<E> p : parts) out.addAll(p);
         return out;
     }
 
     static List<E> group(List<E> d) {
-        return List.of(new Group(GroupAnn.REGULAR, d));
+        return List.of(new Group(GroupAnn.REGULAR, trimmed(d)));
     }
 
     static List<E> group(GroupAnn ann, List<E> d) {
-        return List.of(new Group(ann, d));
+        return List.of(new Group(ann, trimmed(d)));
     }
 
     static List<E> nest(List<E> d) {
-        List<E> out = new ArrayList<>(d.size());
-        for (E e : d) {
-            out.add(
-                    switch (e) {
-                        case Text t -> new Text(t.nest() + 1, t.offset(), t.kind(), t.text());
-                        case Group g -> new Group(g.ann(), nest(g.body()));
-                        case Spacing s -> s;
-                    });
-        }
-        return out;
+        return d.isEmpty() ? d : List.of(new Nest(1, 0, trimmed(d)));
     }
 
     static List<E> offset(int level, List<E> d) {
-        List<E> out = new ArrayList<>(d.size());
-        for (E e : d) {
-            out.add(
-                    switch (e) {
-                        case Text t -> new Text(t.nest(), t.offset() + level, t.kind(), t.text());
-                        case Group g -> new Group(g.ann(), offset(level, g.body()));
-                        case Spacing s -> s;
-                    });
-        }
-        return out;
+        return d.isEmpty() || level == 0 ? d : List.of(new Nest(0, level, trimmed(d)));
+    }
+
+    /** Drops the spare capacity of a list that a group or nest keeps. */
+    private static List<E> trimmed(List<E> d) {
+        if (d instanceof ArrayList<E> a) a.trimToSize();
+        return d;
+    }
+
+    private static Text shifted(int nest, int offset, Text t) {
+        return nest == 0 && offset == 0 ? t : new Text(t.nest() + nest, t.offset() + offset, t.kind(), t.text());
     }
 
     static List<E> surroundWith(List<E> outside, List<E> inner) {
@@ -136,7 +140,9 @@ final class Doc {
     }
 
     static List<E> sepBy(List<E> separator, List<List<E>> docs) {
-        List<E> out = new ArrayList<>();
+        int size = Math.max(0, docs.size() - 1) * separator.size();
+        for (List<E> d : docs) size += d.size();
+        List<E> out = new ArrayList<>(size);
         for (int i = 0; i < docs.size(); i++) {
             if (i > 0) out.addAll(separator);
             out.addAll(docs.get(i));
@@ -161,6 +167,7 @@ final class Doc {
             case Text t -> t.kind() == Kind.COMMENT || t.kind() == Kind.TRAILING_COMMENT;
             case Group g -> g.body().stream().allMatch(x -> isComment(x) || isHard(x));
             case Spacing s -> false;
+            case Nest n -> throw unresolved();
         };
     }
 
@@ -191,7 +198,7 @@ final class Doc {
      */
     static List<E> unexpandSpacing_(int limit, List<E> d) {
         List<E> out = new ArrayList<>();
-        return unexpand(limit, d, out) ? out : null;
+        return unexpand(new int[] {limit}, 0, 0, d, out) ? out : null;
     }
 
     private static final int NO_LIMIT = Integer.MIN_VALUE;
@@ -200,13 +207,13 @@ final class Doc {
         return unexpandSpacing_(NO_LIMIT, d);
     }
 
-    private static boolean unexpand(int[] n, List<E> d, List<E> out) {
+    private static boolean unexpand(int[] n, int nest, int offset, List<E> d, List<E> out) {
         for (E e : d) {
             if (n[0] != NO_LIMIT && n[0] < 0) return false;
             switch (e) {
                 case Text t -> {
                     if (t.kind() == Kind.DISABLE_MARKER || isVerbatim(t) || t.kind() == Kind.RAW) return false;
-                    out.add(t);
+                    out.add(shifted(nest, offset, t));
                     if (n[0] != NO_LIMIT) n[0] -= textWidth(t.text());
                 }
                 case Spacing s -> {
@@ -222,15 +229,14 @@ final class Doc {
                     }
                 }
                 case Group g -> {
-                    if (!unexpand(n, g.body(), out)) return false;
+                    if (!unexpand(n, nest, offset, g.body(), out)) return false;
+                }
+                case Nest m -> {
+                    if (!unexpand(n, nest + m.nest(), offset + m.offset(), m.body(), out)) return false;
                 }
             }
         }
         return n[0] == NO_LIMIT || n[0] >= 0;
-    }
-
-    private static boolean unexpand(int limit, List<E> d, List<E> out) {
-        return unexpand(new int[] {limit}, d, out);
     }
 
     private static List<E> simplifyGroup(GroupAnn ann, List<E> d) {
@@ -259,11 +265,12 @@ final class Doc {
     }
 
     /**
-     * Moves hard spacing and comments out of the edges of groups, merges consecutive spacings and texts, and removes
-     * empty groups.
+     * Moves hard spacing and comments out of the edges of groups, merges consecutive spacings and texts, removes
+     * empty groups, and applies the {@link Nest}s while reading them, as https://github.com/NixOS/nixfmt/pull/474
+     * does, so that the unnested document is never built whole.
      */
     static List<E> fixup(List<E> doc) {
-        ArrayDeque<E> in = new ArrayDeque<>(doc);
+        Input in = new Input(doc);
         List<E> out = new ArrayList<>();
         while (!in.isEmpty()) {
             E x = in.poll();
@@ -318,8 +325,84 @@ final class Doc {
         return out;
     }
 
-    private static void pushAll(ArrayDeque<E> in, List<E> front) {
+    static IllegalStateException unresolved() {
+        return new IllegalStateException("Nest left after resolveNests");
+    }
+
+    private static void pushAll(Input in, List<E> front) {
         for (int k = front.size() - 1; k >= 0; k--) in.push(front.get(k));
+    }
+
+    /**
+     * {@code doc} read in place with its {@link Nest}s spliced in and applied, after the elements pushed back. A group
+     * under a nest gets its body wrapped in that nest, for the recursive {@link #fixup} to apply.
+     */
+    private static final class Input {
+        private final ArrayDeque<E> pushed = new ArrayDeque<>();
+        private final ArrayDeque<Frame> frames = new ArrayDeque<>();
+
+        private static final class Frame {
+            final List<E> doc;
+            final int nest, offset;
+            int next;
+
+            Frame(List<E> doc, int nest, int offset) {
+                this.doc = doc;
+                this.nest = nest;
+                this.offset = offset;
+            }
+        }
+
+        Input(List<E> doc) {
+            frames.push(new Frame(doc, 0, 0));
+        }
+
+        boolean isEmpty() {
+            return peek() == null;
+        }
+
+        E peek() {
+            if (pushed.isEmpty()) {
+                E e = read();
+                if (e == null) return null;
+                pushed.push(e);
+            }
+            return pushed.peek();
+        }
+
+        E poll() {
+            return pushed.isEmpty() ? read() : pushed.pop();
+        }
+
+        void push(E e) {
+            pushed.push(e);
+        }
+
+        private E read() {
+            while (!frames.isEmpty()) {
+                Frame f = frames.peek();
+                if (f.next == f.doc.size()) {
+                    frames.pop();
+                    continue;
+                }
+                E e = f.doc.get(f.next++);
+                switch (e) {
+                    case Nest n -> frames.push(new Frame(n.body(), f.nest + n.nest(), f.offset + n.offset()));
+                    case Text t -> {
+                        return shifted(f.nest, f.offset, t);
+                    }
+                    case Group g -> {
+                        return f.nest == 0 && f.offset == 0
+                                ? g
+                                : new Group(g.ann(), List.of(new Nest(f.nest, f.offset, g.body())));
+                    }
+                    case Spacing s -> {
+                        return s;
+                    }
+                }
+            }
+            return null;
+        }
     }
 
     /** Turns disable markers without a verbatim region after them into plain comments. */
@@ -333,29 +416,42 @@ final class Doc {
         for (E e : doc) {
             if (isVerbatim(e)) n++;
             else if (e instanceof Group g) n += countVerbatims(g.body());
+            else if (e instanceof Nest m) n += countVerbatims(m.body());
         }
         return n;
     }
 
+    /** Returns {@code doc} itself when nothing changes. */
     private static List<E> removeDisabled(List<E> doc, int[] left) {
-        List<E> out = new ArrayList<>(doc.size());
-        for (E e : doc) {
-            if (e instanceof Text t && t.kind() == Kind.DISABLE_MARKER) {
-                if (left[0] > 0) {
-                    out.add(t);
-                } else {
-                    out.add(new Text(t.nest(), t.offset(), Kind.COMMENT, "/*nixfmt:disable*/"));
-                    out.add(SP_HARDLINE);
-                }
-            } else if (isVerbatim(e)) {
-                left[0]--;
-                out.add(e);
-            } else if (e instanceof Group g) {
-                out.add(new Group(g.ann(), removeDisabled(g.body(), left)));
-            } else {
-                out.add(e);
+        List<E> out = null;
+        for (int i = 0; i < doc.size(); i++) {
+            E e = doc.get(i);
+            if (e instanceof Text t && t.kind() == Kind.DISABLE_MARKER && left[0] <= 0) {
+                out = copied(doc, i, out);
+                out.add(new Text(t.nest(), t.offset(), Kind.COMMENT, "/*nixfmt:disable*/"));
+                out.add(SP_HARDLINE);
+                continue;
             }
+            E r = e;
+            if (isVerbatim(e)) {
+                left[0]--;
+            } else if (e instanceof Group g) {
+                List<E> body = removeDisabled(g.body(), left);
+                if (body != g.body()) r = new Group(g.ann(), body);
+            } else if (e instanceof Nest n) {
+                List<E> body = removeDisabled(n.body(), left);
+                if (body != n.body()) r = new Nest(n.nest(), n.offset(), body);
+            }
+            if (r != e) out = copied(doc, i, out);
+            if (out != null) out.add(r);
         }
-        return out;
+        return out != null ? out : doc;
+    }
+
+    private static List<E> copied(List<E> doc, int upTo, List<E> out) {
+        if (out != null) return out;
+        List<E> copy = new ArrayList<>(doc.size() + 1);
+        copy.addAll(doc.subList(0, upTo));
+        return copy;
     }
 }
