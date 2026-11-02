@@ -230,12 +230,12 @@ let
       };
     };
 
-  full = {
+  cli = {
     pname = "affogato";
-    module = "launcher";
-    inherit src;
+    module = "cli";
+    src = sources [ ];
     meta = {
-      description = "Nix language implementation on GraalVM/Truffle";
+      description = "Nix formatter and linter of affogato";
       mainProgram = "affogato";
       platforms = lib.platforms.linux;
     };
@@ -283,16 +283,16 @@ let
     cp -r ${playground} $out/playground
   '';
 
-  lite = {
-    pname = "affogato-lite";
-    module = "cli";
-    src = sources [ ];
-    meta = full.meta // {
-      description = "Nix formatter and linter of affogato, without the evaluator";
+  truffle = {
+    pname = "affogato-truffle";
+    module = "launcher";
+    inherit src;
+    meta = cli.meta // {
+      description = "Nix language implementation on GraalVM/Truffle";
     };
   };
 in
-(jvm full).overrideAttrs {
+(jvm cli).overrideAttrs {
   passthru = {
     inherit
       deps
@@ -304,18 +304,18 @@ in
       site
       ;
     native = native (
-      full
+      cli
       // {
         pname = "affogato-native";
-        profile = "native";
+        profile = "native-lite";
       }
     );
-    lite = jvm lite;
-    lite-native = native (
-      lite
+    truffle = jvm truffle;
+    truffle-native = native (
+      truffle
       // {
-        pname = "affogato-lite-native";
-        profile = "native-lite";
+        pname = "affogato-truffle-native";
+        profile = "native";
       }
     );
   };
