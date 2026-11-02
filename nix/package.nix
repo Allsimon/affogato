@@ -43,6 +43,7 @@ let
     ../lint/src/test
     ../docs/cli
     ../docs/_lint-rules.adoc
+    ../web/playground/examples.js
   ];
   docPaths = [
     ../docs
@@ -258,6 +259,7 @@ let
     installPhase = ''
       runHook preInstall
       install -Dm644 web/playground/index.html $out/index.html
+      install -Dm644 web/playground/examples.js $out/examples.js
       install -Dm644 ${output "web"}/custom/teavm/delegate/teavm/output/javascript/graalnix.js $out/graalnix.js
       runHook postInstall
     '';

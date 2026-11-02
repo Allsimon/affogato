@@ -91,6 +91,8 @@ only, without Truffle.
 `graalnix-lite-native`:: the `cli` module as a static native image.
 `playground`:: `web/playground/index.html` and `graalnix.js`: a page that
 formats, fixes and lints Nix in the browser, opened as a file, with no server.
+Its rule selector loads the linter's cases from `examples.js`, which
+`PlaygroundExamplesTest` regenerates.
 `docs`:: this documentation, rendered to HTML.
 `tests`:: a check that runs the test suite on the JVM and outputs its JaCoCo
 report.

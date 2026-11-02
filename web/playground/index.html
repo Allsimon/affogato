@@ -23,6 +23,7 @@ header { display: flex; flex-wrap: wrap; align-items: center; gap: .75em 1.25em;
 header h1 { font-size: 1.05em; margin: 0 .5em 0 0; }
 header label { display: flex; align-items: center; gap: .35em; }
 header input[type=number] { width: 4.5em; }
+header select { font: inherit; }
 #status { color: var(--muted); margin-left: auto; }
 main { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
 section { display: grid; grid-template-rows: auto 1fr; min-height: 0; min-width: 0; }
@@ -65,6 +66,7 @@ mark.hint { text-decoration: underline dotted var(--hint) 2px; }
   <label>Width <input id="width" type="number" min="20" max="400" value="100"></label>
   <label>Indent <input id="indent" type="number" min="1" max="16" value="2"></label>
   <label><input id="strict" type="checkbox"> Strict</label>
+  <label title="Lint and fix with one rule, starting from its test case">Rule <select id="rule"><option value="">All rules</option></select></label>
   <span id="status"></span>
 </header>
 <main>
@@ -124,6 +126,7 @@ stdenv.mkDerivation rec {
 <ul id="findings" aria-live="polite"></ul>
 <ul id="tooltip" hidden></ul>
 <script src="graalnix.js"></script>
+<script src="examples.js"></script>
 <script>
 "use strict";
 const source = document.getElementById("source");
@@ -133,6 +136,7 @@ const findings = document.getElementById("findings");
 const tooltip = document.getElementById("tooltip");
 const status = document.getElementById("status");
 const controls = document.querySelectorAll("header input");
+const rule = document.getElementById("rule");
 const mode = () => document.querySelector("input[name=mode]:checked").value;
 const options = () => [
   Number(document.getElementById("width").value) || 100,
@@ -243,7 +247,7 @@ function syncScroll() {
 }
 
 function showFindings(text) {
-  const result = JSON.parse(self.lint(text, ""));
+  const result = JSON.parse(self.lint(text, rule.value));
   diagnostics = result.diagnostics ?? [];
   showMarks();
   findings.replaceChildren();
@@ -266,7 +270,7 @@ function showFindings(text) {
 function showOutput(text) {
   const name = mode();
   document.getElementById("title").textContent = name === "fix" ? "Fixed and formatted" : "Formatted";
-  const result = JSON.parse(name === "fix" ? self.fix(text, ...options(), "") : self.format(text, ...options()));
+  const result = JSON.parse(name === "fix" ? self.fix(text, ...options(), rule.value) : self.format(text, ...options()));
   output.classList.toggle("failed", Boolean(result.error));
   if (result.error) output.textContent = position(text, result.error.start) + ": " + result.error.message;
   else paint(output, result.output, tokensOf(result.output), []);
@@ -291,6 +295,13 @@ source.addEventListener("mousemove", hover);
 for (const event of ["mouseleave", "scroll", "input"]) source.addEventListener(event, () => tooltip.hidden = true);
 new ResizeObserver(syncScroll).observe(source);
 for (const control of controls) control.addEventListener("input", refresh);
+examples[""] = source.value;
+for (const id of Object.keys(examples).sort()) if (id) rule.add(new Option(id, id));
+rule.addEventListener("change", () => {
+  source.value = examples[rule.value];
+  source.scrollTop = 0;
+  refresh();
+});
 refresh();
 </script>
 </body>
