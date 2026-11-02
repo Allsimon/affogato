@@ -4,7 +4,9 @@ import static org.affogato.format.Tree.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import org.affogato.parser.Syntax;
 import org.affogato.parser.Syntax.Node;
@@ -19,6 +21,7 @@ final class Convert {
     private final boolean strict;
     private final int[] lineBreaks;
     private List<Trivium> pending = new ArrayList<>();
+    private final Map<Tok, Tok> toks = new HashMap<>();
     /** Line start of the open disabled region, or -1. */
     private int pendingDisable = -1;
 
@@ -372,7 +375,7 @@ final class Convert {
             case SPATH -> TokKind.ENV_PATH;
             default -> TokKind.SYMBOL;
         };
-        return lexeme(t.start(), () -> new Tok(kind, t.text()), t::end);
+        return lexeme(t.start(), () -> toks.computeIfAbsent(new Tok(kind, t.text()), k -> k), t::end);
     }
 
     private Ann<Tok> leafOrNull(org.affogato.parser.Token t) {
@@ -528,7 +531,7 @@ final class Convert {
                     }
                 }
                 flushComments(items);
-                yield new ListTerm(open, items, leaf(l.close()));
+                yield new ListTerm(open, List.copyOf(items), leaf(l.close()));
             }
             case Syntax.Select s -> {
                 Term target = term(s.target(), null);
@@ -551,7 +554,7 @@ final class Convert {
             Ann<Tok> dot = leafOrNull(s.dot());
             out.add(new Selector(dot, simpleSelector(s.attr())));
         }
-        return out;
+        return List.copyOf(out);
     }
 
     private SimpleSelector simpleSelector(Syntax.AttrNode a) {
@@ -577,7 +580,7 @@ final class Convert {
             items.add(new Of<>(binder(b)));
         }
         flushComments(items);
-        return items;
+        return List.copyOf(items);
     }
 
     private Binder binder(Syntax.Binding b) {
@@ -593,7 +596,7 @@ final class Convert {
                 Term from = i.from() == null ? null : term(i.from(), null);
                 List<SimpleSelector> names = new ArrayList<>();
                 for (Syntax.AttrNode a : i.names()) names.add(simpleSelector(a));
-                yield new Inherit(inherit, from, names, leaf(i.semi()));
+                yield new Inherit(inherit, from, List.copyOf(names), leaf(i.semi()));
             }
         };
     }
@@ -619,7 +622,7 @@ final class Convert {
             Ann<Tok> close = leaf(f.close());
             Ann<Tok> rightAt = !argFirst && l.at() != null ? leaf(l.at()) : null;
             Ann<Tok> rightName = !argFirst && l.arg() != null ? leaf(l.arg()) : null;
-            param = new SetParameter(leftName, leftAt, open, attrs, close, rightAt, rightName);
+            param = new SetParameter(leftName, leftAt, open, List.copyOf(attrs), close, rightAt, rightName);
         }
         Ann<Tok> colon = leaf(l.colon());
         return new Abstraction(param, colon, expr(l.body()));
@@ -659,7 +662,7 @@ final class Convert {
     private List<List<StringPart>> simpleStringLines(Syntax.Str s) {
         List<List<StringPart>> lines = new ArrayList<>();
         for (List<StringPart> l : splitLines(rawParts("", s.parts()))) lines.add(normalizeLine(l));
-        return lines;
+        return lines.stream().map(List::copyOf).toList();
     }
 
     private Term string(Syntax.Str s) {
@@ -685,7 +688,7 @@ final class Convert {
                     if (cuts != before) cutHolder[0] = r[0];
                     @SuppressWarnings("unchecked")
                     List<List<StringPart>> fixed = (List<List<StringPart>>) r[1];
-                    return fixed;
+                    return fixed.stream().map(List::copyOf).toList();
                 },
                 () -> s.close().end());
         String cut = (String) cutHolder[0];
