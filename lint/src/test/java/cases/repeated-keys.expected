@@ -1,1 +1,5 @@
-repeated-keys.nix:2:3: hint[repeated-keys]: 'a' is set 3 times; group its attributes in one attribute set
+repeated-keys.nix:2:3: hint[repeated-keys]: 'a' is set 3 times; group its attributes in one attribute set [fix]
+repeated-keys.nix:16:9: hint[repeated-keys]: 'g' is set 3 times; group its attributes in one attribute set [fix]
+repeated-keys.nix:19:3: hint[repeated-keys]: 'k.l' is set 3 times; group its attributes in one attribute set [fix]
+repeated-keys.nix:25:3: hint[repeated-keys]: 'p' is set 3 times; group its attributes in one attribute set
+repeated-keys.nix:29:3: hint[repeated-keys]: 'w' is set 3 times; group its attributes in one attribute set [fix]
