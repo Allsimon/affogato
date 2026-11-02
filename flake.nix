@@ -18,7 +18,7 @@
         graalnix-native = graalnix.native;
         graalnix-lite = graalnix.lite;
         graalnix-lite-native = graalnix.lite-native;
-        inherit (graalnix) docs playground;
+        inherit (graalnix) docs playground site;
         maven-repo = graalnix.mavenRepo;
         default = graalnix;
       });
@@ -34,6 +34,7 @@
           tests
           docs
           playground
+          site
           mavenRepo
           ;
         playground-tests = self.packages.${pkgs.stdenv.hostPlatform.system}.graalnix.playgroundTests;

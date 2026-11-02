@@ -16,12 +16,13 @@ and Truffle.
 Each package installs bash and zsh completions; `graalnix generate-completion`
 prints the script, to source in a shell where it is not installed.
 
-To try the formatter and linter in a browser, build the playground and open
-its page; they run in the page, compiled to JavaScript:
+To try the formatter and linter in a browser, open the
+link:playground/index.html[playground]; they run in the page, compiled to
+JavaScript. To build it locally, then open `result/index.html` in a browser:
 
 [source,sh]
 ----
-nix build .#playground && xdg-open result/index.html
+nix build .#playground
 ----
 
 Evaluate an expression:
