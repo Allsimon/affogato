@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>graalnix playground</title>
+<title>affogato playground</title>
 <style>
 :root { color-scheme: light dark; --border: #8884; --muted: #888; --error: #d33; --warning: #c80; --hint: #38c; }
 .keyword { color: light-dark(#a626a4, #c678dd); }
@@ -60,7 +60,7 @@ mark.hint { text-decoration: underline dotted var(--hint) 2px; }
 </head>
 <body>
 <header>
-  <h1>graalnix playground</h1>
+  <h1>affogato playground</h1>
   <label title="Format, as nixfmt does"><input type="radio" name="mode" value="format"> Format</label>
   <label title="Apply the linter's fixes, then format"><input type="radio" name="mode" value="fix" checked> Fix</label>
   <label>Width <input id="width" type="number" min="20" max="400" value="100"></label>
@@ -125,7 +125,7 @@ stdenv.mkDerivation rec {
 </main>
 <ul id="findings" aria-live="polite"></ul>
 <ul id="tooltip" hidden></ul>
-<script src="graalnix.js"></script>
+<script src="affogato.js"></script>
 <script src="examples.js"></script>
 <script>
 "use strict";

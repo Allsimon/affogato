@@ -1,0 +1,5 @@
+{
+  "resources": [
+    { "module": "org.affogato", "glob": "org/affogato/corepkgs/*" }
+  ]
+}

@@ -16,7 +16,7 @@ java -Djenesis.make.profiles=native build/jenesis/Make.java stage
 ----
 
 The command line comes in two modules. `cli` holds `format`, `check` and `fix`
-and its own `graalnix` command with only these. `launcher` adds `eval` and
+and its own `affogato` command with only these. `launcher` adds `eval` and
 `drv-path`, which need the evaluator and so Truffle. `jenesis.properties` makes
 `Execute.java` run the launcher; `-Djenesis.execute.module=cli/src/main/java`
 runs the other. The native profile of `cli` is `native-lite`.
@@ -25,7 +25,7 @@ runs the other. The native profile of `cli` is `native-lite`.
 
 The `web` module wraps the formatter and linter for JavaScript: `Playground`
 exports `format`, `fix` and `lint`, each returning JSON. TeaVM compiles it with
-its dependencies to `graalnix.js` at the module's package step, through the
+its dependencies to `affogato.js` at the module's package step, through the
 project plugin in `plugins/teavm`, which `jenesis.plugins.properties` declares
 and the module's `plugin-teavm.properties` switches on. TeaVM's jars are no
 modules, so the plugin resolves them onto a class path and runs TeaVM in a JVM
@@ -39,7 +39,7 @@ playground reaches must do without them, or the build fails naming the method.
 ----
 java build/jenesis/Make.java build/modules/compose/module/package-module-web+src+main+java
 nix shell nixpkgs#nodejs -c node web/check.cjs \
-  target/build/modules/compose/module/package-module-web+src+main+java/custom/teavm/delegate/teavm/output/javascript/graalnix.js \
+  target/build/modules/compose/module/package-module-web+src+main+java/custom/teavm/delegate/teavm/output/javascript/affogato.js \
   format/src/test/java lint/src/test/java/cases   # the formatter and linter test cases, in JavaScript
 ----
 
@@ -58,7 +58,7 @@ nix build .#docs
 == Dependencies
 
 Dependency versions and checksums live in one bill of materials,
-`build.jenesis/pin-graalnix.properties`, which every module imports with
+`build.jenesis/pin-affogato.properties`, which every module imports with
 `@jenesis.bom`. After changing a dependency, regenerate it:
 
 [source,sh]
@@ -68,7 +68,7 @@ java build/jenesis/Make.java pin
 
 `jenesis.properties` points `pin` at that file and names the groups it holds:
 the dependencies, and the tools the modules run (palantir-java-format, JaCoCo),
-which the modules import it into as `@jenesis.bom palantir:tool/pin-graalnix.properties`.
+which the modules import it into as `@jenesis.bom palantir:tool/pin-affogato.properties`.
 A plugin's own version stays pinned in each declaration, as
 `palantir/module/...`: Jenesis does not read it from a file. The project
 plugins' tools are pinned in `jenesis.plugins.pin.properties`.
@@ -81,15 +81,15 @@ new pin needs nothing more.
 
 The flake provides:
 
-`graalnix`:: the launcher on OpenJDK 25. It runs the bundle the launcher's
+`affogato`:: the launcher on OpenJDK 25. It runs the bundle the launcher's
 `packaging.properties` asks for: its jars and the `java` argument file that
 names them. Without GraalVM's compiler, Truffle runs its fallback runtime,
 which only interprets; runtime compilation is off by default anyway.
-`graalnix-native`:: the launcher as a static native image, built with GraalVM.
-`graalnix-lite`:: the `cli` module on OpenJDK 25: `format`, `check` and `fix`
+`affogato-native`:: the launcher as a static native image, built with GraalVM.
+`affogato-lite`:: the `cli` module on OpenJDK 25: `format`, `check` and `fix`
 only, without Truffle.
-`graalnix-lite-native`:: the `cli` module as a static native image.
-`playground`:: `web/playground/index.html` and `graalnix.js`: a page that
+`affogato-lite-native`:: the `cli` module as a static native image.
+`playground`:: `web/playground/index.html` and `affogato.js`: a page that
 formats, fixes and lints Nix in the browser, opened as a file, with no server.
 Its rule selector loads the linter's cases from `examples.js`, which
 `PlaygroundExamplesTest` regenerates.
@@ -97,4 +97,4 @@ Its rule selector loads the linter's cases from `examples.js`, which
 `tests`:: a check that runs the test suite on the JVM and outputs its JaCoCo
 report.
 `playground-tests`:: a check that runs the formatter and linter test cases
-against `graalnix.js` in Node.js.
+against `affogato.js` in Node.js.

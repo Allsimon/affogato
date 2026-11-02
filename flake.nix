@@ -1,5 +1,5 @@
 {
-  description = "graalnix: a Nix language implementation on GraalVM/Truffle";
+  description = "affogato: a Nix language implementation on GraalVM/Truffle";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -14,33 +14,33 @@
     in
     {
       packages = forAllSystems (pkgs: rec {
-        graalnix = pkgs.callPackage ./nix/package.nix { };
-        graalnix-native = graalnix.native;
-        graalnix-lite = graalnix.lite;
-        graalnix-lite-native = graalnix.lite-native;
-        inherit (graalnix) docs playground site;
-        maven-repo = graalnix.mavenRepo;
-        default = graalnix;
+        affogato = pkgs.callPackage ./nix/package.nix { };
+        affogato-native = affogato.native;
+        affogato-lite = affogato.lite;
+        affogato-lite-native = affogato.lite-native;
+        inherit (affogato) docs playground site;
+        maven-repo = affogato.mavenRepo;
+        default = affogato;
       });
 
       checks = forAllSystems (pkgs: {
         inherit (self.packages.${pkgs.stdenv.hostPlatform.system})
-          graalnix
-          graalnix-native
-          graalnix-lite
-          graalnix-lite-native
+          affogato
+          affogato-native
+          affogato-lite
+          affogato-lite-native
           ;
-        inherit (self.packages.${pkgs.stdenv.hostPlatform.system}.graalnix)
+        inherit (self.packages.${pkgs.stdenv.hostPlatform.system}.affogato)
           tests
           docs
           playground
           site
           mavenRepo
           ;
-        playground-tests = self.packages.${pkgs.stdenv.hostPlatform.system}.graalnix.playgroundTests;
+        playground-tests = self.packages.${pkgs.stdenv.hostPlatform.system}.affogato.playgroundTests;
         lint-builders = pkgs.callPackage ./nix/lint-builders.nix { };
         nixpkgs-formatted = pkgs.runCommand "nixpkgs-formatted" { } ''
-          ${self.packages.${pkgs.stdenv.hostPlatform.system}.graalnix-lite-native}/bin/graalnix format --check ${nixpkgs}
+          ${self.packages.${pkgs.stdenv.hostPlatform.system}.affogato-lite-native}/bin/affogato format --check ${nixpkgs}
           touch $out
         '';
       });

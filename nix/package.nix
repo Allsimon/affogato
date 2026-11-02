@@ -65,7 +65,7 @@ let
   '';
 
   tests = stdenv.mkDerivation {
-    name = "graalnix-tests";
+    name = "affogato-tests";
     src = testSrc;
     nativeBuildInputs = [ jdk ];
     buildPhase = ''
@@ -88,7 +88,7 @@ let
   };
 
   docs = stdenv.mkDerivation {
-    name = "graalnix-docs";
+    name = "affogato-docs";
     src = sources (evaluator ++ docPaths);
     nativeBuildInputs = [ jdk ];
     buildPhase = ''
@@ -107,7 +107,7 @@ let
 
   # The formatter and linter as a Maven repository, for the IntelliJ plugin (Allsimon/devenv-intellij) to build against.
   mavenRepo = stdenv.mkDerivation {
-    name = "graalnix-maven-repo";
+    name = "affogato-maven-repo";
     src = lib.fileset.toSource {
       root = ../.;
       fileset = lib.fileset.unions [
@@ -130,8 +130,8 @@ let
     '';
     installPhase = ''
       runHook preInstall
-      mkdir -p $out/org/graalnix
-      cp -r target/stage/maven/output/org/graalnix/org.graalnix.{parser,format,lint,store} $out/org/graalnix
+      mkdir -p $out/org/affogato
+      cp -r target/stage/maven/output/org/affogato/org.affogato.{parser,format,lint,store} $out/org/affogato
       runHook postInstall
     '';
   };
@@ -146,14 +146,14 @@ let
   # picocli's script works in zsh only through bashcompinit, so the zsh function sources it.
   # Completion runs with NO_aliases, so its compopt alias does not expand.
   completions = ''
-    $out/bin/graalnix generate-completion > graalnix.bash
-    cat > _graalnix <<EOF
-    #compdef graalnix
+    $out/bin/affogato generate-completion > affogato.bash
+    cat > _affogato <<EOF
+    #compdef affogato
     compopt() { :; }
-    source $out/share/bash-completion/completions/graalnix.bash
-    _bash_complete -F _complete_graalnix -o default
+    source $out/share/bash-completion/completions/affogato.bash
+    _bash_complete -F _complete_affogato -o default
     EOF
-    installShellCompletion graalnix.bash _graalnix
+    installShellCompletion affogato.bash _affogato
   '';
 
   jvm =
@@ -184,10 +184,10 @@ let
 
       installPhase = ''
         runHook preInstall
-        mkdir -p $out/share/graalnix
-        unzip -q ${output module}/bundle/output/bundle/bundle.zip jars/'*' application.unix.args -d $out/share/graalnix
-        sed -i -E "s#([\":])jars/#\1$out/share/graalnix/jars/#g" $out/share/graalnix/application.unix.args
-        makeWrapper ${jdk}/bin/java $out/bin/graalnix --add-flags @$out/share/graalnix/application.unix.args
+        mkdir -p $out/share/affogato
+        unzip -q ${output module}/bundle/output/bundle/bundle.zip jars/'*' application.unix.args -d $out/share/affogato
+        sed -i -E "s#([\":])jars/#\1$out/share/affogato/jars/#g" $out/share/affogato/application.unix.args
+        makeWrapper ${jdk}/bin/java $out/bin/affogato --add-flags @$out/share/affogato/application.unix.args
         ${completions}
         runHook postInstall
       '';
@@ -220,7 +220,7 @@ let
 
       installPhase = ''
         runHook preInstall
-        install -Dm755 ${output module}/native-image/output/native/org.graalnix.${module} $out/bin/graalnix
+        install -Dm755 ${output module}/native-image/output/native/org.affogato.${module} $out/bin/affogato
         ${completions}
         runHook postInstall
       '';
@@ -231,18 +231,18 @@ let
     };
 
   full = {
-    pname = "graalnix";
+    pname = "affogato";
     module = "launcher";
     inherit src;
     meta = {
       description = "Nix language implementation on GraalVM/Truffle";
-      mainProgram = "graalnix";
+      mainProgram = "affogato";
       platforms = lib.platforms.linux;
     };
   };
 
   playground = stdenv.mkDerivation {
-    pname = "graalnix-playground";
+    pname = "affogato-playground";
     version = "0.1.0";
     src = sources [
       ../web/src/main
@@ -263,32 +263,32 @@ let
       runHook preInstall
       install -Dm644 web/playground/index.html $out/index.html
       install -Dm644 web/playground/examples.js $out/examples.js
-      install -Dm644 ${output "web"}/custom/teavm/delegate/teavm/output/javascript/graalnix.js $out/graalnix.js
+      install -Dm644 ${output "web"}/custom/teavm/delegate/teavm/output/javascript/affogato.js $out/affogato.js
       runHook postInstall
     '';
     meta = {
-      description = "The formatter and linter of graalnix in the browser, compiled to JavaScript by TeaVM";
+      description = "The formatter and linter of affogato in the browser, compiled to JavaScript by TeaVM";
       platforms = lib.platforms.all;
     };
   };
 
-  playgroundTests = runCommand "graalnix-playground-tests" { nativeBuildInputs = [ nodejs ]; } ''
-    node ${../web/check.cjs} ${playground}/graalnix.js ${../format/src/test/java} ${../lint/src/test/java/cases} | tee $out
+  playgroundTests = runCommand "affogato-playground-tests" { nativeBuildInputs = [ nodejs ]; } ''
+    node ${../web/check.cjs} ${playground}/affogato.js ${../format/src/test/java} ${../lint/src/test/java/cases} | tee $out
   '';
 
   # The website published to GitHub Pages: the documentation, with the playground under playground/.
-  site = runCommand "graalnix-site" { } ''
+  site = runCommand "affogato-site" { } ''
     cp -r ${docs} $out
     chmod u+w $out
     cp -r ${playground} $out/playground
   '';
 
   lite = {
-    pname = "graalnix-lite";
+    pname = "affogato-lite";
     module = "cli";
     src = sources [ ];
     meta = full.meta // {
-      description = "Nix formatter and linter of graalnix, without the evaluator";
+      description = "Nix formatter and linter of affogato, without the evaluator";
     };
   };
 in
@@ -306,7 +306,7 @@ in
     native = native (
       full
       // {
-        pname = "graalnix-native";
+        pname = "affogato-native";
         profile = "native";
       }
     );
@@ -314,7 +314,7 @@ in
     lite-native = native (
       lite
       // {
-        pname = "graalnix-lite-native";
+        pname = "affogato-lite-native";
         profile = "native-lite";
       }
     );

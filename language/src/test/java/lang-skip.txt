@@ -1,4 +1,4 @@
-# Tests that graalnix does not pass yet, one per line, with the reason.
+# Tests that affogato does not pass yet, one per line, with the reason.
 
 # --lint-* flags are not implemented
 eval-fail-abs-path-fatal

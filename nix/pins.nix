@@ -36,7 +36,7 @@ let
   pins =
     lib.concatMap (pinsOf ".*@jenesis\\.pin ([^ ]+) ([^ ]+) SHA-256/([0-9a-f]{64}).*") moduleInfos
     ++ lib.concatMap (pinsOf "([^#=][^=]*)=([^ ]+) SHA-256/([0-9a-f]{64}).*") [
-      (root + "/build.jenesis/pin-graalnix.properties")
+      (root + "/build.jenesis/pin-affogato.properties")
       (root + "/jenesis.plugins.pin.properties")
     ];
 
@@ -151,7 +151,7 @@ let
       }
   ) { } files;
 in
-linkFarm "graalnix-deps" (
+linkFarm "affogato-deps" (
   lib.mapAttrsToList (name: file: {
     inherit name;
     inherit (file) path;

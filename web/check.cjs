@@ -1,4 +1,4 @@
-// Runs the formatter and linter test cases, and checks the highlighting, against the JavaScript build: node check.cjs graalnix.js <format tests> <lint cases>
+// Runs the formatter and linter test cases, and checks the highlighting, against the JavaScript build: node check.cjs affogato.js <format tests> <lint cases>
 "use strict";
 const fs = require("fs");
 const path = require("path");

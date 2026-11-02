@@ -1,0 +1,100 @@
+// tag::picocli-generated-full-manpage[]
+// tag::picocli-generated-man-section-header[]
+:doctype: manpage
+:revnumber: 
+:manmanual: Affogato Manual
+:mansource: 
+:man-linkstyle: pass:[blue R < >]
+= affogato-drv-path(1)
+
+// end::picocli-generated-man-section-header[]
+
+// tag::picocli-generated-man-section-name[]
+== Name
+
+affogato-drv-path - Evaluate an expression to a derivation and print its drvPath.
+
+// end::picocli-generated-man-section-name[]
+
+// tag::picocli-generated-man-section-synopsis[]
+== Synopsis
+
+*affogato drv-path* [*-h*] [*--show-trace*] [*-A*=_ATTR_] [*--system*=_SYS_] [*--arg*=_NAME _
+             _     EXPR_]... [*--argstr*=_NAME VALUE_]... [*-I*=_PATH_]... (*-E*=_EXPR_ |
+                  _FILE_)
+
+// end::picocli-generated-man-section-synopsis[]
+
+// tag::picocli-generated-man-section-description[]
+== Description
+
+Evaluate an expression to a derivation and print its drvPath.
+
+// end::picocli-generated-man-section-description[]
+
+// tag::picocli-generated-man-section-options[]
+== Options
+
+*-A*, *--attr*=_ATTR_::
+  Select an attribute path in the result.
+
+*--arg*=_NAME EXPR_::
+  Call a function result with NAME bound to EXPR.
+
+*--argstr*=_NAME VALUE_::
+  Call a function result with NAME bound to the string VALUE.
+
+*-E*, *--expr*=_EXPR_::
+  Evaluate EXPR.
+
+*-h*, *--help*::
+  Show this help and exit.
+
+*-I*, *--include*=_PATH_::
+  Add an entry to the search path of lookups such as <nixpkgs>, as nixpkgs=/path/to/nixpkgs; the entries of NIX_PATH come after.
+
+*--show-trace*::
+  Print the Nix call stack when the evaluation fails.
+
+*--system*=_SYS_::
+  Set builtins.currentSystem.
+
+// end::picocli-generated-man-section-options[]
+
+// tag::picocli-generated-man-section-arguments[]
+== Arguments
+
+_FILE_::
+  Evaluate FILE, or the default.nix of a directory.
+
+// end::picocli-generated-man-section-arguments[]
+
+// tag::picocli-generated-man-section-commands[]
+// end::picocli-generated-man-section-commands[]
+
+// tag::picocli-generated-man-section-exit-status[]
+==  Exit status
+
+*0*::
+  The evaluation succeeded.
+
+*1*::
+  The evaluation failed.
+
+*2*::
+  The command line is invalid.
+
+// end::picocli-generated-man-section-exit-status[]
+
+// tag::picocli-generated-man-section-footer[]
+==  Engine options
+
+[%hardbreaks]
+Any other --name or --name=value option goes to the GraalVM polyglot engine, as name=true or name=value. This includes the language's own --nix.* options and the Truffle tools, such as --inspect for the Chrome DevTools debugger and --cpusampler to profile the evaluation.
+
+[%hardbreaks]
+Runtime compilation is off by default: on nixpkgs it made evaluations 4 to 10% slower for 1.5 times the CPU and memory. --engine.Compilation=true turns it back on.
+
+// end::picocli-generated-man-section-footer[]
+
+// end::picocli-generated-full-manpage[]
