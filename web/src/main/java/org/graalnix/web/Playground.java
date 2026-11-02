@@ -1,10 +1,13 @@
 package org.graalnix.web;
 
+import java.util.EnumSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Supplier;
 import org.graalnix.format.Formatter;
 import org.graalnix.lint.Diagnostic;
 import org.graalnix.lint.Linter;
+import org.graalnix.lint.Rule;
 import org.graalnix.parser.Highlighter;
 import org.graalnix.parser.ParseException;
 import org.teavm.jso.JSExport;
@@ -24,18 +27,24 @@ public final class Playground {
         return guard(src, () -> output(Formatter.format(src, width, indent, strict)));
     }
 
-    /** {@code {"output": ...}}: the linter's fixes, then the formatting. */
+    /**
+     * {@code {"output": ...}}: the linter's fixes, then the formatting. {@code rules} is a comma-separated list of rule
+     * ids, empty for all.
+     */
     @JSExport
-    public static String fix(String src, int width, int indent, boolean strict) {
-        return guard(src, () -> output(Formatter.format(Linter.fix(src), width, indent, strict)));
+    public static String fix(String src, int width, int indent, boolean strict, String rules) {
+        return guard(src, () -> output(Formatter.format(Linter.fix(src, rules(rules)), width, indent, strict)));
     }
 
-    /** {@code {"diagnostics": [{"start", "end", "severity", "rule", "message", "fixable"}, ...]}}. */
+    /**
+     * {@code {"diagnostics": [{"start", "end", "severity", "rule", "message", "fixable"}, ...]}}, of {@code rules} as
+     * in {@link #fix}.
+     */
     @JSExport
-    public static String lint(String src) {
+    public static String lint(String src, String rules) {
         return guard(src, () -> {
             StringBuilder sb = new StringBuilder("{\"diagnostics\":[");
-            for (Diagnostic d : Linter.lint(src)) {
+            for (Diagnostic d : Linter.lint(src, rules(rules))) {
                 if (sb.charAt(sb.length() - 1) == '}') sb.append(',');
                 sb.append("{\"start\":")
                         .append(d.start())
@@ -72,6 +81,13 @@ public final class Playground {
             }
             return sb.append("]}").toString();
         });
+    }
+
+    private static Set<Rule> rules(String ids) {
+        if (ids.isEmpty()) return EnumSet.allOf(Rule.class);
+        Set<Rule> rules = EnumSet.noneOf(Rule.class);
+        for (String id : ids.split(",")) rules.add(Rule.byId(id));
+        return rules;
     }
 
     /** Input nested deeper than the JavaScript stack allows fails with a RangeError, wrapped in no specific type. */

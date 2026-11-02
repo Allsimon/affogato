@@ -6,9 +6,6 @@
 {
   string = stdenv.mkDerivation {
     pname = "string";
-
-    __structuredAttrs = true;
-    strictDeps = true;
     env.NIX_CFLAGS_COMPILE = "-Wno-error";
     env.NIX_LDFLAGS = lib.optionalString stdenv.hostPlatform.isDarwin "-framework Foundation";
     # A list, which env does not take as such.
@@ -26,10 +23,8 @@
   };
 
   # Merged with the env written in place.
-  merged = buildGoModule (_: {
+  merged = buildGoModule (finalAttrs: {
     pname = "merged";
-
-    __structuredAttrs = true;
     env = {
       CGO_ENABLED = 0;
     };
@@ -39,9 +34,6 @@
   # Not fixed: env is not written in place.
   computed = stdenv.mkDerivation {
     pname = "computed";
-
-    __structuredAttrs = true;
-    strictDeps = true;
     env = lib.optionalAttrs stdenv.hostPlatform.isDarwin { CC = "clang"; };
     NIX_LDFLAGS = "-lz";
   };
@@ -49,9 +41,6 @@
   # Not fixed: the file refers to it.
   referred = stdenv.mkDerivation (finalAttrs: {
     pname = "referred";
-
-    __structuredAttrs = true;
-    strictDeps = true;
     NIX_HARDENING_ENABLE = "fortify";
     passthru.hardening = finalAttrs.NIX_HARDENING_ENABLE;
   });

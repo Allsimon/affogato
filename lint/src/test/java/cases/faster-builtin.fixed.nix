@@ -3,5 +3,5 @@
   builtins.groupBy
   builtins.zipAttrsWith
   lib.mapAttrs
-  (_: builtins.groupBy)
+  (builtins: lib.groupBy)
 ]

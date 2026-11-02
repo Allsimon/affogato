@@ -1,2 +1,1 @@
-manual-inherit.nix:1:6: warning[unused-formal]: unused formal argument 'b'
 manual-inherit.nix:4:5: warning[manual-inherit]: 'a = a;' can be written 'inherit a;' [fix]

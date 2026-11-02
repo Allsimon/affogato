@@ -132,6 +132,11 @@ public enum Rule {
         return name().toLowerCase(java.util.Locale.ROOT).replace('_', '-');
     }
 
+    /** @throws IllegalArgumentException if no rule has this {@link #id()} */
+    public static Rule byId(String id) {
+        return valueOf(id.toUpperCase(java.util.Locale.ROOT).replace('-', '_'));
+    }
+
     public Severity severity() {
         return severity;
     }

@@ -1,14 +1,4 @@
-missing-final-attrs.nix:9:11: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-final-attrs.nix:9:11: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-final-attrs.nix:9:31: warning[missing-final-attrs]: use 'finalAttrs: { ... }' instead of 'rec { ... }' [fix]
 missing-final-attrs.nix:23:31: warning[missing-final-attrs]: use 'finalAttrs: { ... }' instead of 'rec { ... }'
 missing-final-attrs.nix:31:32: warning[missing-final-attrs]: use 'finalAttrs: { ... }' instead of 'rec { ... }' [fix]
-missing-final-attrs.nix:38:12: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-final-attrs.nix:38:12: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-final-attrs.nix:38:32: warning[missing-final-attrs]: use 'finalAttrs: { ... }' instead of 'rec { ... }'
-missing-final-attrs.nix:41:15: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-final-attrs.nix:41:15: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
-missing-final-attrs.nix:41:36: warning[unused-lambda-arg]: unused lambda argument 'finalAttrs' [fix]
-missing-final-attrs.nix:48:11: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-final-attrs.nix:48:11: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
-missing-final-attrs.nix:48:31: warning[extra-rec]: 'rec' is not needed: no attribute refers to another [fix]

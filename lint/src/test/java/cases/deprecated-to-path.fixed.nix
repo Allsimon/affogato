@@ -1,5 +1,5 @@
 { x }:
 [
   (builtins.toPath x)
-  (builtins.toPath x)
+  (__toPath x)
 ]

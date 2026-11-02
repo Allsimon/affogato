@@ -1,5 +1,3 @@
-missing-phase-hooks.nix:2:1: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-phase-hooks.nix:2:1: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-phase-hooks.nix:6:3: warning[missing-phase-hooks]: 'installPhase' does not run 'runHook preInstall' and 'runHook postInstall' [fix]
 missing-phase-hooks.nix:12:3: warning[missing-phase-hooks]: 'buildPhase' does not run 'runHook postBuild' [fix]
 missing-phase-hooks.nix:24:3: warning[missing-phase-hooks]: 'configurePhase' does not run 'runHook preConfigure' and 'runHook postConfigure'

@@ -3,6 +3,5 @@ sri-hash.nix:16:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sh
 sri-hash.nix:22:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sha256' [fix]
 sri-hash.nix:28:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sha256' [fix]
 sri-hash.nix:33:13: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sha256'
-sri-hash.nix:37:5: warning[manual-inherit]: 'sha256 = sha256;' can be written 'inherit sha256;' [fix]
 sri-hash.nix:37:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sha256'
 sri-hash.nix:42:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sha256'

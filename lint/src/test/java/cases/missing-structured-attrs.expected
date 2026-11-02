@@ -1,6 +1,3 @@
 missing-structured-attrs.nix:10:11: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
 missing-structured-attrs.nix:17:11: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-structured-attrs.nix:17:11: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-structured-attrs.nix:22:8: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-structured-attrs.nix:28:9: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
-missing-structured-attrs.nix:34:9: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]

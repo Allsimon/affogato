@@ -1,5 +1,3 @@
 faster-builtin.nix:3:3: hint[faster-builtin]: 'lib.groupBy' can be 'builtins.groupBy' [fix]
 faster-builtin.nix:4:3: hint[faster-builtin]: 'lib.attrsets.zipAttrsWith' can be 'builtins.zipAttrsWith' [fix]
-faster-builtin.nix:6:4: warning[unused-lambda-arg]: unused lambda argument 'builtins' [fix]
-faster-builtin.nix:6:4: warning[shadowed-builtin]: 'builtins' shadows a builtin
 faster-builtin.nix:6:14: hint[faster-builtin]: 'lib.groupBy' can be 'builtins.groupBy'

@@ -1,3 +1,1 @@
 unknown-builtin.nix:3:3: error[unknown-builtin]: unknown builtin 'builtins.mapAttrs''
-unknown-builtin.nix:6:4: warning[useless-has-attr]: can be written 'builtins.getFlakeAttr or ...' [fix]
-unknown-builtin.nix:9:7: warning[shadowed-builtin]: 'builtins' shadows a builtin

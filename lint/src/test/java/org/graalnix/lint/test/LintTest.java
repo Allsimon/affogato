@@ -26,8 +26,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 /**
- * Runs the cases in cases/: for each X.nix, X.expected holds its diagnostics, with "[fix]" after those that have
- * one, and X.fixed.nix the output of {@link Linter#fix}.
+ * Runs the cases in cases/: for each X.nix, X.expected holds the diagnostics of rule X, with "[fix]" after those that
+ * have one, and X.fixed.nix the output of {@link Linter#fix} with that rule alone.
  */
 class LintTest {
     static final Path CASES = casesRoot();
@@ -46,8 +46,8 @@ class LintTest {
         return Files.readString(p, StandardCharsets.UTF_8);
     }
 
-    private static String render(String src, String name) {
-        return Linter.lint(src).stream()
+    private static String render(String src, String name, Set<Rule> rules) {
+        return Linter.lint(src, rules).stream()
                 .map(d -> d.render(src, name) + (d.fix().isEmpty() ? "" : " [fix]") + "\n")
                 .collect(Collectors.joining());
     }
@@ -65,11 +65,12 @@ class LintTest {
                 .map(p -> DynamicTest.dynamicTest(p.getFileName().toString(), () -> {
                     String name = p.getFileName().toString();
                     String base = name.substring(0, name.length() - ".nix".length());
+                    Set<Rule> rule = Set.of(Rule.byId(base));
                     String src = read(p);
-                    assertThat(render(src, name)).isEqualTo(read(CASES.resolve(base + ".expected")));
-                    String fixed = Linter.fix(src);
+                    assertThat(render(src, name, rule)).isEqualTo(read(CASES.resolve(base + ".expected")));
+                    String fixed = Linter.fix(src, rule);
                     assertThat(fixed).isEqualTo(read(CASES.resolve(base + ".fixed.nix")));
-                    assertThat(Linter.lint(fixed))
+                    assertThat(Linter.lint(fixed, rule))
                             .as("fixable diagnostics left")
                             .allMatch(d -> d.fix().isEmpty());
                 }));

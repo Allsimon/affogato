@@ -1,3 +1,2 @@
 prefixed-builtin.nix:2:4: warning[prefixed-builtin]: '__add' is 'builtins.add' [fix]
-prefixed-builtin.nix:6:7: warning[shadowed-builtin]: 'builtins' shadows a builtin
 prefixed-builtin.nix:8:5: warning[prefixed-builtin]: '__sub' is 'builtins.sub'

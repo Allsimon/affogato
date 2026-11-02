@@ -2,7 +2,7 @@
 [[lint-rules]]
 = Lint rules
 
-Each rule shows a case from the linter's tests: the original code, what `Linter.fix` makes of it, and what `Linter.lint` reports, with `[fix]` after the findings that come with a fix.
+Each rule shows a case from the linter's tests: the original code, what the rule's fixes make of it, and what the rule reports, with `[fix]` after the findings that come with a fix.
 
 [cols="3,1,8"]
 |===
@@ -577,7 +577,7 @@ Severity: ⚠️ warning. An `inherit` with no names.
 .Fixed
 ----
 {
-  a = 1;
+  a = let in 1;
   b = 2;
 }
 ----
@@ -679,7 +679,6 @@ Severity: ⚠️ warning. `a = a;` in an attribute set that is not recursive, wh
 [source,text,role="secondary"]
 .Diagnostics
 ----
-manual-inherit.nix:1:6: warning[unused-formal]: unused formal argument 'b'
 manual-inherit.nix:4:5: warning[manual-inherit]: 'a = a;' can be written 'inherit a;' [fix]
 ----
 
@@ -749,12 +748,12 @@ Severity: 💡 hint. `x: f x`, which is `f` when `f` is a name or an attribute p
 ----
 { f, lib }:
 [
-  f
-  lib.length
+  (f)
+  (lib.length)
   (x: f x x)
   # Partial applications are kept.
   (x: lib.map f x)
-  (map f [ ])
+  (map (f) [ ])
 ]
 ----
 
@@ -875,7 +874,7 @@ Severity: ⚠️ warning. `isNull e`, which is `e == null`.
 [
   (x == null)
   (x == null)
-  (x != null)
+  (!(x == null))
 ]
 ----
 
@@ -902,22 +901,11 @@ Severity: ⚠️ warning. `builtins.toPath`, which is deprecated. There is no fi
 ]
 ----
 
-[source,nix,role="secondary"]
-.Fixed
-----
-{ x }:
-[
-  (builtins.toPath x)
-  (builtins.toPath x)
-]
-----
-
 [source,text,role="secondary"]
 .Diagnostics
 ----
 deprecated-to-path.nix:3:4: warning[deprecated-to-path]: 'builtins.toPath' is deprecated
 deprecated-to-path.nix:4:4: warning[deprecated-to-path]: '__toPath' is deprecated
-deprecated-to-path.nix:4:4: warning[prefixed-builtin]: '__toPath' is 'builtins.toPath' [fix]
 ----
 
 [[lint-empty-list-concat]]
@@ -941,9 +929,9 @@ Severity: ⚠️ warning. A concatenation with `[ ]`.
 ----
 { x }:
 [
-  x
-  x
-  [ ]
+  (x)
+  (x)
+  ([ ])
 ]
 ----
 
@@ -1014,7 +1002,7 @@ Severity: 💡 hint. `lib.groupBy` and `lib.zipAttrsWith`, which the builtins of
   builtins.groupBy
   builtins.zipAttrsWith
   lib.mapAttrs
-  (_: builtins.groupBy)
+  (builtins: lib.groupBy)
 ]
 ----
 
@@ -1023,8 +1011,6 @@ Severity: 💡 hint. `lib.groupBy` and `lib.zipAttrsWith`, which the builtins of
 ----
 faster-builtin.nix:3:3: hint[faster-builtin]: 'lib.groupBy' can be 'builtins.groupBy' [fix]
 faster-builtin.nix:4:3: hint[faster-builtin]: 'lib.attrsets.zipAttrsWith' can be 'builtins.zipAttrsWith' [fix]
-faster-builtin.nix:6:4: warning[unused-lambda-arg]: unused lambda argument 'builtins' [fix]
-faster-builtin.nix:6:4: warning[shadowed-builtin]: 'builtins' shadows a builtin
 faster-builtin.nix:6:14: hint[faster-builtin]: 'lib.groupBy' can be 'builtins.groupBy'
 ----
 
@@ -1104,30 +1090,10 @@ Severity: ❌ error. `builtins.x` where `x` is not a builtin, unless the file te
 ]
 ----
 
-[source,nix,role="secondary"]
-.Fixed
-----
-[
-  builtins.map
-  builtins.mapAttrs'
-  (builtins.fetchClosure or null)
-  # Tested first, so the file works where Nix has it.
-  (builtins.getFlakeAttr or null)
-  (
-    let
-      builtins = { };
-    in
-    builtins.custom
-  )
-]
-----
-
 [source,text,role="secondary"]
 .Diagnostics
 ----
 unknown-builtin.nix:3:3: error[unknown-builtin]: unknown builtin 'builtins.mapAttrs''
-unknown-builtin.nix:6:4: warning[useless-has-attr]: can be written 'builtins.getFlakeAttr or ...' [fix]
-unknown-builtin.nix:9:7: warning[shadowed-builtin]: 'builtins' shadows a builtin
 ----
 
 [[lint-prefixed-builtin]]
@@ -1169,7 +1135,6 @@ Severity: ⚠️ warning. `__x` for the builtin `builtins.x`.
 .Diagnostics
 ----
 prefixed-builtin.nix:2:4: warning[prefixed-builtin]: '__add' is 'builtins.add' [fix]
-prefixed-builtin.nix:6:7: warning[shadowed-builtin]: 'builtins' shadows a builtin
 prefixed-builtin.nix:8:5: warning[prefixed-builtin]: '__sub' is 'builtins.sub'
 ----
 
@@ -1331,9 +1296,6 @@ stdenv.mkDerivation {
   pname = "example";
   version = "1.0";
 
-  __structuredAttrs = true;
-  strictDeps = true;
-
   installPhase = ''
     runHook preInstall
 
@@ -1366,8 +1328,6 @@ stdenv.mkDerivation {
 [source,text,role="secondary"]
 .Diagnostics
 ----
-missing-phase-hooks.nix:2:1: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-phase-hooks.nix:2:1: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-phase-hooks.nix:6:3: warning[missing-phase-hooks]: 'installPhase' does not run 'runHook preInstall' and 'runHook postInstall' [fix]
 missing-phase-hooks.nix:12:3: warning[missing-phase-hooks]: 'buildPhase' does not run 'runHook postBuild' [fix]
 missing-phase-hooks.nix:24:3: warning[missing-phase-hooks]: 'configurePhase' does not run 'runHook preConfigure' and 'runHook postConfigure'
@@ -1449,9 +1409,6 @@ Severity: ⚠️ warning. A derivation built from a `rec` set whose attributes r
   hello = stdenv.mkDerivation (finalAttrs: {
     pname = "hello";
     version = "2.12";
-
-    __structuredAttrs = true;
-    strictDeps = true;
     src = fetchurl {
       url = "mirror://gnu/hello/${finalAttrs.pname}-${finalAttrs.version}.tar.gz";
       hash = "sha256-AAAA";
@@ -1478,27 +1435,18 @@ Severity: ⚠️ warning. A derivation built from a `rec` set whose attributes r
   });
 
   # Not fixed: the inner `finalAttrs` would capture `pname` and `version`.
-  nested = stdenv.mkDerivation (finalAttrs: {
+  nested = stdenv.mkDerivation rec {
     pname = "nested";
     version = "1.0";
-
-    __structuredAttrs = true;
-    strictDeps = true;
-    modules = stdenv.mkDerivation (_: {
-      pname = "${finalAttrs.pname}-modules";
-      inherit (finalAttrs) version;
-
-      __structuredAttrs = true;
-      strictDeps = true;
+    modules = stdenv.mkDerivation (finalAttrs: {
+      pname = "${pname}-modules";
+      inherit version;
     });
-  });
+  };
 
   # Left to `extra-rec`: no attribute refers to another.
-  plain = stdenv.mkDerivation {
+  plain = stdenv.mkDerivation rec {
     pname = "plain";
-
-    __structuredAttrs = true;
-    strictDeps = true;
   };
 }
 ----
@@ -1506,20 +1454,10 @@ Severity: ⚠️ warning. A derivation built from a `rec` set whose attributes r
 [source,text,role="secondary"]
 .Diagnostics
 ----
-missing-final-attrs.nix:9:11: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-final-attrs.nix:9:11: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-final-attrs.nix:9:31: warning[missing-final-attrs]: use 'finalAttrs: { ... }' instead of 'rec { ... }' [fix]
 missing-final-attrs.nix:23:31: warning[missing-final-attrs]: use 'finalAttrs: { ... }' instead of 'rec { ... }'
 missing-final-attrs.nix:31:32: warning[missing-final-attrs]: use 'finalAttrs: { ... }' instead of 'rec { ... }' [fix]
-missing-final-attrs.nix:38:12: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-final-attrs.nix:38:12: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-final-attrs.nix:38:32: warning[missing-final-attrs]: use 'finalAttrs: { ... }' instead of 'rec { ... }'
-missing-final-attrs.nix:41:15: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-final-attrs.nix:41:15: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
-missing-final-attrs.nix:41:36: warning[unused-lambda-arg]: unused lambda argument 'finalAttrs' [fix]
-missing-final-attrs.nix:48:11: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-final-attrs.nix:48:11: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
-missing-final-attrs.nix:48:31: warning[extra-rec]: 'rec' is not needed: no attribute refers to another [fix]
 ----
 
 [[lint-missing-structured-attrs]]
@@ -1604,7 +1542,6 @@ Severity: 💡 hint. A derivation that does not set `__structuredAttrs`, which n
     inherit pname version;
 
     __structuredAttrs = true;
-    strictDeps = true;
     meta.description = "${finalAttrs.pname} example";
   });
 
@@ -1619,14 +1556,12 @@ Severity: 💡 hint. A derivation that does not set `__structuredAttrs`, which n
   set = stdenv.mkDerivation {
     pname = "set";
     __structuredAttrs = true;
-    strictDeps = true;
   };
 
   # Deliberately off.
   off = stdenv.mkDerivation {
     pname = "off";
     __structuredAttrs = false;
-    strictDeps = true;
   };
 
   # Defaults to `true`.
@@ -1646,10 +1581,7 @@ Severity: 💡 hint. A derivation that does not set `__structuredAttrs`, which n
 ----
 missing-structured-attrs.nix:10:11: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
 missing-structured-attrs.nix:17:11: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-structured-attrs.nix:17:11: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-structured-attrs.nix:22:8: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-missing-structured-attrs.nix:28:9: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
-missing-structured-attrs.nix:34:9: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 ----
 
 [[lint-missing-strict-deps]]
@@ -1726,7 +1658,6 @@ Severity: 💡 hint. A derivation that does not set `strictDeps`, which nixpkgs 
     pname = "both";
     version = "1.0";
 
-    __structuredAttrs = true;
     strictDeps = true;
 
     src = ./.;
@@ -1771,7 +1702,6 @@ Severity: 💡 hint. A derivation that does not set `strictDeps`, which nixpkgs 
 [source,text,role="secondary"]
 .Diagnostics
 ----
-missing-strict-deps.nix:10:10: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
 missing-strict-deps.nix:10:10: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-strict-deps.nix:17:16: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-strict-deps.nix:44:12: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
@@ -1976,7 +1906,7 @@ Severity: ⚠️ warning. A fetcher given `sha256`, where nixpkgs uses `hash` wi
   })
   (fetchurl {
     url = "https://example.org/f.tar.gz";
-    inherit sha256;
+    sha256 = sha256;
   })
   # Not fixed: the url refers to it.
   (fetchurl rec {
@@ -2010,7 +1940,6 @@ sri-hash.nix:16:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sh
 sri-hash.nix:22:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sha256' [fix]
 sri-hash.nix:28:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sha256' [fix]
 sri-hash.nix:33:13: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sha256'
-sri-hash.nix:37:5: warning[manual-inherit]: 'sha256 = sha256;' can be written 'inherit sha256;' [fix]
 sri-hash.nix:37:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sha256'
 sri-hash.nix:42:5: warning[sri-hash]: use 'hash' with an SRI hash instead of 'sha256'
 ----
@@ -2083,9 +2012,6 @@ Severity: ⚠️ warning. A `NIX_` variable such as `NIX_CFLAGS_COMPILE` set bes
 {
   string = stdenv.mkDerivation {
     pname = "string";
-
-    __structuredAttrs = true;
-    strictDeps = true;
     env.NIX_CFLAGS_COMPILE = "-Wno-error";
     env.NIX_LDFLAGS = lib.optionalString stdenv.hostPlatform.isDarwin "-framework Foundation";
     # A list, which env does not take as such.
@@ -2103,10 +2029,8 @@ Severity: ⚠️ warning. A `NIX_` variable such as `NIX_CFLAGS_COMPILE` set bes
   };
 
   # Merged with the env written in place.
-  merged = buildGoModule (_: {
+  merged = buildGoModule (finalAttrs: {
     pname = "merged";
-
-    __structuredAttrs = true;
     env = {
       CGO_ENABLED = 0;
     };
@@ -2116,9 +2040,6 @@ Severity: ⚠️ warning. A `NIX_` variable such as `NIX_CFLAGS_COMPILE` set bes
   # Not fixed: env is not written in place.
   computed = stdenv.mkDerivation {
     pname = "computed";
-
-    __structuredAttrs = true;
-    strictDeps = true;
     env = lib.optionalAttrs stdenv.hostPlatform.isDarwin { CC = "clang"; };
     NIX_LDFLAGS = "-lz";
   };
@@ -2126,9 +2047,6 @@ Severity: ⚠️ warning. A `NIX_` variable such as `NIX_CFLAGS_COMPILE` set bes
   # Not fixed: the file refers to it.
   referred = stdenv.mkDerivation (finalAttrs: {
     pname = "referred";
-
-    __structuredAttrs = true;
-    strictDeps = true;
     NIX_HARDENING_ENABLE = "fortify";
     passthru.hardening = finalAttrs.NIX_HARDENING_ENABLE;
   });
@@ -2138,21 +2056,13 @@ Severity: ⚠️ warning. A `NIX_` variable such as `NIX_CFLAGS_COMPILE` set bes
 [source,text,role="secondary"]
 .Diagnostics
 ----
-env-variable.nix:7:12: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-env-variable.nix:7:12: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 env-variable.nix:9:5: warning[env-variable]: set 'NIX_CFLAGS_COMPILE' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:10:5: warning[env-variable]: set 'NIX_LDFLAGS' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:12:5: warning[env-variable]: set 'NIX_CFLAGS_LINK' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:16:5: warning[env-variable]: set 'NIX_DEBUG' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:17:5: warning[env-variable]: set 'NIX_ENFORCE_PURITY' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:18:5: warning[env-variable]: set 'NIX_HARDENING_ENABLE' in 'env', or it is not exported with __structuredAttrs
-env-variable.nix:26:12: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-env-variable.nix:26:27: warning[unused-lambda-arg]: unused lambda argument 'finalAttrs' [fix]
 env-variable.nix:31:5: warning[env-variable]: set 'NIX_LDFLAGS' in 'env', or it is not exported with __structuredAttrs [fix]
-env-variable.nix:35:14: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-env-variable.nix:35:14: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 env-variable.nix:38:5: warning[env-variable]: set 'NIX_LDFLAGS' in 'env', or it is not exported with __structuredAttrs
-env-variable.nix:42:14: hint[missing-structured-attrs]: set '__structuredAttrs = true;' [fix]
-env-variable.nix:42:14: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 env-variable.nix:44:5: warning[env-variable]: set 'NIX_HARDENING_ENABLE' in 'env', or it is not exported with __structuredAttrs
 ----

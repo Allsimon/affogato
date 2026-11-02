@@ -34,7 +34,7 @@
   })
   (fetchurl {
     url = "https://example.org/f.tar.gz";
-    inherit sha256;
+    sha256 = sha256;
   })
   # Not fixed: the url refers to it.
   (fetchurl rec {
