@@ -172,9 +172,11 @@ final class Patterns {
 
     private void binds(List<Binding> binds, boolean recursive) {
         Map<String, List<Assign>> nested = new LinkedHashMap<>();
+        Set<String> whole = new HashSet<>();
         for (Binding b : binds) {
             switch (b) {
                 case Inherit i -> {
+                    for (AttrNode a : i.names()) whole.add(Nodes.staticName(a));
                     if (i.names().isEmpty()) {
                         report(
                                 Rule.EMPTY_INHERIT,
@@ -190,21 +192,173 @@ final class Patterns {
                     if (name == null) continue;
                     if (a.path().size() > 1)
                         nested.computeIfAbsent(name, k -> new ArrayList<>()).add(a);
-                    else manualInherit(a, name, recursive);
+                    else {
+                        whole.add(name);
+                        manualInherit(a, name, recursive);
+                    }
                 }
             }
         }
         for (var e : nested.entrySet()) {
             List<Assign> as = e.getValue();
             if (as.size() < 3) continue;
+            int shared = shared(as);
             AttrNode first = as.getFirst().path().getFirst().attr();
             report(
                     Rule.REPEATED_KEYS,
                     Nodes.attrStart(first),
                     Nodes.attrEnd(first),
-                    "'" + e.getKey() + "' is set " + as.size() + " times; group its attributes in one attribute set",
-                    List.of());
+                    "'"
+                            + src.substring(
+                                    Nodes.attrStart(first),
+                                    Nodes.attrEnd(
+                                            as.getFirst().path().get(shared - 1).attr()))
+                            + "' is set " + as.size() + " times; group its attributes in one attribute set",
+                    whole.contains(e.getKey()) ? List.of() : group(as, shared));
         }
+    }
+
+    /** How many attributes all paths start with, leaving at least one to each. */
+    private static int shared(List<Assign> as) {
+        int n = 1;
+        while (true) {
+            String next = as.getFirst().path().size() > n + 1
+                    ? Nodes.staticName(as.getFirst().path().get(n).attr())
+                    : null;
+            int i = n;
+            if (next == null
+                    || !as.stream()
+                            .allMatch(a -> a.path().size() > i + 1
+                                    && next.equals(
+                                            Nodes.staticName(a.path().get(i).attr())))) return n;
+            n++;
+        }
+    }
+
+    /**
+     * Moves the bindings into one attribute set in place of the first, as Nix desugars them: on one line when they
+     * are, else one per line with their comments.
+     */
+    private List<Edit> group(List<Assign> as, int shared) {
+        Assign first = as.getFirst();
+        int start = Nodes.attrStart(first.path().getFirst().attr());
+        String name =
+                src.substring(start, Nodes.attrEnd(first.path().get(shared - 1).attr()));
+        if (src.substring(start, as.getLast().semi().end()).indexOf('\n') < 0) {
+            StringBuilder sb = new StringBuilder(name).append(" = {");
+            for (Assign a : as) sb.append(' ').append(rest(a, shared));
+            List<Edit> edits = new ArrayList<>();
+            edits.add(new Edit(start, first.semi().end(), sb.append(" };").toString()));
+            for (Assign a : as.subList(1, as.size()))
+                edits.add(Text.delete(src, Nodes.start(a), a.semi().end()));
+            return edits;
+        }
+        String outer = indent(start);
+        for (Assign a : as) if (!Text.isBlank(outer) || !indent(Nodes.start(a)).equals(outer)) return List.of();
+        StringBuilder sb = new StringBuilder(name).append(" = {\n");
+        List<Edit> edits = new ArrayList<>();
+        int previous = start;
+        for (Assign a : as) {
+            int from = a == first ? Nodes.start(a) : leadingComments(Nodes.start(a));
+            int to = trailingComment(a.semi().end());
+            if (a != first && blankBefore(from)) sb.append('\n');
+            sb.append(outer)
+                    .append("  ")
+                    .append(indented(from, Nodes.start(a)))
+                    .append(indented(Nodes.attrStart(a.path().get(shared).attr()), to))
+                    .append('\n');
+            edits.add(a == first ? new Edit(start, to, "") : deleteLines(from, to, previous));
+            previous = to;
+        }
+        Edit head = edits.getFirst();
+        edits.set(
+                0,
+                new Edit(head.start(), head.end(), sb.append(outer).append("};").toString()));
+        return edits;
+    }
+
+    /**
+     * Deletes like {@link Text#delete}, with the blank line above when it follows the binding moved before, ending at
+     * {@code previous}, or a blank line or the closing brace follows.
+     */
+    private Edit deleteLines(int from, int to, int previous) {
+        Edit d = Text.delete(src, from, to);
+        if (!blankBefore(from) || d.start() == 0 || src.charAt(d.start() - 1) != '\n') return d;
+        int next = src.indexOf('\n', d.end());
+        String after = src.substring(d.end(), next < 0 ? src.length() : next).strip();
+        boolean moved = Text.isBlank(src.substring(previous, d.start()));
+        if (!moved && !after.isEmpty() && !after.startsWith("}")) return d;
+        return new Edit(src.lastIndexOf('\n', d.start() - 2) + 1, d.end(), "");
+    }
+
+    private boolean blankBefore(int at) {
+        int lineStart = src.lastIndexOf('\n', at - 1) + 1;
+        return lineStart > 0 && Text.isBlank(src.substring(src.lastIndexOf('\n', lineStart - 2) + 1, lineStart - 1));
+    }
+
+    /** The binding without the first {@code shared} attributes of its path. */
+    private String rest(Assign a, int shared) {
+        return src.substring(
+                Nodes.attrStart(a.path().get(shared).attr()), a.semi().end());
+    }
+
+    /** What precedes {@code at} on its line. */
+    private String indent(int at) {
+        return src.substring(src.lastIndexOf('\n', at - 1) + 1, at);
+    }
+
+    /** The start of the comment lines right above the line of {@code at}, else {@code at}. */
+    private int leadingComments(int at) {
+        int from = at;
+        int lineStart = src.lastIndexOf('\n', at - 1) + 1;
+        while (lineStart > 0) {
+            int prev = src.lastIndexOf('\n', lineStart - 2) + 1;
+            String line = src.substring(prev, lineStart - 1).strip();
+            if (!line.startsWith("#")) break;
+            from = prev + src.substring(prev).indexOf('#');
+            lineStart = prev;
+        }
+        return from;
+    }
+
+    /** The end of a {@code #} comment that follows {@code at} on its line, else {@code at}. */
+    private int trailingComment(int at) {
+        int i = at;
+        while (i < src.length() && (src.charAt(i) == ' ' || src.charAt(i) == '\t')) i++;
+        if (i == src.length() || src.charAt(i) != '#') return at;
+        int end = src.indexOf('\n', i);
+        return end < 0 ? src.length() : end;
+    }
+
+    /** The source between {@code start} and {@code end}, its lines indented by two more spaces. */
+    private String indented(int start, int end) {
+        StringBuilder sb = new StringBuilder();
+        int last = start;
+        for (int i = src.indexOf('\n', start); i >= 0 && i < end; i = src.indexOf('\n', i + 1)) {
+            sb.append(src, last, i + 1);
+            last = i + 1;
+            if (i + 1 < end && src.charAt(i + 1) != '\n' && shiftable(i)) sb.append("  ");
+        }
+        return sb.append(src, last, end).toString();
+    }
+
+    /**
+     * Whether the line after the line break at {@code at} can move: not in a string, unless an indented one whose
+     * content starts on a line of its own, as Nix strips their common indentation.
+     */
+    private boolean shiftable(int at) {
+        Str in = null;
+        for (Node n : scope.nodes) {
+            if (n instanceof Str s
+                    && s.open().start() < at
+                    && at < s.close().start()
+                    && (in == null || s.open().start() > in.open().start())) in = s;
+        }
+        return in == null
+                || in.open().type() == TokenType.IND_STR_OPEN
+                        && Text.isBlank(src.substring(
+                                in.open().start() + 2,
+                                src.indexOf('\n', in.open().start())));
     }
 
     private void manualInherit(Assign a, String name, boolean recursive) {

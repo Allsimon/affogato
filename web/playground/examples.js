@@ -22,7 +22,7 @@ const examples = {
   "empty-list-concat": "{ x }:\n[\n  ([ ] ++ x)\n  (x ++ [ ])\n  ([ ] ++ [ ])\n]\n",
   "useless-has-attr": "{ x, d }:\n[\n  (if x ? a then x.a else d)\n  (if x.y ? a.b then x.y.a.b else d + 1)\n  (if x ? a then x.b else d)\n]\n",
   "faster-builtin": "{ lib }:\n[\n  lib.groupBy\n  lib.attrsets.zipAttrsWith\n  lib.mapAttrs\n  (builtins: lib.groupBy)\n]\n",
-  "repeated-keys": "{\n  a.b = 1;\n  a.c = 2;\n  a.d = 3;\n  e.f = 1;\n  e.g = 2;\n}\n",
+  "repeated-keys": "{\n  a.b = 1;\n  a.c = 2; # This comment moves with its binding.\n  x = 0;\n\n  # So does this one, above its binding.\n  a.d = {\n    e = ''\n      kept\n    '';\n    # Its second line is part of the string, so it stays.\n    f = \"not\n    moved\";\n  };\n\n  f = { g.h = 1; g.i = 2; g.j = 3; };\n\n  # Grouped under the prefix they share.\n  k.l.m = 1;\n  k.l.n = 2;\n  k.l.o = 3;\n\n  # Not fixed: `p` is also set whole.\n  p = { };\n  p.q = 1;\n  p.r = 2;\n  p.s = 3;\n\n  w.a = 1;\n\n  w.b = 2;\n\n  w.c = 3;\n  y = 0;\n\n  t.u = 1;\n  t.v = 2;\n}\n",
   "undefined-variable": "{ known }:\n[\n  known\n  unknown\n  true\n  __curPos\n  <nixpkgs>\n  # `with` may bind it.\n  (with known; maybe)\n]\n",
   "unknown-builtin": "[\n  builtins.map\n  builtins.mapAttrs'\n  (builtins.fetchClosure or null)\n  # Tested first, so the file works where Nix has it.\n  (if builtins ? getFlakeAttr then builtins.getFlakeAttr else null)\n  (\n    let\n      builtins = { };\n    in\n    builtins.custom\n  )\n]\n",
   "prefixed-builtin": "[\n  (__add 1 2)\n  __curPos\n  (\n    let\n      builtins = { };\n    in\n    __sub builtins 1\n  )\n]\n",

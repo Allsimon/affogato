@@ -59,7 +59,10 @@ public enum Rule {
     REPEATED_KEYS(
             HINT,
             "Three or more bindings that start with the same attribute, such as `a.b`, `a.c` and `a.d`, which could"
-                    + " form one nested attribute set. There is no fix."),
+                    + " form one nested attribute set. The fix moves them into `+a = { ... };+` in place of the first,"
+                    + " with the comments on their lines; `a.b.c`, `a.b.d` and `a.b.e` go into `+a.b = { ... };+`."
+                    + " It is withheld when the set also binds `a` whole, or when bindings over several lines do not"
+                    + " each start a line."),
 
     UNDEFINED_VARIABLE(
             ERROR,
