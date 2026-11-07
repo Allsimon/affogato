@@ -35,6 +35,8 @@ the same parser as the other commands. It answers with:
 * completion of the names in scope, the builtins and the keywords, and of the
   attributes of `builtins` after `builtins.`;
 * document symbols, folding ranges, selection ranges and semantic tokens;
+* links on the paths without interpolation, the URIs, and the strings that are
+  an http or https URL;
 * code actions for the linter's fixes and suppression comments, and
   `source.fixAll` for all the fixes;
 * `affogato/injections`, a request of its own, which takes a `textDocument` and
