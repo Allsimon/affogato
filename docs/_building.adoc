@@ -38,16 +38,24 @@ nix shell nixpkgs#nodejs -c node web/check.cjs \
   format/src/test/java lint/src/test/java/cases   # the formatter and linter test cases, in JavaScript
 ----
 
-The page in `web/playground` is Monaco through `monaco-languageclient`, built
-with Vite. `public/server.js` is the language server's worker: it loads
-`affogato.js`, which Vite does not see, so copy it into `public/` to run the
-page from the sources:
+The page in `web/playground` is Monaco through `monaco-languageclient`,
+bundled by `build.sh` with the esbuild of nixpkgs; npm only supplies the
+libraries. `public/server.js` is the language server's worker: it loads
+`affogato.js`, which the bundle does not include, so copy it into `public/` to
+run the page from the sources:
 
 [source,sh]
 ----
 cp target/build/modules/compose/module/package-module-web+src+main+java/custom/teavm/delegate/teavm/output/javascript/affogato.js web/playground/public/
-cd web/playground && nix shell nixpkgs#nodejs -c sh -c 'npm install && npx vite'
+cd web/playground
+nix shell nixpkgs#nodejs nixpkgs#esbuild -c sh -c 'npm install && ./build.sh dist'
+nix run nixpkgs#python3 -- -m http.server -d dist
 ----
+
+esbuild leaves `new URL(..., import.meta.url)` unresolved, so `build.sh`
+copies the files the page reaches that way, the codicon font and the default
+themes, and `main.js` points Monaco at the editor worker it bundles. A
+Monaco upgrade that loads another such file shows it as a failed request.
 
 Nix fetches each npm package with the hash `package-lock.json` gives it, so
 a change to the lockfile needs nothing else.
@@ -99,7 +107,7 @@ file that names them. Without GraalVM's compiler, Truffle runs its fallback
 runtime, which only interprets; runtime compilation is off by default anyway.
 `affogato-truffle-native`:: the launcher as a static native image, built with
 GraalVM.
-`playground`:: the Vite build of `web/playground` and `affogato.js`: Monaco
+`playground`:: the esbuild bundle of `web/playground` and `affogato.js`: Monaco
 editing Nix in the browser, with the language server in a worker; serve it, as
 workers do not load from a file. Its rule selector loads the linter's cases
 from `examples.js`, which `PlaygroundExamplesTest` regenerates.
