@@ -26,6 +26,7 @@ let
           ../cli/src/main
           ../format/src/main
           ../lint/src/main
+          ../lsp/src/main
           ../parser/src/main
           ../store/src/main
         ]
@@ -44,6 +45,7 @@ let
     ../vendir.yml
     ../flake.lock
     ../lint/src/test
+    ../lsp/src/test
     ../parser/src/test
     ../docs/cli
     ../docs/_lint-rules.adoc

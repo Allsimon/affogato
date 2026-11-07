@@ -17,6 +17,7 @@ module org.affogato.cli {
     requires info.picocli;
     requires org.affogato.format;
     requires org.affogato.lint;
+    requires org.affogato.lsp;
     requires org.affogato.parser;
 
     exports org.affogato.cli;

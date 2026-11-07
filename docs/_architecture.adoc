@@ -6,7 +6,9 @@ Each top-level folder is a Java module.
 A hand-written lexer and parser. It builds a concrete syntax tree that keeps
 every token, then lowers it to the evaluator's AST. `Tokenizer` splits the
 source into lexemes that cover all of it, comments included, which the
-linter reads its suppression comments from.
+linter reads its suppression comments from. For editors, `TreeParser` parses
+them through a `TreeBuilder` shaped like IntelliJ's `PsiBuilder`, reporting
+errors and going on where `Parser` stops.
 
 `store/`::
 NAR hashing, Nix base32 and store-path computation.

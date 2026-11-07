@@ -4,6 +4,7 @@ import org.affogato.cli.Check;
 import org.affogato.cli.Completion;
 import org.affogato.cli.Fix;
 import org.affogato.cli.Format;
+import org.affogato.cli.Lsp;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -12,7 +13,7 @@ import picocli.CommandLine.ScopeType;
 @Command(
         name = "affogato",
         description = "A Nix language implementation on GraalVM.",
-        subcommands = {Format.class, Check.class, Fix.class, Eval.class, DrvPath.class, Completion.class})
+        subcommands = {Format.class, Check.class, Fix.class, Lsp.class, Eval.class, DrvPath.class, Completion.class})
 public final class Main {
     @Option(
             names = {"-h", "--help"},

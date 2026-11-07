@@ -239,13 +239,15 @@ public final class Highlighter {
         }
     }
 
+    /** {@link Kind#CONSTANT} or {@link Kind#BUILTIN} for a variable so named, else null. */
+    public static Kind nameKind(String name) {
+        if (CONSTANTS.contains(name)) return Kind.CONSTANT;
+        return BUILTINS.contains(name) ? Kind.BUILTIN : null;
+    }
+
     private static Kind kind(Token t, boolean selected) {
         return switch (t.type()) {
-            case ID -> {
-                if (selected) yield null;
-                if (CONSTANTS.contains(t.text())) yield Kind.CONSTANT;
-                yield BUILTINS.contains(t.text()) ? Kind.BUILTIN : null;
-            }
+            case ID -> selected ? null : nameKind(t.text());
             case INT, FLOAT -> Kind.NUMBER;
             case PATH, HPATH, SPATH, URI -> Kind.PATH;
             default -> KEYWORDS.contains(t.type()) ? Kind.KEYWORD : Kind.OPERATOR;

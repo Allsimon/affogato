@@ -1,0 +1,53 @@
+// tag::picocli-generated-full-manpage[]
+// tag::picocli-generated-man-section-header[]
+:doctype: manpage
+:revnumber: 
+:manmanual: Affogato Manual
+:mansource: 
+:man-linkstyle: pass:[blue R < >]
+= affogato-lsp(1)
+
+// end::picocli-generated-man-section-header[]
+
+// tag::picocli-generated-man-section-name[]
+== Name
+
+affogato-lsp - Run a language server for Nix over stdin and stdout.
+
+// end::picocli-generated-man-section-name[]
+
+// tag::picocli-generated-man-section-synopsis[]
+== Synopsis
+
+*affogato lsp* [*-h*]
+
+// end::picocli-generated-man-section-synopsis[]
+
+// tag::picocli-generated-man-section-description[]
+== Description
+
+Run a language server for Nix over stdin and stdout.
+
+// end::picocli-generated-man-section-description[]
+
+// tag::picocli-generated-man-section-options[]
+== Options
+
+*-h*, *--help*::
+  Show this help and exit.
+
+// end::picocli-generated-man-section-options[]
+
+// tag::picocli-generated-man-section-arguments[]
+// end::picocli-generated-man-section-arguments[]
+
+// tag::picocli-generated-man-section-commands[]
+// end::picocli-generated-man-section-commands[]
+
+// tag::picocli-generated-man-section-exit-status[]
+// end::picocli-generated-man-section-exit-status[]
+
+// tag::picocli-generated-man-section-footer[]
+// end::picocli-generated-man-section-footer[]
+
+// end::picocli-generated-full-manpage[]
