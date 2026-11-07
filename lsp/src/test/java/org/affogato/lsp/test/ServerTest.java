@@ -293,6 +293,27 @@ class ServerTest {
     }
 
     @Test
+    void expandsAndCollapsesABinding() {
+        open("{ a.b = 1; }\n");
+        Map<String, Object> expand = map(list(result(
+                        "textDocument/codeAction",
+                        "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":" + Json.write(range(0, 2, 0, 2))
+                                + ",\"context\":{\"diagnostics\":[]}}"))
+                .getFirst());
+        assertThat(expand).containsEntry("title", "Expand the binding").containsEntry("kind", "refactor.rewrite");
+        assertThat(list(map(map(expand.get("edit")).get("changes")).get(URI)))
+                .containsExactly(Map.of("range", range(0, 2, 0, 10), "newText", "a = { b = 1; };"));
+        open("{ a = { b = 1; }; }\n");
+        assertThat(list(result(
+                                "textDocument/codeAction",
+                                "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":" + Json.write(range(0, 2, 0, 2))
+                                        + ",\"context\":{\"diagnostics\":[]}}"))
+                        .stream()
+                        .map(a -> map(a).get("title")))
+                .containsExactly("Collapse the binding");
+    }
+
+    @Test
     void offersNoActionAwayFromAFinding() {
         open("let unused = 1; in 2\n");
         assertThat(list(result(

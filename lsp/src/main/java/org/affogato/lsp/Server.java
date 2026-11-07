@@ -23,6 +23,7 @@ import org.affogato.lint.Edit;
 import org.affogato.lint.Linter;
 import org.affogato.lint.Rule;
 import org.affogato.lint.Suppressions;
+import org.affogato.parser.Bindings;
 import org.affogato.parser.Highlighter;
 import org.affogato.parser.Injections;
 import org.affogato.parser.Lexeme;
@@ -209,7 +210,9 @@ public final class Server {
         capabilities.put("foldingRangeProvider", true);
         capabilities.put("selectionRangeProvider", true);
         capabilities.put("documentLinkProvider", Map.of());
-        capabilities.put("codeActionProvider", Map.of("codeActionKinds", List.of("quickfix", "source.fixAll")));
+        capabilities.put(
+                "codeActionProvider",
+                Map.of("codeActionKinds", List.of("quickfix", "refactor.rewrite", "source.fixAll")));
         capabilities.put(
                 "semanticTokensProvider",
                 Map.of(
@@ -501,6 +504,8 @@ public final class Server {
             }
             return actions;
         }
+        rewrite(actions, uri, lines, "Expand the binding", Bindings.expand(document.text(), start));
+        rewrite(actions, uri, lines, "Collapse the binding", Bindings.collapse(document.text(), start));
         for (Diagnostic d : Linter.lint(document.text(), rules)) {
             if (d.end() < start || d.start() > end) continue;
             String id = d.rule().id();
@@ -527,6 +532,16 @@ public final class Server {
                     List.of(Map.of("range", lines.range(0, 0), "newText", Suppressions.ignoreFile(d.rule()) + "\n"))));
         }
         return actions;
+    }
+
+    private static void rewrite(List<Object> actions, String uri, Lines lines, String title, Bindings.Rewrite rewrite) {
+        if (rewrite == null) return;
+        Map<String, Object> action = action(
+                title,
+                uri,
+                List.of(Map.of("range", lines.range(rewrite.start(), rewrite.end()), "newText", rewrite.text())));
+        action.put("kind", "refactor.rewrite");
+        actions.add(action);
     }
 
     private static Map<String, Object> action(String title, String uri, List<Object> edits) {
