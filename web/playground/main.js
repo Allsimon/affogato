@@ -2,10 +2,10 @@ import "@codingame/monaco-vscode-theme-defaults-default-extension";
 import { EditorApp } from "monaco-languageclient/editorApp";
 import { LanguageClientWrapper, LcWorker } from "monaco-languageclient/lcwrapper";
 import { MonacoVscodeApiWrapper } from "monaco-languageclient/vscodeApiWrapper";
-import { configureDefaultWorkerFactory } from "monaco-languageclient/workerFactory";
+import { Worker, useWorkerFactory } from "monaco-languageclient/workerFactory";
 import { examples } from "./examples.js";
 // pkgs/by-name/kc/kcgi/package.nix of nixpkgs 718f670e845328e9c2cecdd832835712b2cbd065
-import kcgi from "./kcgi.nix?raw";
+import kcgi from "./kcgi.nix";
 
 const uri = "/workspace/default.nix";
 const status = document.getElementById("status");
@@ -43,7 +43,11 @@ await new MonacoVscodeApiWrapper({
     })]]),
   }],
   advanced: { enforceSemanticHighlighting: true },
-  monacoWorkerFactory: configureDefaultWorkerFactory,
+  monacoWorkerFactory: () => useWorkerFactory({
+    workerLoaders: {
+      editorWorkerService: () => new Worker(new URL("editor.worker.js", location.href), { type: "module" }),
+    },
+  }),
 }).start();
 
 const client = new LanguageClientWrapper({

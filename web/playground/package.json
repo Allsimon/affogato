@@ -2,15 +2,8 @@
   "name": "affogato-playground",
   "private": true,
   "type": "module",
-  "scripts": {
-    "build": "vite build",
-    "dev": "vite"
-  },
   "dependencies": {
     "monaco-languageclient": "11.0.3"
-  },
-  "devDependencies": {
-    "vite": "8.3.5"
   },
   "overrides": {
     "monaco-editor": "npm:@codingame/monaco-vscode-editor-api@^37.6.0"

@@ -9,55 +9,27 @@ java build/jenesis/Make.java                       # compile, test, format and r
 java build/jenesis/Execute.java eval -E '1 + 1'    # run the launcher on the JVM
 ----
 
-The command line comes in two modules. `cli` holds `format`, `check` and `fix`
-and its own `affogato` command with only these. `launcher` adds `eval` and
-`drv-path`, which need the evaluator and so Truffle. `jenesis.properties` makes
-`Execute.java` run the launcher; `-Djenesis.execute.module=cli/src/main/java`
-runs the other. The native profile of `cli` is `native-lite`.
+`cli` holds `format`, `check`, `fix` and `lsp`; `launcher` adds `eval` and
+`drv-path`, which need Truffle.
 
 == Playground
 
-The `web` module wraps the language server for JavaScript: `LanguageServer`
-exports `handle`, taking a JSON-RPC message and returning the JSON array of the
-messages answering it. TeaVM compiles it with
-its dependencies to `affogato.js` at the module's package step, through the
-project plugin in `plugins/teavm`, which `jenesis.plugins.properties` declares
-and the module's `plugin-teavm.properties` switches on. TeaVM's jars are no
-modules, so the plugin resolves them onto a class path and runs TeaVM in a JVM
-of its own. Their pins live in the `web` declaration: TeaVM's asm is older than
-the tools', so they cannot share the bill of materials.
-
-TeaVM's class library has no `HexFormat` and no `String.lines`: code the
-playground reaches must do without them, or the build fails naming the method.
+The `web` module compiles the language server to `affogato.js` with TeaVM; the
+page in `web/playground` runs it in Monaco. To run the page from the sources:
 
 [source,sh]
 ----
 java build/jenesis/Make.java build/modules/compose/module/package-module-web+src+main+java
-nix shell nixpkgs#nodejs -c node web/check.cjs \
-  target/build/modules/compose/module/package-module-web+src+main+java/custom/teavm/delegate/teavm/output/javascript/affogato.js \
-  format/src/test/java lint/src/test/java/cases   # the formatter and linter test cases, in JavaScript
-----
-
-The page in `web/playground` is Monaco through `monaco-languageclient`, built
-with Vite. `public/server.js` is the language server's worker: it loads
-`affogato.js`, which Vite does not see, so copy it into `public/` to run the
-page from the sources:
-
-[source,sh]
-----
 cp target/build/modules/compose/module/package-module-web+src+main+java/custom/teavm/delegate/teavm/output/javascript/affogato.js web/playground/public/
-cd web/playground && nix shell nixpkgs#nodejs -c sh -c 'npm install && npx vite'
+cd web/playground
+nix shell nixpkgs#nodejs nixpkgs#esbuild -c sh -c 'npm install && ./build.sh dist'
+nix run nixpkgs#python3 -- -m http.server -d dist
 ----
-
-Nix fetches each npm package with the hash `package-lock.json` gives it, so
-a change to the lockfile needs nothing else.
 
 == Documentation
 
-This documentation is written in AsciiDoc in `docs/`. Files whose names start
-with `_` are only included. The Jenesis Asciidoctor plugin, switched on by
-`build.jenesis/asciidoctor.properties`, renders it during the build. Run `stage`
-to get the HTML in `target/stage/project/output/docs/`, or build it with Nix:
+This documentation is AsciiDoc in `docs/`; files starting with `_` are only
+included. The build renders it, or:
 
 [source,sh]
 ----
@@ -66,45 +38,26 @@ nix build .#docs
 
 == Dependencies
 
-Dependency versions and checksums live in one bill of materials,
-`build.jenesis/pin-affogato.properties`, which every module imports with
-`@jenesis.bom`. After changing a dependency, regenerate it:
+Versions and checksums live in `build.jenesis/pin-affogato.properties`. After
+changing a dependency, regenerate it:
 
 [source,sh]
 ----
 java build/jenesis/Make.java pin
 ----
 
-`jenesis.properties` points `pin` at that file and names the groups it holds:
-the dependencies, and the tools the modules run (palantir-java-format, JaCoCo),
-which the modules import it into as `@jenesis.bom palantir:tool/pin-affogato.properties`.
-A plugin's own version stays pinned in each declaration, as
-`palantir/module/...`: Jenesis does not read it from a file. The project
-plugins' tools are pinned in `jenesis.plugins.pin.properties`.
-
 == Nix
-
-`nix/package.nix` builds offline. `nix/pins.nix` reads the pins of the module
-declarations and of both pin files, and fetches each pinned jar and POM, so a
-new pin needs nothing more.
 
 The flake provides:
 
-`affogato`:: the `cli` module on OpenJDK 25: `format`, `check` and `fix` only,
-without Truffle. It is the default package.
-`affogato-native`:: the `cli` module as a static native image.
-`affogato-truffle`:: the launcher on OpenJDK 25. It runs the bundle the
-launcher's `packaging.properties` asks for: its jars and the `java` argument
-file that names them. Without GraalVM's compiler, Truffle runs its fallback
-runtime, which only interprets; runtime compilation is off by default anyway.
-`affogato-truffle-native`:: the launcher as a static native image, built with
-GraalVM.
-`playground`:: the Vite build of `web/playground` and `affogato.js`: Monaco
-editing Nix in the browser, with the language server in a worker; serve it, as
-workers do not load from a file. Its rule selector loads the linter's cases
-from `examples.js`, which `PlaygroundExamplesTest` regenerates.
+`affogato`:: the command line on OpenJDK 25, without Truffle. It is the
+default package.
+`affogato-native`:: the same as a static native image.
+`affogato-truffle`:: the launcher, with `eval` and `drv-path`, on OpenJDK 25.
+`affogato-truffle-native`:: the launcher as a static native image.
+`playground`:: the playground page; serve it, as workers do not load from a
+file.
 `docs`:: this documentation, rendered to HTML.
-`tests`:: a check that runs the test suite on the JVM and outputs its JaCoCo
-report.
+`tests`:: a check that runs the test suite and outputs its coverage report.
 `playground-tests`:: a check that runs the formatter and linter test cases
-through the language server of `affogato.js` in Node.js.
+against `affogato.js`.

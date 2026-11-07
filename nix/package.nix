@@ -5,6 +5,7 @@
   graalvmPackages,
   buildNpmPackage,
   importNpmLock,
+  esbuild,
   fetchurl,
   installShellFiles,
   linkFarm,
@@ -285,7 +286,7 @@ let
         ../web/playground/examples.js
         ../web/playground/kcgi.nix
         ../web/playground/public/server.js
-        ../web/playground/vite.config.js
+        ../web/playground/build.sh
         ../web/playground/package.json
         ../web/playground/package-lock.json
       ];
@@ -295,6 +296,13 @@ let
       packageLock = lib.importJSON ../web/playground/package-lock.json;
     };
     npmConfigHook = importNpmLock.npmConfigHook;
+    nativeBuildInputs = [ esbuild ];
+    dontNpmBuild = true;
+    buildPhase = ''
+      runHook preBuild
+      ./build.sh dist
+      runHook postBuild
+    '';
     installPhase = ''
       runHook preInstall
       cp -r dist $out
