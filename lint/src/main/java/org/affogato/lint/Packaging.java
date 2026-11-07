@@ -41,6 +41,7 @@ final class Packaging {
         for (Node n : scope.nodes) {
             if (n instanceof Call c && c.args().getLast() instanceof AttrSet s) finalAttrs(src, scope, c, s, out);
             if (n instanceof Str str) replace(src, str, out);
+            fakeHash(src, n, out);
             if (n instanceof Call c) sriHash(src, scope, c, out);
             if (n instanceof Call c) env(src, scope, c, out);
             if (n instanceof Call c) {
@@ -449,6 +450,37 @@ final class Packaging {
                     default -> {}
                 }
             }
+        }
+    }
+
+    private static final Set<String> FAKE_HASHES = Set.of("fakeHash", "fakeSha256", "fakeSha512");
+
+    /** {@code sha256-AAAA...=} and the like: the SRI hash of an algorithm, all zeros. */
+    private static final java.util.regex.Pattern FAKE_SRI =
+            java.util.regex.Pattern.compile("(sha1|sha256|sha512)-A+=*");
+
+    private static void fakeHash(String src, Node n, List<Diagnostic> out) {
+        boolean fake = switch (n) {
+            case Select s ->
+                s.target() instanceof Ident lib
+                        && Scope.name(lib).equals("lib")
+                        && s.path().size() == 1
+                        && FAKE_HASHES.contains(
+                                Nodes.staticName(s.path().getFirst().attr()));
+            case Str str ->
+                str.parts().size() == 1
+                        && str.parts().getFirst() instanceof Lit lit
+                        && FAKE_SRI.matcher(lit.text()).matches();
+            default -> false;
+        };
+        if (fake) {
+            int end = n instanceof Str str ? str.close().end() : n.pos().end();
+            out.add(new Diagnostic(
+                    Rule.FAKE_HASH,
+                    n.pos().start(),
+                    end,
+                    "placeholder hash; the build fails and prints the real one",
+                    List.of()));
         }
     }
 

@@ -1,0 +1,3 @@
+fake-hash.nix:5:12: warning[fake-hash]: placeholder hash; the build fails and prints the real one
+fake-hash.nix:11:12: warning[fake-hash]: placeholder hash; the build fails and prints the real one
+fake-hash.nix:15:14: warning[fake-hash]: placeholder hash; the build fails and prints the real one

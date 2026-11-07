@@ -121,7 +121,12 @@ public enum Rule {
                     + " `__structuredAttrs`, only `env` is exported, so the compiler wrapper would not see it. The"
                     + " fix moves it to `env`, through `toString` unless it is a string already. It is withheld when"
                     + " `env` is not an attribute set written in place, or the file refers to the variable"
-                    + " elsewhere, as `finalAttrs.NIX_LDFLAGS`.");
+                    + " elsewhere, as `finalAttrs.NIX_LDFLAGS`."),
+    FAKE_HASH(
+            WARNING,
+            "A placeholder hash: `lib.fakeHash`, `lib.fakeSha256`, `lib.fakeSha512`, or an SRI hash of `A` only. It"
+                    + " makes the build fail and print the real hash, which is what it is for; it is reported so"
+                    + " that none is left behind.");
 
     private final Severity severity;
     private final String description;

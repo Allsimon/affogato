@@ -45,7 +45,7 @@ class LintDocsTest {
         new Group(
                 "Packaging",
                 "Conventions of nixpkgs for derivations.",
-                EnumSet.range(Rule.MISSING_PHASE_HOOKS, Rule.ENV_VARIABLE)),
+                EnumSet.range(Rule.MISSING_PHASE_HOOKS, Rule.FAKE_HASH)),
     };
 
     @Test
