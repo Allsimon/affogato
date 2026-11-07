@@ -174,6 +174,7 @@ public final class Server {
             case "textDocument/definition" -> definition(params);
             case "textDocument/references" -> references(params);
             case "textDocument/documentHighlight" -> highlights(params);
+            case "textDocument/prepareRename" -> prepareRename(params);
             case "textDocument/rename" -> rename(params);
             case "textDocument/completion" -> completion(params);
             case "textDocument/documentSymbol" -> symbols(document(params));
@@ -195,7 +196,7 @@ public final class Server {
         capabilities.put("definitionProvider", true);
         capabilities.put("referencesProvider", true);
         capabilities.put("documentHighlightProvider", true);
-        capabilities.put("renameProvider", true);
+        capabilities.put("renameProvider", Map.of("prepareProvider", true));
         capabilities.put("completionProvider", Map.of());
         capabilities.put("documentSymbolProvider", true);
         capabilities.put("foldingRangeProvider", true);
@@ -288,6 +289,19 @@ public final class Server {
             highlights.add(
                     Map.of("range", document.lines().range(use.start(), use.end()), "kind", use == name ? 3L : 2L));
         return highlights;
+    }
+
+    /** The name under the cursor, or null where there is nothing to rename, as on a builtin. */
+    private Object prepareRename(Map<?, ?> params) {
+        Document document = document(params);
+        int offset = offset(document, params);
+        if (definitionAt(document, offset) == null) return null;
+        Node token = document.tree().at(offset);
+        return Map.of(
+                "range",
+                document.lines().range(token.start(), token.end()),
+                "placeholder",
+                document.tree().text(token));
     }
 
     private Object rename(Map<?, ?> params) {

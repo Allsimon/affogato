@@ -94,6 +94,14 @@ class ServerTest {
     }
 
     @Test
+    void preparesToRenameALocalNameOnly() {
+        open("let abc = 1; in abc + map\n");
+        assertThat(result("textDocument/prepareRename", at(0, 17)))
+                .isEqualTo(Map.of("range", range(0, 16, 0, 19), "placeholder", "abc"));
+        assertThat(result("textDocument/prepareRename", at(0, 23))).isNull();
+    }
+
+    @Test
     void findsTheReferences() {
         open("x: [ x x (x: x) ]\n");
         Object references = result(
