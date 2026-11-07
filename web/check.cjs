@@ -1,4 +1,4 @@
-// Runs the formatter and linter test cases, and checks the highlighting, against the JavaScript build: node check.cjs affogato.js <format tests> <lint cases>
+// Runs the formatter and linter test cases, and checks the semantic tokens, through the language server of the JavaScript build: node check.cjs affogato.js <format tests> <lint cases>
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -24,9 +24,26 @@ function check(name, actual, expected) {
   else failed.push(name);
 }
 
+let id = 0;
+const send = (method, params) => JSON.parse(g.handle(JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params })));
+const notify = (method, params) => JSON.parse(g.handle(JSON.stringify({ jsonrpc: "2.0", method, params })));
+const URI = "file:///check.nix";
+const document = { uri: URI };
+const legend = send("initialize", {})[0].result.capabilities.semanticTokensProvider.legend.tokenTypes;
+
+/** Opens src with the settings, and returns the diagnostics it publishes. */
+function open(src, settings) {
+  notify("workspace/didChangeConfiguration", { settings: { affogato: { width: WIDTH, strict: false, rules: [], ...settings } } });
+  return notify("textDocument/didOpen", { textDocument: { uri: URI, languageId: "nix", version: 1, text: src } })[0].params.diagnostics;
+}
+
+/** The text after edits that each span the whole document, as the server's formatting and fix-all do. */
+const edited = (src, edits) => edits.length ? edits[edits.length - 1].newText : src;
+
 function format(src, indent, strict) {
-  const result = JSON.parse(g.format(src, WIDTH, indent, strict));
-  return result.error ? "error: " + result.error.message : result.output;
+  open(src, { strict });
+  const result = send("textDocument/formatting", { textDocument: document, options: { tabSize: indent, insertSpaces: true } })[0].result;
+  return result === null ? "error" : edited(src, result);
 }
 
 const echoed = out => out.replace(/\n+$/, "") + "\n";
@@ -43,38 +60,48 @@ for (const dir of list(path.join(nixfmt, "diff"))) {
   check("diff/" + dir + " --strict", format(src, 2, true), read(path.join(nixfmt, "diff", dir, "out-pure.nix")));
 }
 for (const file of list(path.join(nixfmt, "invalid"))) {
-  check("invalid/" + file, "error" in JSON.parse(g.format(read(path.join(nixfmt, "invalid", file)), WIDTH, 2, false)), true);
+  check("invalid/" + file, format(read(path.join(nixfmt, "invalid", file)), 2, false), "error");
 }
 
-function render(src, name, d) {
-  const before = src.slice(0, d.start);
-  const line = before.split("\n").length;
-  const column = d.start - before.lastIndexOf("\n");
-  return `${name}:${line}:${column}: ${d.severity}[${d.rule}]: ${d.message}${d.fixable ? " [fix]" : ""}\n`;
-}
+const SEVERITIES = { 1: "error", 2: "warning", 4: "hint" };
+const render = (name, d) =>
+  `${name}:${d.range.start.line + 1}:${d.range.start.character + 1}: ${SEVERITIES[d.severity]}[${d.code}]: ${d.message}\n`;
 
+// Whether a finding has a fix is not part of a diagnostic; fix-all below checks the fixes.
 for (const file of list(lintCases).filter(f => f.endsWith(".nix") && !f.endsWith(".fixed.nix"))) {
   const base = file.slice(0, -".nix".length);
   const src = read(path.join(lintCases, file));
-  const result = JSON.parse(g.lint(src, base));
-  check(file, result.diagnostics.map(d => render(src, file, d)).join(""), read(path.join(lintCases, base + ".expected")));
-  const fixed = JSON.parse(g.fix(src, WIDTH, 2, false, base));
-  check(file + " fix", fixed.output ?? fixed.error.message, format(read(path.join(lintCases, base + ".fixed.nix")), 2, false));
+  const expected = read(path.join(lintCases, base + ".expected")).replaceAll(" [fix]\n", "\n");
+  check(file, open(src, { rules: [base] }).map(d => render(file, d)).join(""), expected);
+  const actions = send("textDocument/codeAction", {
+    textDocument: document,
+    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+    context: { diagnostics: [], only: ["source.fixAll"] },
+  })[0].result;
+  const fixed = actions.length ? edited(src, actions[0].edit.changes[URI]) : src;
+  check(file + " fix", format(fixed, 2, false), format(read(path.join(lintCases, base + ".fixed.nix")), 2, false));
 }
 
-function spans(src) {
-  const result = JSON.parse(g.highlight(src));
-  if (result.error) return "error: " + result.error.message;
-  let at = 0;
-  for (const [start, end, kind] of result.tokens) {
-    if (start < at || end <= start || end > src.length || !kind) return `bad span ${start}-${end} ${kind}`;
-    at = end;
+/** The semantic tokens of src as [type, text], or what makes them invalid. */
+function tokens(src) {
+  open(src, {});
+  const data = send("textDocument/semanticTokens/full", { textDocument: document })[0].result.data;
+  const lines = src.split("\n");
+  const out = [];
+  let line = 0, start = 0;
+  for (let i = 0; i < data.length; i += 5) {
+    const [dLine, dStart, length, type] = data.slice(i, i + 5);
+    line += dLine;
+    start = dLine ? dStart : start + dStart;
+    const text = lines[line]?.slice(start, start + length);
+    if (length <= 0 || text === undefined || text.length !== length || !legend[type]) return `bad token ${line}:${start}+${length}`;
+    out.push([legend[type], text]);
   }
-  return result.tokens.map(([start, end, kind]) => [kind, src.slice(start, end)]);
+  return out;
 }
 
 for (const [file, src] of sources) {
-  const result = spans(src);
+  const result = tokens(src);
   check("highlight " + file, typeof result === "string" ? result : "ok", "ok");
 }
 const sample = [
@@ -83,23 +110,23 @@ const sample = [
   '  a.b = "s${x + "t"}\\n"; /* d */',
   "  inherit (x) c;",
   "  p = ./a/${y}.nix;",
-  "  i = ''",
-  "    l ''${'''",
-  "  '';",
+  "  i = \'\'",
+  "    l \'\'${\'\'\'",
+  "  \'\';",
   "  e = map true x.map;",
   "}",
 ].join("\n");
-check("highlight sample", JSON.stringify(spans(sample)), JSON.stringify([
-  ["comment", "# c"], ["operator", "{"], ["param", "x"], ["operator", ","], ["param", "y"], ["operator", "?"],
-  ["number", "2"], ["operator", "}@"], ["param", "args"], ["operator", ":"], ["keyword", "rec"], ["operator", "{"],
-  ["attr", "a"], ["operator", "."], ["attr", "b"], ["operator", "="],
-  ["string", '"s'], ["interp", "${"], ["operator", "+"], ["string", '"t"'], ["interp", "}"], ["escape", "\\n"], ["string", '"'],
+check("highlight sample", JSON.stringify(tokens(sample)), JSON.stringify([
+  ["comment", "# c"], ["operator", "{"], ["parameter", "x"], ["operator", ","], ["parameter", "y"], ["operator", "?"],
+  ["number", "2"], ["operator", "}@"], ["parameter", "args"], ["operator", ":"], ["keyword", "rec"], ["operator", "{"],
+  ["property", "a"], ["operator", "."], ["property", "b"], ["operator", "="],
+  ["string", '"s'], ["macro", "${"], ["operator", "+"], ["string", '"t"'], ["macro", "}"], ["regexp", "\\n"], ["string", '"'],
   ["operator", ";"], ["comment", "/* d */"],
-  ["keyword", "inherit"], ["operator", "("], ["operator", ")"], ["attr", "c"], ["operator", ";"],
-  ["attr", "p"], ["operator", "="], ["path", "./a/"], ["interp", "${"], ["interp", "}"], ["path", ".nix"], ["operator", ";"],
-  ["attr", "i"], ["operator", "="], ["string", "''\n    l "], ["escape", "''$"], ["string", "{"], ["escape", "'''"],
-  ["string", "\n  ''"], ["operator", ";"],
-  ["attr", "e"], ["operator", "="], ["builtin", "map"], ["constant", "true"], ["operator", "."], ["operator", ";"],
+  ["keyword", "inherit"], ["operator", "("], ["operator", ")"], ["property", "c"], ["operator", ";"],
+  ["property", "p"], ["operator", "="], ["string", "./a/"], ["macro", "${"], ["macro", "}"], ["string", ".nix"], ["operator", ";"],
+  ["property", "i"], ["operator", "="], ["string", "\'\'"], ["string", "    l "], ["regexp", "\'\'$"], ["string", "{"], ["regexp", "\'\'\'"],
+  ["string", "  \'\'"], ["operator", ";"],
+  ["property", "e"], ["operator", "="], ["function", "map"], ["enumMember", "true"], ["operator", "."], ["operator", ";"],
   ["operator", "}"],
 ]));
 

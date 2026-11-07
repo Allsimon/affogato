@@ -17,12 +17,14 @@ Each package installs bash and zsh completions; `affogato generate-completion`
 prints the script, to source in a shell where it is not installed.
 
 To try the formatter and linter in a browser, open the
-link:playground/index.html[playground]; they run in the page, compiled to
-JavaScript. To build it locally, then open `result/index.html` in a browser:
+link:playground/index.html[playground]: a Monaco editor talking to the language
+server, which runs in the page, compiled to JavaScript. To build it locally and
+serve it, as its workers do not load from a file:
 
 [source,sh]
 ----
 nix build .#playground
+nix run nixpkgs#python3 -- -m http.server -d result
 ----
 
 Evaluate an expression:

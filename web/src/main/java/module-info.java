@@ -1,5 +1,5 @@
 /**
- * The formatter and linter compiled to JavaScript by TeaVM, for the playground page.
+ * The language server compiled to JavaScript by TeaVM, for the playground page.
  *
  * @jenesis.release 25
  * @jenesis.bom pin-affogato.properties
@@ -71,9 +71,7 @@
  * @jenesis.pin plugin.teavm:tool/maven/org.teavm/teavm-tooling/pom 0.16.0 SHA-256/3c988e36c9a8dcb5d6c93fd2808d821b3e244009e8887eb68264c13a77b23d6a
  */
 module org.affogato.web {
-    requires org.affogato.format;
-    requires org.affogato.lint;
-    requires org.affogato.parser;
+    requires org.affogato.lsp;
     requires org.teavm.jso;
 
     exports org.affogato.web;

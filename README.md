@@ -12,7 +12,7 @@ A suite of tools for the Nix language, written in Java:
 - an **evaluator** on GraalVM, as a Truffle AST interpreter, which evaluates
   nixpkgs unmodified and computes store paths and `.drv` paths in memory,
   without writing anything to `/nix/store`;
-- a **playground** that runs the formatter, linter and highlighter in the
+- a **playground**: a Monaco editor with the language server running in the
   browser, compiled to JavaScript with [TeaVM](https://teavm.org/).
 
 ```sh
