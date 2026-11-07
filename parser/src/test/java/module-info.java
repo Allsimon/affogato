@@ -1,5 +1,5 @@
 /**
- * Tests the tokenizer.
+ * Tests the tokenizer and the tree parser.
  *
  * @jenesis.release 25
  * @jenesis.bom pin-affogato.properties

@@ -23,6 +23,29 @@ separated by commas; `syntax-error` cannot be switched off.
 ]
 ----
 
+== Language server
+
+`affogato lsp` speaks the Language Server Protocol over stdin and stdout. It
+publishes the linter's findings, formats documents, and answers go to
+definition, find references, rename, completion of the names in scope,
+document symbols, folding ranges, semantic tokens, and code actions for the
+linter's fixes and suppression comments, and `source.fixAll` for all the
+fixes, from the same parser as the other commands. Formatting indents by the
+request's `tabSize`; the `affogato` section of the
+`workspace/didChangeConfiguration` settings, or the `initializationOptions`,
+may set the `width`, `strict`, and the `rules` to lint with, a list of ids, all
+when empty. A request of its own, `affogato/injections`, takes a
+`textDocument` and lists the strings written in another language: the range
+between their quotes, and a `kind` of `shell`, `named` (the `value` a comment
+names, such as `lua`) or `file` (a file name whose type tells the language).
+An editor runs it as any server, as Neovim does with:
+
+[source,lua]
+----
+vim.lsp.config('affogato', { cmd = { 'affogato', 'lsp' }, filetypes = { 'nix' } })
+vim.lsp.enable('affogato')
+----
+
 == treefmt
 
 `format` and `fix` follow the
