@@ -17,8 +17,9 @@ runs the other. The native profile of `cli` is `native-lite`.
 
 == Playground
 
-The `web` module wraps the formatter and linter for JavaScript: `Playground`
-exports `format`, `fix` and `lint`, each returning JSON. TeaVM compiles it with
+The `web` module wraps the language server for JavaScript: `LanguageServer`
+exports `handle`, taking a JSON-RPC message and returning the JSON array of the
+messages answering it. TeaVM compiles it with
 its dependencies to `affogato.js` at the module's package step, through the
 project plugin in `plugins/teavm`, which `jenesis.plugins.properties` declares
 and the module's `plugin-teavm.properties` switches on. TeaVM's jars are no
@@ -36,6 +37,20 @@ nix shell nixpkgs#nodejs -c node web/check.cjs \
   target/build/modules/compose/module/package-module-web+src+main+java/custom/teavm/delegate/teavm/output/javascript/affogato.js \
   format/src/test/java lint/src/test/java/cases   # the formatter and linter test cases, in JavaScript
 ----
+
+The page in `web/playground` is Monaco through `monaco-languageclient`, built
+with Vite. `public/server.js` is the language server's worker: it loads
+`affogato.js`, which Vite does not see, so copy it into `public/` to run the
+page from the sources:
+
+[source,sh]
+----
+cp target/build/modules/compose/module/package-module-web+src+main+java/custom/teavm/delegate/teavm/output/javascript/affogato.js web/playground/public/
+cd web/playground && nix shell nixpkgs#nodejs -c sh -c 'npm install && npx vite'
+----
+
+Nix fetches each npm package with the hash `package-lock.json` gives it, so
+a change to the lockfile needs nothing else.
 
 == Documentation
 
@@ -84,12 +99,12 @@ file that names them. Without GraalVM's compiler, Truffle runs its fallback
 runtime, which only interprets; runtime compilation is off by default anyway.
 `affogato-truffle-native`:: the launcher as a static native image, built with
 GraalVM.
-`playground`:: `web/playground/index.html` and `affogato.js`: a page that
-formats, fixes and lints Nix in the browser, opened as a file, with no server.
-Its rule selector loads the linter's cases from `examples.js`, which
-`PlaygroundExamplesTest` regenerates.
+`playground`:: the Vite build of `web/playground` and `affogato.js`: Monaco
+editing Nix in the browser, with the language server in a worker; serve it, as
+workers do not load from a file. Its rule selector loads the linter's cases
+from `examples.js`, which `PlaygroundExamplesTest` regenerates.
 `docs`:: this documentation, rendered to HTML.
 `tests`:: a check that runs the test suite on the JVM and outputs its JaCoCo
 report.
 `playground-tests`:: a check that runs the formatter and linter test cases
-against `affogato.js` in Node.js.
+through the language server of `affogato.js` in Node.js.

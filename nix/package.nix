@@ -3,6 +3,8 @@
   stdenv,
   jdk25_headless,
   graalvmPackages,
+  buildNpmPackage,
+  importNpmLock,
   fetchurl,
   installShellFiles,
   linkFarm,
@@ -244,12 +246,11 @@ let
     };
   };
 
-  playground = stdenv.mkDerivation {
-    pname = "affogato-playground";
+  playgroundServer = stdenv.mkDerivation {
+    pname = "affogato-playground-server";
     version = "0.1.0";
     src = sources [
       ../web/src/main
-      ../web/playground
       ../plugins
       ../jenesis.plugins.properties
       ../jenesis.plugins.pin.properties
@@ -264,19 +265,50 @@ let
     '';
     installPhase = ''
       runHook preInstall
-      install -Dm644 web/playground/index.html $out/index.html
-      install -Dm644 web/playground/examples.js $out/examples.js
       install -Dm644 ${output "web"}/custom/teavm/delegate/teavm/output/javascript/affogato.js $out/affogato.js
       runHook postInstall
     '';
     meta = {
-      description = "The formatter and linter of affogato in the browser, compiled to JavaScript by TeaVM";
+      description = "The language server of affogato compiled to JavaScript by TeaVM";
+      platforms = lib.platforms.all;
+    };
+  };
+
+  playground = buildNpmPackage {
+    pname = "affogato-playground";
+    version = "0.1.0";
+    src = lib.fileset.toSource {
+      root = ../web/playground;
+      fileset = lib.fileset.unions [
+        ../web/playground/index.html
+        ../web/playground/main.js
+        ../web/playground/examples.js
+        ../web/playground/kcgi.nix
+        ../web/playground/public/server.js
+        ../web/playground/vite.config.js
+        ../web/playground/package.json
+        ../web/playground/package-lock.json
+      ];
+    };
+    npmDeps = importNpmLock {
+      package = lib.importJSON ../web/playground/package.json;
+      packageLock = lib.importJSON ../web/playground/package-lock.json;
+    };
+    npmConfigHook = importNpmLock.npmConfigHook;
+    installPhase = ''
+      runHook preInstall
+      cp -r dist $out
+      install -Dm644 ${playgroundServer}/affogato.js $out/affogato.js
+      runHook postInstall
+    '';
+    meta = {
+      description = "Monaco editing Nix in the browser with the language server of affogato";
       platforms = lib.platforms.all;
     };
   };
 
   playgroundTests = runCommand "affogato-playground-tests" { nativeBuildInputs = [ nodejs ]; } ''
-    node ${../web/check.cjs} ${playground}/affogato.js ${../format/src/test/java} ${../lint/src/test/java/cases} | tee $out
+    node ${../web/check.cjs} ${playgroundServer}/affogato.js ${../format/src/test/java} ${../lint/src/test/java/cases} | tee $out
   '';
 
   # The website published to GitHub Pages: the documentation, with the playground under playground/.

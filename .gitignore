@@ -9,3 +9,6 @@ result
 .classpath
 .project
 .settings/
+node_modules/
+/web/playground/dist/
+/web/playground/public/affogato.js
