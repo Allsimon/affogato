@@ -65,7 +65,13 @@ public final class Server {
         while (!server.exited) {
             String body = read(in);
             if (body == null) return;
-            for (Map<String, Object> message : server.handle(Json.parse(body))) {
+            List<Map<String, Object>> replies;
+            try {
+                replies = server.handle(Json.parse(body));
+            } catch (IllegalArgumentException e) {
+                replies = List.of(error(null, -32700, e.getMessage()));
+            }
+            for (Map<String, Object> message : replies) {
                 byte[] bytes = Json.write(message).getBytes(StandardCharsets.UTF_8);
                 out.write(("Content-Length: " + bytes.length + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
                 out.write(bytes);
@@ -104,7 +110,8 @@ public final class Server {
 
     /** The messages answering {@code message}: a response to a request, and any notification it causes. */
     public List<Map<String, Object>> handle(Object message) {
-        Map<?, ?> m = (Map<?, ?>) message;
+        if (!(message instanceof Map<?, ?> m) || m.get("method") != null && !(m.get("method") instanceof String))
+            return List.of(error(null, -32600, "not a request"));
         String method = (String) m.get("method");
         Object id = m.get("id");
         Map<?, ?> params = m.get("params") instanceof Map<?, ?> p ? p : Map.of();

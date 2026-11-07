@@ -249,6 +249,28 @@ class ServerTest {
         assertThat(output.split("Content-Length", -1)).hasSize(2);
     }
 
+    @Test
+    void answersInvalidJsonWithAParseErrorAndGoesOn() throws Exception {
+        String initialize = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        Server.serve(
+                new ByteArrayInputStream((frame("{\"id\":") + frame(initialize)).getBytes(StandardCharsets.UTF_8)),
+                out);
+
+        String output = out.toString(StandardCharsets.UTF_8);
+        assertThat(output).contains("\"id\":null", "-32700", "\"capabilities\"");
+    }
+
+    @Test
+    void answersWhatIsNoRequestWithAnInvalidRequestError() {
+        for (String message : List.of("[1]", "1", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":2}")) {
+            Map<String, Object> reply = server.handle(Json.parse(message)).getFirst();
+            assertThat(reply).containsEntry("id", null);
+            assertThat(map(reply.get("error"))).containsEntry("code", -32600L);
+        }
+    }
+
     private static String frame(String body) {
         return "Content-Length: " + body.getBytes(StandardCharsets.UTF_8).length + "\r\n\r\n" + body;
     }
