@@ -27,7 +27,7 @@ separated by commas; `syntax-error` cannot be switched off.
 
 `affogato lsp` speaks the Language Server Protocol over stdin and stdout. It
 publishes the linter's findings, formats documents, and answers go to
-definition, find references, rename, completion of the names in scope,
+definition, find references, document highlight, rename, completion of the names in scope,
 document symbols, folding ranges, semantic tokens, and code actions for the
 linter's fixes and suppression comments, and `source.fixAll` for all the
 fixes, from the same parser as the other commands. Formatting indents by the
