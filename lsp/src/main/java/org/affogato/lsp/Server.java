@@ -8,10 +8,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import org.affogato.format.Formatter;
 import org.affogato.lint.Diagnostic;
 import org.affogato.lint.Edit;
@@ -49,6 +51,11 @@ public final class Server {
             "operator",
             "property",
             "parameter");
+
+    private static final List<String> KEYWORDS =
+            List.of("assert", "else", "if", "in", "inherit", "let", "or", "rec", "then", "with");
+
+    private static final Set<String> CONSTANTS = Set.of("true", "false", "null");
 
     private static final Set<NodeKind> FOLDED =
             Set.of(NodeKind.ATTR_SET, NodeKind.LIST, NodeKind.LET, NodeKind.IND_STRING);
@@ -298,8 +305,15 @@ public final class Server {
         Document document = document(params);
         SyntaxView<Node> view = document.tree().view();
         List<Object> items = new ArrayList<>();
-        for (Node definition : Scopes.visible(view, document.tree().at(offset(document, params))))
-            items.add(Map.of("label", Scopes.name(view, definition), "kind", 6L));
+        Set<String> local = new HashSet<>();
+        for (Node definition : Scopes.visible(view, document.tree().at(offset(document, params)))) {
+            String name = Scopes.name(view, definition);
+            local.add(name);
+            items.add(Map.of("label", name, "kind", 6L));
+        }
+        for (String name : new TreeSet<>(Linter.GLOBALS))
+            if (!local.contains(name)) items.add(Map.of("label", name, "kind", CONSTANTS.contains(name) ? 21L : 3L));
+        for (String keyword : KEYWORDS) items.add(Map.of("label", keyword, "kind", 14L));
         return items;
     }
 

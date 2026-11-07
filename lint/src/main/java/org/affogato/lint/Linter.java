@@ -14,6 +14,9 @@ public final class Linter {
     /** The attribute names of {@code builtins}. */
     public static final Set<String> BUILTINS = Globals.BUILTINS;
 
+    /** The builtins bound as names of their own, without {@code builtins.}. */
+    public static final Set<String> GLOBALS = Globals.UNPREFIXED;
+
     private static final int MAX_ROUNDS = 10;
 
     private Linter() {}
