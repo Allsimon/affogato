@@ -44,6 +44,7 @@ let
     ../vendir.yml
     ../flake.lock
     ../lint/src/test
+    ../parser/src/test
     ../docs/cli
     ../docs/_lint-rules.adoc
     ../web/playground/examples.js

@@ -40,6 +40,8 @@ public final class Lexer {
     private final int len;
     private final Map<String, String> shared = new HashMap<>();
     int pos;
+    /** Lets a path end with a slash, for {@link Tokenizer}, which leaves errors to the parser. */
+    boolean lenient;
 
     public Lexer(String src) {
         this.src = src;
@@ -235,7 +237,7 @@ public final class Lexer {
             boolean interp = false;
             if (best == TokenType.PATH || best == TokenType.HPATH) {
                 interp = startsWith("${", pos);
-                if (!interp && text.endsWith("/"))
+                if (!interp && !lenient && text.endsWith("/"))
                     throw new ParseException("path '" + text + "' has a trailing slash", start);
             }
             return new Token(best, text, start, pos, interp);

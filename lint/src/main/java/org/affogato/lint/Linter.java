@@ -23,8 +23,8 @@ public final class Linter {
     }
 
     /**
-     * The findings of {@code rules}, by position. Code that does not parse gives a single {@link Rule#SYNTAX_ERROR},
-     * whatever the rules.
+     * The findings of {@code rules}, by position, but for those {@link Suppressions} switch off. Code that does not parse
+     * gives a single {@link Rule#SYNTAX_ERROR}, whatever the rules.
      */
     public static List<Diagnostic> lint(String src, Set<Rule> rules) {
         Node root;
@@ -41,8 +41,9 @@ public final class Linter {
         Patterns.check(src, scope, out);
         Semantics.check(src, scope, out);
         Packaging.check(src, scope, out);
+        Suppressions suppressions = Suppressions.of(src);
         return out.stream()
-                .filter(d -> rules.contains(d.rule()))
+                .filter(d -> rules.contains(d.rule()) && !suppressions.suppresses(d))
                 .sorted(Comparator.comparingInt(Diagnostic::start).thenComparing(Diagnostic::rule))
                 .toList();
     }
