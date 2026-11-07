@@ -156,6 +156,10 @@ Each rule shows a case from the linter's tests: the original code, what the rule
 |⚠️ warning
 |A `NIX_` variable such as `NIX_CFLAGS_COMPILE` set beside the attributes of a derivation: with `__structuredAttrs`, only `env` is exported, so the compiler wrapper would not see it. The fix moves it to `env`, through `toString` unless it is a string already. It is withheld when `env` is not an attribute set written in place, or the file refers to the variable elsewhere, as `finalAttrs.NIX_LDFLAGS`.
 
+|<<lint-fake-hash,`fake-hash`>>
+|⚠️ warning
+|A placeholder hash: `lib.fakeHash`, `lib.fakeSha256`, `lib.fakeSha512`, or an SRI hash of `A` only. It makes the build fail and print the real hash, which is what it is for; it is reported so that none is left behind.
+
 |===
 
 == Syntax errors
@@ -2221,4 +2225,47 @@ env-variable.nix:18:5: warning[env-variable]: set 'NIX_HARDENING_ENABLE' in 'env
 env-variable.nix:31:5: warning[env-variable]: set 'NIX_LDFLAGS' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:38:5: warning[env-variable]: set 'NIX_LDFLAGS' in 'env', or it is not exported with __structuredAttrs
 env-variable.nix:44:5: warning[env-variable]: set 'NIX_HARDENING_ENABLE' in 'env', or it is not exported with __structuredAttrs
+----
+
+[[lint-fake-hash]]
+=== `fake-hash`
+
+Severity: ⚠️ warning. A placeholder hash: `lib.fakeHash`, `lib.fakeSha256`, `lib.fakeSha512`, or an SRI hash of `A` only. It makes the build fail and print the real hash, which is what it is for; it is reported so that none is left behind.
+
+link:playground/index.html?rule=fake-hash[Try it in the playground]
+
+[source,nix,role="primary"]
+.Original
+----
+{ lib, fetchurl, fetchFromGitHub }:
+{
+  a = fetchurl {
+    url = "https://example.org/a.tar.gz";
+    hash = lib.fakeHash;
+  };
+  b = fetchFromGitHub {
+    owner = "o";
+    repo = "r";
+    rev = "v1";
+    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  };
+  c = fetchurl {
+    url = "https://example.org/c.tar.gz";
+    sha256 = lib.fakeSha256;
+  };
+  # A real hash is left alone, and so is an attribute of another set.
+  d = fetchurl {
+    url = "https://example.org/d.tar.gz";
+    hash = "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=";
+  };
+  e = pkgs.fakeHash;
+}
+----
+
+[source,text,role="secondary"]
+.Diagnostics
+----
+fake-hash.nix:5:12: warning[fake-hash]: placeholder hash; the build fails and prints the real one
+fake-hash.nix:11:12: warning[fake-hash]: placeholder hash; the build fails and prints the real one
+fake-hash.nix:15:14: warning[fake-hash]: placeholder hash; the build fails and prints the real one
 ----
