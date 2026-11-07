@@ -166,6 +166,7 @@ public final class Server {
             case "textDocument/formatting" -> formatting(document(params), params);
             case "textDocument/definition" -> definition(params);
             case "textDocument/references" -> references(params);
+            case "textDocument/documentHighlight" -> highlights(params);
             case "textDocument/rename" -> rename(params);
             case "textDocument/completion" -> completion(params);
             case "textDocument/documentSymbol" -> symbols(document(params));
@@ -186,6 +187,7 @@ public final class Server {
         capabilities.put("documentFormattingProvider", true);
         capabilities.put("definitionProvider", true);
         capabilities.put("referencesProvider", true);
+        capabilities.put("documentHighlightProvider", true);
         capabilities.put("renameProvider", true);
         capabilities.put("completionProvider", Map.of());
         capabilities.put("documentSymbolProvider", true);
@@ -266,6 +268,19 @@ public final class Server {
         List<Object> locations = new ArrayList<>();
         for (Node use : uses(document, definition, declaration)) locations.add(location(uri(params), document, use));
         return locations;
+    }
+
+    /** The definition as a write, its uses as reads. */
+    private Object highlights(Map<?, ?> params) {
+        Document document = document(params);
+        Node definition = definitionAt(document, offset(document, params));
+        if (definition == null) return List.of();
+        Node name = nameToken(definition);
+        List<Object> highlights = new ArrayList<>();
+        for (Node use : uses(document, definition, true))
+            highlights.add(
+                    Map.of("range", document.lines().range(use.start(), use.end()), "kind", use == name ? 3L : 2L));
+        return highlights;
     }
 
     private Object rename(Map<?, ?> params) {

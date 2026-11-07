@@ -104,6 +104,16 @@ class ServerTest {
     }
 
     @Test
+    void highlightsTheDefinitionAndItsUses() {
+        open("let a = 1; in [ a (a: a) a ]\n");
+        assertThat(list(result("textDocument/documentHighlight", at(0, 16))))
+                .containsExactly(
+                        Map.of("range", range(0, 4, 0, 5), "kind", 3L),
+                        Map.of("range", range(0, 16, 0, 17), "kind", 2L),
+                        Map.of("range", range(0, 25, 0, 26), "kind", 2L));
+    }
+
+    @Test
     void completesTheNamesInScope() {
         open("let foo = 1; bar = 2; in f\n");
         List<Object> labels = list(result("textDocument/completion", at(0, 26))).stream()
