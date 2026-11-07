@@ -28,6 +28,7 @@ import org.affogato.parser.Highlighter;
 import org.affogato.parser.Injections;
 import org.affogato.parser.Lexeme;
 import org.affogato.parser.NodeKind;
+import org.affogato.parser.Quotes;
 import org.affogato.parser.Scopes;
 import org.affogato.parser.SyntaxTree;
 import org.affogato.parser.SyntaxTree.Node;
@@ -506,6 +507,19 @@ public final class Server {
         }
         rewrite(actions, uri, lines, "Expand the binding", Bindings.expand(document.text(), start));
         rewrite(actions, uri, lines, "Collapse the binding", Bindings.collapse(document.text(), start));
+        Node string = document.tree().at(start);
+        while (string != null && string.kind != NodeKind.STRING && string.kind != NodeKind.IND_STRING)
+            string = string.parent();
+        if (string != null) {
+            String toggled = Quotes.toggle(document.tree().text(string));
+            if (toggled != null)
+                rewrite(
+                        actions,
+                        uri,
+                        lines,
+                        string.kind == NodeKind.STRING ? "Use ''...'' quotes" : "Use \"...\" quotes",
+                        new Bindings.Rewrite(string.start(), string.end(), toggled));
+        }
         for (Diagnostic d : Linter.lint(document.text(), rules)) {
             if (d.end() < start || d.start() > end) continue;
             String id = d.rule().id();

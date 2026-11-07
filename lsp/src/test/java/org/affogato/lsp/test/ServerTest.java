@@ -314,6 +314,19 @@ class ServerTest {
     }
 
     @Test
+    void togglesTheQuotesOfAString() {
+        open("{ a = \"x\\n${y}\"; }\n");
+        Map<String, Object> toggle = map(list(result(
+                        "textDocument/codeAction",
+                        "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":" + Json.write(range(0, 7, 0, 7))
+                                + ",\"context\":{\"diagnostics\":[]}}"))
+                .getFirst());
+        assertThat(toggle).containsEntry("title", "Use ''...'' quotes");
+        assertThat(list(map(map(toggle.get("edit")).get("changes")).get(URI)))
+                .containsExactly(Map.of("range", range(0, 6, 0, 15), "newText", "''x\n${y}''"));
+    }
+
+    @Test
     void offersNoActionAwayFromAFinding() {
         open("let unused = 1; in 2\n");
         assertThat(list(result(
