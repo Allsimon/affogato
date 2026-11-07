@@ -7,6 +7,22 @@ Each command has its own page, generated from the command line itself;
 include::cli/affogato.adoc[tags=picocli-generated-man-section-synopsis;picocli-generated-man-section-options;picocli-generated-man-section-commands,leveloffset=+1]
 :relfileprefix!:
 
+== Suppressing a rule
+
+A comment switches rules off, for `check` and `fix` alike: `ignore` for its
+own line and the next one, `ignore-file` for the whole file. The rules are
+separated by commas; `syntax-error` cannot be switched off.
+
+[source,nix]
+----
+# affogato: ignore-file unused-let-binding, empty-let-in
+[
+  # affogato: ignore bool-comparison
+  (x == true)
+  (y == true) # affogato: ignore bool-comparison
+]
+----
+
 == treefmt
 
 `format` and `fix` follow the

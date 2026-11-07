@@ -4,7 +4,9 @@ Each top-level folder is a Java module.
 
 `parser/`::
 A hand-written lexer and parser. It builds a concrete syntax tree that keeps
-every token, then lowers it to the evaluator's AST.
+every token, then lowers it to the evaluator's AST. `Tokenizer` splits the
+source into lexemes that cover all of it, comments included, which the
+linter reads its suppression comments from.
 
 `store/`::
 NAR hashing, Nix base32 and store-path computation.
