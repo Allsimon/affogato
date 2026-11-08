@@ -3,10 +3,13 @@ package org.affogato.test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.affogato.EvalException;
 import org.affogato.Interpreter;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class InterpreterTest {
     private static String eval(Interpreter.Output output, String expr, long timeout) throws Exception {
@@ -19,6 +22,17 @@ class InterpreterTest {
         assertThat(eval(Interpreter.Output.EVAL, "{ a = 1 + 1; }", 0)).isEqualTo("{ a = <CODE>; }");
         assertThat(eval(Interpreter.Output.JSON, "{ a = [ 1 \"b\" ]; }", 0)).isEqualTo("{\"a\":[1,\"b\"]}");
         assertThat(eval(Interpreter.Output.RAW, "\"a\\nb\"", 0)).isEqualTo("a\nb");
+    }
+
+    @Test
+    void reReadsAnImportedFileEditedBetweenEvaluations(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("a.nix");
+        String expr = "import " + file;
+        Files.writeString(file, "1");
+        assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("1");
+        assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("1");
+        Files.writeString(file, "2");
+        assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("2");
     }
 
     @Test
