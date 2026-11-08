@@ -9,6 +9,7 @@ result
 .classpath
 .project
 .settings/
+.eclipse/
 node_modules/
 /web/playground/dist/
 /web/playground/public/affogato.js
