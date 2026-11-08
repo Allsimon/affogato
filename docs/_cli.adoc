@@ -37,7 +37,8 @@ the same parser as the other commands. It answers with:
   `pkgs.` and `lib.`, unless the file binds them otherwise than as a parameter;
 * document symbols, folding ranges, selection ranges and semantic tokens;
 * links on the paths without interpolation, the URIs, and the strings that are
-  an http or https URL;
+  an http or https URL, and go to definition on such a path, both to the
+  `default.nix` of a directory, as `import` and `callPackage ./foo { }` read it;
 * code actions for the linter's fixes and suppression comments,
   `source.fixAll` for all the fixes, and rewrites: of a binding, `a.b = x;` into
   `a = { b = x; };` and back, and of a string, in the other quoting when that
