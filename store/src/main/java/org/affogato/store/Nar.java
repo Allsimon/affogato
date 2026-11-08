@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
@@ -71,9 +72,15 @@ public final class Nar {
     }
 
     public static String typeOf(Path p) {
-        if (Files.isSymbolicLink(p)) return "symlink";
-        if (Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS)) return "directory";
-        if (Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS)) return "regular";
+        BasicFileAttributes a;
+        try {
+            a = Files.readAttributes(p, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        } catch (IOException e) {
+            return "unknown";
+        }
+        if (a.isSymbolicLink()) return "symlink";
+        if (a.isDirectory()) return "directory";
+        if (a.isRegularFile()) return "regular";
         return "unknown";
     }
 
