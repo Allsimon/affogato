@@ -215,13 +215,28 @@ public final class NixAttrs {
         if (leaves == null && keys.length < MIN_UNION_SIZE) return merge(this, right.flat());
         NixAttrs[] l = leaves != null ? leaves : new NixAttrs[] {this};
         NixAttrs[] r = right.leaves != null ? right.leaves : new NixAttrs[] {right};
-        if (l.length + r.length > MAX_LEAVES) {
-            l = new NixAttrs[] {flat()};
-            if (1 + r.length > MAX_LEAVES) return merge(l[0], right.flat());
-        }
         NixAttrs[] all = Arrays.copyOf(l, l.length + r.length);
         System.arraycopy(r, 0, all, l.length, r.length);
-        return new NixAttrs(all);
+        int n = all.length > MAX_LEAVES ? compact(all, MAX_LEAVES) : all.length;
+        return n == 1 ? all[0] : new NixAttrs(n == all.length ? all : Arrays.copyOf(all, n));
+    }
+
+    /**
+     * Merges adjacent flat sets until {@code target} remain, smallest pair first: {@code //} is associative, and a
+     * package set's large base is then rarely copied. Returns the new count.
+     */
+    private static int compact(NixAttrs[] ls, int target) {
+        int n = ls.length;
+        for (; n > target; n--) {
+            int best = 0;
+            for (int i = 1; i < n - 1; i++) {
+                if (ls[i].keys.length + ls[i + 1].keys.length < ls[best].keys.length + ls[best + 1].keys.length)
+                    best = i;
+            }
+            ls[best] = merge(ls[best], ls[best + 1]);
+            System.arraycopy(ls, best + 2, ls, best + 1, n - best - 2);
+        }
+        return n;
     }
 
     private NixAttrs flat() {
@@ -231,17 +246,8 @@ public final class NixAttrs {
 
     private void flatten() {
         if (leaves == null) return;
-        // `//` is associative: merging the smallest adjacent pair first copies a large leaf once, not once per leaf.
         NixAttrs[] ls = leaves.clone();
-        for (int n = ls.length; n > 1; n--) {
-            int best = 0;
-            for (int i = 1; i < n - 1; i++) {
-                if (ls[i].keys.length + ls[i + 1].keys.length < ls[best].keys.length + ls[best + 1].keys.length)
-                    best = i;
-            }
-            ls[best] = merge(ls[best], ls[best + 1]);
-            System.arraycopy(ls, best + 2, ls, best + 1, n - best - 2);
-        }
+        compact(ls, 1);
         NixAttrs acc = ls[0];
         keys = acc.keys;
         values = acc.values;
