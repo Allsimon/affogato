@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
@@ -17,6 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import org.affogato.format.Formatter;
 import org.affogato.lint.Diagnostic;
@@ -72,6 +75,10 @@ public final class Server {
 
     private final Map<String, Document> documents = new HashMap<>();
     private final Evaluator evaluator;
+    private final Consumer<Map<String, Object>> send;
+    private final AtomicBoolean refreshing = new AtomicBoolean();
+    private boolean refreshSupport;
+    private int requests;
     private int width = Formatter.DEFAULT_WIDTH;
     private boolean strict;
     private Set<Rule> rules = EnumSet.allOf(Rule.class);
@@ -83,12 +90,24 @@ public final class Server {
 
     /** Completes nixpkgs attributes from {@code evaluator}, when not null. */
     public Server(Evaluator evaluator) {
+        this(evaluator, null);
+    }
+
+    /** Sends the requests the server makes of its own, as {@code workspace/inlayHint/refresh}, with {@code send}. */
+    public Server(Evaluator evaluator, Consumer<Map<String, Object>> send) {
         this.evaluator = evaluator;
+        this.send = send;
     }
 
     /** Serves {@code in} until the client says {@code exit}. */
     public static void serve(InputStream in, OutputStream out, Evaluator evaluator) throws IOException {
-        Server server = new Server(evaluator);
+        Server server = new Server(evaluator, message -> {
+            try {
+                write(out, message);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
         while (!server.exited) {
             String body = read(in);
             if (body == null) return;
@@ -98,12 +117,17 @@ public final class Server {
             } catch (IllegalArgumentException e) {
                 replies = List.of(error(null, -32700, e.getMessage()));
             }
-            for (Map<String, Object> message : replies) {
-                byte[] bytes = Json.write(message).getBytes(StandardCharsets.UTF_8);
-                out.write(("Content-Length: " + bytes.length + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
-                out.write(bytes);
-                out.flush();
-            }
+            for (Map<String, Object> message : replies) write(out, message);
+        }
+    }
+
+    /** Writes from the request thread and from the evaluator's, when it sends a refresh. */
+    private static void write(OutputStream out, Map<String, Object> message) throws IOException {
+        byte[] bytes = Json.write(message).getBytes(StandardCharsets.UTF_8);
+        synchronized (out) {
+            out.write(("Content-Length: " + bytes.length + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+            out.write(bytes);
+            out.flush();
         }
     }
 
@@ -158,6 +182,10 @@ public final class Server {
         if (method == null) return null;
         return switch (method) {
             case "initialize" -> {
+                refreshSupport = params.get("capabilities") instanceof Map<?, ?> c
+                        && c.get("workspace") instanceof Map<?, ?> w
+                        && w.get("inlayHint") instanceof Map<?, ?> h
+                        && Boolean.TRUE.equals(h.get("refreshSupport"));
                 configure(params.get("initializationOptions"));
                 yield Map.of("capabilities", capabilities(), "serverInfo", Map.of("name", "affogato"));
             }
@@ -781,6 +809,15 @@ public final class Server {
             }
         });
         List<Evaluator.Attribute> attributes = evaluator.describeAll(paths);
+        if (attributes.contains(null) && send != null && refreshSupport && refreshing.compareAndSet(false, true))
+            evaluator.whenDescribed(paths, () -> {
+                refreshing.set(false);
+                Map<String, Object> request = new LinkedHashMap<>();
+                request.put("jsonrpc", "2.0");
+                request.put("id", "affogato-" + ++requests);
+                request.put("method", "workspace/inlayHint/refresh");
+                send.accept(request);
+            });
         List<Object> hints = new ArrayList<>();
         int next = 0;
         for (int i = 0; i < ends.size(); i++) {

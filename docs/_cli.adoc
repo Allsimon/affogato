@@ -42,7 +42,8 @@ the same parser as the other commands. It answers with:
   attribute or function is defined; and the version or type, and the
   description or doc comment, of a completion item as the editor resolves it;
 * inlay hints with the version of each package selected from nixpkgs, those
-  evaluated within 200 ms of the request, the others when the editor asks again;
+  evaluated within 200 ms of the request, and the others once evaluated, as the
+  server then sends `workspace/inlayHint/refresh` to an editor that supports it;
 * in a module, a function of `config`, `lib`, `pkgs` or `modulesPath`: the
   completion of option names as a binding's name is typed, and on such a name a
   hover with the option's type, description, default and example, and go to its

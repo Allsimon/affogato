@@ -35,6 +35,9 @@ public interface Evaluator {
     /** The attribute at each path, null for those not evaluated within the time a request may wait for all. */
     List<Attribute> describeAll(List<List<String>> paths);
 
+    /** Runs {@code then}, on any thread, once each of {@code paths} is described, however that ends. */
+    void whenDescribed(List<List<String>> paths, Runnable then);
+
     /** The names at {@code path} in the options of every option set, or null as for {@link #names}. */
     List<String> optionNames(List<String> path);
 

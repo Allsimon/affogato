@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -91,6 +92,12 @@ public final class Lsp implements Callable<Integer> {
             for (Future<Session.Description> f : futures)
                 attributes.add(attribute(get(f, Session.Description.NONE, deadline - System.nanoTime())));
             return attributes;
+        }
+
+        @Override
+        public void whenDescribed(List<List<String>> paths, Runnable then) {
+            CompletableFuture.allOf(paths.stream().map(session::describe).toArray(CompletableFuture[]::new))
+                    .whenComplete((v, e) -> then.run());
         }
 
         @Override

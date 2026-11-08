@@ -181,10 +181,18 @@ class ServerTest {
             return paths.stream().map(this::describe).toList();
         }
 
+        Runnable described;
+
+        @Override
+        public void whenDescribed(List<List<String>> paths, Runnable then) {
+            described = then;
+        }
+
         @Override
         public Attribute describe(List<String> path) {
             asked.add(path);
             return switch (String.join(".", path)) {
+                case "slow" -> null;
                 case "hello" ->
                     new Attribute(
                             "derivation",
@@ -396,6 +404,26 @@ class ServerTest {
         server = new Server(nixpkgs);
         result("initialize", "{\"initializationOptions\":{\"options\":{\"nixos\":{\"expr\":\"o\"},\"x\":1}}}");
         assertThat(nixpkgs.optionSets).isEqualTo(Map.of("nixos", "o"));
+    }
+
+    @Test
+    void asksTheClientToRefreshTheHintsOnceEvaluated() {
+        Nixpkgs nixpkgs = new Nixpkgs();
+        List<Map<String, Object>> sent = new ArrayList<>();
+        server = new Server(nixpkgs, sent::add);
+        result("initialize", "{\"capabilities\":{\"workspace\":{\"inlayHint\":{\"refreshSupport\":true}}}}");
+        open("{ pkgs }: [ pkgs.hello pkgs.slow ]\n");
+        String hints = "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":" + Json.write(range(0, 0, 1, 0)) + "}";
+        assertThat(list(result("textDocument/inlayHint", hints))).hasSize(1);
+        Runnable described = nixpkgs.described;
+        nixpkgs.described = null;
+        result("textDocument/inlayHint", hints);
+        assertThat(nixpkgs.described).isNull();
+        described.run();
+        assertThat(sent)
+                .containsExactly(Map.of("jsonrpc", "2.0", "id", "affogato-1", "method", "workspace/inlayHint/refresh"));
+        result("textDocument/inlayHint", hints);
+        assertThat(nixpkgs.described).isNotNull();
     }
 
     @Test
