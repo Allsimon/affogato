@@ -113,7 +113,7 @@ final class Imports {
         return null;
     }
 
-    private static String path(SyntaxTree tree, String file, Node node) {
+    static String path(SyntaxTree tree, String file, Node node) {
         List<Node> children = node.children();
         if (node.kind != NodeKind.PATH || children.size() != 1 || children.getFirst().token != Lexeme.Kind.PATH)
             return null;

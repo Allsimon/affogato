@@ -74,6 +74,13 @@ the same parser as the other commands. It answers with:
   and the like, continues that path, `config.` is skipped, and each attribute
   of an `attrsOf` submodule takes a name of its own, as in
   `virtualHosts."example.org".root`;
+* in a devenv project, the folder with a `devenv.yaml` or a `devenv.lock`: the
+  same for its `devenv.nix` and `devenv.local.nix` files and the modules they
+  list in `imports`, against devenv's options, as `languages.rust.enable`,
+  and the `pkgs`, `lib` and `inputs` its modules receive, in place of the
+  configured option sets and nixpkgs; the options are the expression
+  `devenv lsp --print-config` gives nixd, so this needs the `devenv` command,
+  and the inputs in the store, where `devenv shell` puts them;
 * the same completion, hover, definition and hints for the names a `with` of
   nixpkgs brings into scope, as `hello` in `with pkgs; [ hello ]`: a name bound
   in the file or a builtin is not one, and the innermost `with` that has the
