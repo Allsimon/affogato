@@ -177,6 +177,11 @@ class ServerTest {
         }
 
         @Override
+        public List<Attribute> describeAll(List<List<String>> paths) {
+            return paths.stream().map(this::describe).toList();
+        }
+
+        @Override
         public Attribute describe(List<String> path) {
             asked.add(path);
             return switch (String.join(".", path)) {
@@ -251,6 +256,17 @@ class ServerTest {
                 .isEqualTo(Map.of("uri", "file:///p/hello.nix", "range", range(2, 0, 2, 0)));
         assertThat(result("textDocument/definition", at(0, 18)))
                 .isEqualTo(Map.of("uri", URI, "range", range(0, 2, 0, 6)));
+    }
+
+    @Test
+    void hintsTheVersionsOfPackages() {
+        server = new Server(new Nixpkgs());
+        open("{ pkgs, lib }: [ pkgs.hello pkgs.slow lib.inc pkgs.none ]\n");
+        assertThat(result(
+                        "textDocument/inlayHint",
+                        "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":" + Json.write(range(0, 0, 1, 0)) + "}"))
+                .isEqualTo(List.of(Map.of(
+                        "position", Map.of("line", 0L, "character", 27L), "label", "2.12", "paddingLeft", true)));
     }
 
     @Test

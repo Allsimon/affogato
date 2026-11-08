@@ -1,6 +1,7 @@
 package org.affogato.cli;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -48,13 +49,13 @@ public final class Lsp implements Callable<Integer> {
 
         @Override
         public List<String> names(List<String> path) {
-            return get(session.names(path), List.of());
+            return get(session.names(path), List.of(), TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS));
         }
 
         /** The value, {@code failed} when its evaluation broke off, null when it takes longer than a request may wait. */
-        private static <T> T get(Future<T> future, T failed) {
+        private static <T> T get(Future<T> future, T failed, long nanos) {
             try {
-                return future.get(WAIT_MILLIS, TimeUnit.MILLISECONDS);
+                return future.get(Math.max(nanos, 0), TimeUnit.NANOSECONDS);
             } catch (TimeoutException e) {
                 return null;
             } catch (ExecutionException e) {
@@ -66,8 +67,17 @@ public final class Lsp implements Callable<Integer> {
         }
 
         @Override
-        public Attribute describe(List<String> path) {
-            Session.Description d = get(session.describe(path), Session.Description.NONE);
+        public List<Attribute> describeAll(List<List<String>> paths) {
+            List<Future<Session.Description>> futures = new ArrayList<>();
+            for (List<String> path : paths) futures.add(session.describe(path));
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
+            List<Attribute> attributes = new ArrayList<>();
+            for (Future<Session.Description> f : futures)
+                attributes.add(attribute(get(f, Session.Description.NONE, deadline - System.nanoTime())));
+            return attributes;
+        }
+
+        private static Attribute attribute(Session.Description d) {
             return d == null
                     ? null
                     : new Attribute(

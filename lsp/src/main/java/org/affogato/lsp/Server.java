@@ -205,6 +205,7 @@ public final class Server {
             case "textDocument/completion" -> completion(params);
             case "completionItem/resolve" -> resolve(params);
             case "textDocument/hover" -> hover(params);
+            case "textDocument/inlayHint" -> inlayHints(params);
             case "textDocument/documentSymbol" -> symbols(document(params));
             case "textDocument/foldingRange" -> folding(document(params));
             case "textDocument/selectionRange" -> selections(params);
@@ -228,7 +229,10 @@ public final class Server {
         capabilities.put("documentHighlightProvider", true);
         capabilities.put("renameProvider", Map.of("prepareProvider", true));
         capabilities.put("completionProvider", Map.of("resolveProvider", evaluator != null));
-        if (evaluator != null) capabilities.put("hoverProvider", true);
+        if (evaluator != null) {
+            capabilities.put("hoverProvider", true);
+            capabilities.put("inlayHintProvider", true);
+        }
         capabilities.put("documentSymbolProvider", true);
         capabilities.put("foldingRangeProvider", true);
         capabilities.put("selectionRangeProvider", true);
@@ -467,7 +471,21 @@ public final class Server {
         if (name == null || name.kind != NodeKind.ATTR_NAME) return null;
         Node attrPath = name.parent();
         if (attrPath == null || attrPath.kind != NodeKind.ATTR_PATH) return null;
-        Node select = attrPath.parent();
+        List<String> path = nixpkgsPath(tree, attrPath.parent());
+        if (path == null) return null;
+        List<Node> children = attrPath.children();
+        int after = 0;
+        for (int i = children.size() - 1; children.get(i) != name; i--) if (children.get(i).token == null) after++;
+        return new Selected(name, path.subList(0, path.size() - after));
+    }
+
+    private static Node attrPath(Node select) {
+        for (Node child : select.children()) if (child.kind == NodeKind.ATTR_PATH) return child;
+        return null;
+    }
+
+    /** The path from nixpkgs of {@code select} when it is {@code pkgs.a.b} or {@code lib.a.b}, or null. */
+    private static List<String> nixpkgsPath(SyntaxTree tree, Node select) {
         if (select == null || select.kind != NodeKind.SELECT) return null;
         Node base = select.children().getFirst();
         if (base.kind != NodeKind.VAR) return null;
@@ -477,13 +495,47 @@ public final class Server {
         if (definition != null && definition.kind != NodeKind.FORMAL && definition.kind != NodeKind.PARAM) return null;
         List<String> path = new ArrayList<>();
         if (root.equals("lib")) path.add("lib");
+        Node attrPath = attrPath(select);
+        if (attrPath == null) return null;
         for (Node child : attrPath.children()) {
             if (child.token != null) continue;
             if (child.kind != NodeKind.ATTR_NAME) return null;
             path.add(tree.text(child));
-            if (child == name) return new Selected(name, path);
         }
-        return null;
+        return path;
+    }
+
+    /** The version of each package selected from nixpkgs in the range, after its selection. */
+    private Object inlayHints(Map<?, ?> params) {
+        Document document = document(params);
+        if (evaluator == null) return List.of();
+        Map<?, ?> range = (Map<?, ?>) params.get("range");
+        int start = document.lines().offset((Map<?, ?>) range.get("start"));
+        int end = document.lines().offset((Map<?, ?>) range.get("end"));
+        SyntaxTree tree = document.tree();
+        List<Node> selects = new ArrayList<>();
+        List<List<String>> paths = new ArrayList<>();
+        collect(tree.root(), node -> {
+            if (node.end() < start || node.start() > end) return;
+            List<String> path = nixpkgsPath(tree, node);
+            if (path == null || path.isEmpty() || path.getFirst().equals("lib")) return;
+            selects.add(node);
+            paths.add(path);
+        });
+        List<Evaluator.Attribute> attributes = evaluator.describeAll(paths);
+        List<Object> hints = new ArrayList<>();
+        for (int i = 0; i < selects.size(); i++) {
+            Evaluator.Attribute a = attributes.get(i);
+            if (a == null || !"derivation".equals(a.type()) || a.version() == null) continue;
+            hints.add(Map.of(
+                    "position",
+                    document.lines().position(attrPath(selects.get(i)).end()),
+                    "label",
+                    a.version(),
+                    "paddingLeft",
+                    true));
+        }
+        return hints;
     }
 
     /** The names starting with {@code prefix}, incomplete while being evaluated or when there are too many. */

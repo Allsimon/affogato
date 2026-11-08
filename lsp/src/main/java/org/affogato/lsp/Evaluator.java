@@ -25,7 +25,12 @@ public interface Evaluator {
     List<String> names(List<String> path);
 
     /** The attribute at {@code path} in nixpkgs, or null when it takes longer than a request may wait. */
-    Attribute describe(List<String> path);
+    default Attribute describe(List<String> path) {
+        return describeAll(List.of(path)).getFirst();
+    }
+
+    /** The attribute at each path, null for those not evaluated within the time a request may wait for all. */
+    List<Attribute> describeAll(List<List<String>> paths);
 
     /** Evaluates {@code expression} as nixpkgs from now on. */
     void configure(String expression);
