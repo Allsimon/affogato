@@ -225,6 +225,7 @@ public final class Server {
                 yield null;
             }
             case "textDocument/formatting" -> formatting(document(params), params);
+            case "textDocument/rangeFormatting" -> rangeFormatting(document(params), params);
             case "textDocument/definition" -> {
                 Object location = attributeLocation(params);
                 yield location != null ? location : definition(params);
@@ -255,6 +256,7 @@ public final class Server {
         Map<String, Object> capabilities = new LinkedHashMap<>();
         capabilities.put("textDocumentSync", Map.of("openClose", true, "change", 1L, "save", Map.of()));
         capabilities.put("documentFormattingProvider", true);
+        capabilities.put("documentRangeFormattingProvider", true);
         capabilities.put("definitionProvider", true);
         capabilities.put("referencesProvider", true);
         capabilities.put("documentHighlightProvider", true);
@@ -327,18 +329,95 @@ public final class Server {
         out.add(notification("textDocument/publishDiagnostics", Map.of("uri", uri, "diagnostics", diagnostics)));
     }
 
-    private Object formatting(Document document, Map<?, ?> params) {
+    private String formatted(Document document, Map<?, ?> params) {
         int indent = params.get("options") instanceof Map<?, ?> o && o.get("tabSize") instanceof Long t
                 ? (int) (long) t
                 : Formatter.DEFAULT_INDENT;
-        String formatted;
         try {
-            formatted = Formatter.format(document.text(), width, indent, strict);
+            return Formatter.format(document.text(), width, indent, strict);
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private Object formatting(Document document, Map<?, ?> params) {
+        String formatted = formatted(document, params);
+        if (formatted == null) return null;
         if (formatted.equals(document.text())) return List.of();
         return List.of(Map.of("range", document.lines().range(0, document.text().length()), "newText", formatted));
+    }
+
+    /**
+     * The formatting of the bindings the range touches, or of the whole file outside any: the file is formatted
+     * whole, and the bindings found again in it by the position of their first and last tokens.
+     */
+    private Object rangeFormatting(Document document, Map<?, ?> params) {
+        Map<?, ?> range = (Map<?, ?>) params.get("range");
+        int start = document.lines().offset((Map<?, ?>) range.get("start"));
+        int end = Math.max(start, document.lines().offset((Map<?, ?>) range.get("end")));
+        String formatted = formatted(document, params);
+        if (formatted == null) return null;
+        SyntaxTree tree = document.tree();
+        Node node = tree.at(start);
+        while (node.parent() != null && node.end() < end) node = node.parent();
+        Node binding = node;
+        while (binding != null && binding.kind != NodeKind.BINDING && binding.kind != NodeKind.INHERIT)
+            binding = binding.parent();
+        int from = 0;
+        int to = document.text().length();
+        if (binding != null) {
+            from = binding.start();
+            to = binding.end();
+        } else {
+            List<Node> touched = node.children().stream()
+                    .filter(c -> (c.kind == NodeKind.BINDING || c.kind == NodeKind.INHERIT)
+                            && c.end() > start
+                            && c.start() < end)
+                    .toList();
+            if (!touched.isEmpty()) {
+                from = touched.getFirst().start();
+                to = touched.getLast().end();
+            }
+        }
+        if (from == 0 && to == document.text().length())
+            return formatted.equals(document.text())
+                    ? List.of()
+                    : List.of(Map.of("range", document.lines().range(0, to), "newText", formatted));
+        List<Node> before = tokens(tree);
+        List<Node> after = tokens(SyntaxTree.parse(formatted));
+        if (before.size() != after.size()) return null;
+        int first = -1;
+        int last = -1;
+        for (int i = 0; i < before.size(); i++) {
+            if (before.get(i).token != after.get(i).token) return null;
+            if (before.get(i).start() == from) first = i;
+            if (before.get(i).end() == to) last = i;
+        }
+        if (first < 0 || last < 0) return null;
+        from = lineStart(document.text(), from);
+        int newFrom = lineStart(formatted, after.get(first).start());
+        if ((from == before.get(first).start()) != (newFrom == after.get(first).start())) {
+            from = before.get(first).start();
+            newFrom = after.get(first).start();
+        }
+        String text = formatted.substring(newFrom, after.get(last).end());
+        if (text.equals(document.text().substring(from, to))) return List.of();
+        return List.of(Map.of("range", document.lines().range(from, to), "newText", text));
+    }
+
+    /** {@code offset}'s line start when only blanks precede it on its line, else {@code offset}. */
+    private static int lineStart(String text, int offset) {
+        int i = offset;
+        while (i > 0 && (text.charAt(i - 1) == ' ' || text.charAt(i - 1) == '\t')) i--;
+        return i == 0 || text.charAt(i - 1) == '\n' ? i : offset;
+    }
+
+    private static List<Node> tokens(SyntaxTree tree) {
+        List<Node> tokens = new ArrayList<>();
+        collect(tree.root(), n -> {
+            if (n.token != null && n.end() > n.start()) tokens.add(n);
+        });
+        return tokens;
     }
 
     private Object definition(Map<?, ?> params) {

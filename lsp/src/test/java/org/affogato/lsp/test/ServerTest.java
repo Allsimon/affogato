@@ -577,6 +577,35 @@ class ServerTest {
                 .isEqualTo("{ a = 1; }\n");
     }
 
+    private Object formatRange(int startLine, int start, int endLine, int end) {
+        return result(
+                "textDocument/rangeFormatting",
+                "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":"
+                        + Json.write(range(startLine, start, endLine, end))
+                        + ",\"options\":{\"tabSize\":2,\"insertSpaces\":true}}");
+    }
+
+    @Test
+    void formatsTheBindingsARangeTouches() {
+        open("{\n  a   =   1;\n  b=f  1;\n  d   = 3;\n}\n");
+        assertThat(list(formatRange(2, 3, 2, 3)))
+                .containsExactly(Map.of("range", range(2, 0, 2, 9), "newText", "  b = f 1;"));
+        assertThat(list(formatRange(1, 4, 2, 4)))
+                .containsExactly(Map.of("range", range(1, 0, 2, 9), "newText", "  a = 1;\n  b = f 1;"));
+        assertThat(list(formatRange(0, 0, 0, 0)))
+                .containsExactly(
+                        Map.of("range", range(0, 0, 5, 0), "newText", "{\n  a = 1;\n  b = f 1;\n  d = 3;\n}\n"));
+    }
+
+    @Test
+    void formatsTheInnermostBinding() {
+        open("{\n  a = {\n    b   =   1;\n    c   =   2;\n  };\n}\n");
+        assertThat(list(formatRange(2, 5, 2, 5)))
+                .containsExactly(Map.of("range", range(2, 0, 2, 14), "newText", "    b = 1;"));
+        open("{\n  a = 1;\n}\n");
+        assertThat(list(formatRange(1, 3, 1, 3))).isEmpty();
+    }
+
     @Test
     void formatsWithTheSettingsAndTheTabSize() {
         server.handle(Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"workspace/didChangeConfiguration\","

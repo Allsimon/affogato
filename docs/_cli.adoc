@@ -29,7 +29,8 @@ separated by commas; `syntax-error` cannot be switched off.
 the same parser as the other commands. It answers with:
 
 * the linter's findings, as diagnostics;
-* formatting, indented by the request's `tabSize`;
+* formatting, indented by the request's `tabSize`, of the file or of the
+  bindings a range touches, the whole file when it touches none;
 * go to definition, find references, document highlight, and rename, which
   refuses up front a name that is not defined in the file, such as a builtin;
 * completion of the names in scope, the builtins and the keywords, of the
