@@ -184,6 +184,17 @@ class ServerTest {
     }
 
     @Test
+    void linksThePathsAndUrls() {
+        open("[ ./pkgs/a.nix ../b ./${x} <nixpkgs> https://a.org \"https://b.org/c?d=1\" \"see https://c.org\" ]");
+        assertThat(list(result("textDocument/documentLink", DOCUMENT)))
+                .containsExactly(
+                        Map.of("range", range(0, 2, 0, 14), "target", "file:///p/pkgs/a.nix"),
+                        Map.of("range", range(0, 15, 0, 19), "target", "file:///b"),
+                        Map.of("range", range(0, 37, 0, 50), "target", "https://a.org"),
+                        Map.of("range", range(0, 52, 0, 71), "target", "https://b.org/c?d=1"));
+    }
+
+    @Test
     void foldsWhatSpansLines() {
         open("{\n  a = [\n    1\n  ];\n}\n");
         assertThat(list(result("textDocument/foldingRange", DOCUMENT)))

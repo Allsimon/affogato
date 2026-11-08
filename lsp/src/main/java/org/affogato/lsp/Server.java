@@ -4,6 +4,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 import org.affogato.format.Formatter;
 import org.affogato.lint.Diagnostic;
 import org.affogato.lint.Edit;
@@ -56,6 +59,8 @@ public final class Server {
             List.of("assert", "else", "if", "in", "inherit", "let", "or", "rec", "then", "with");
 
     private static final Set<String> CONSTANTS = Set.of("true", "false", "null");
+
+    private static final Pattern URL = Pattern.compile("https?://[^\\s\\\\]+");
 
     private static final Set<NodeKind> FOLDED =
             Set.of(NodeKind.ATTR_SET, NodeKind.LIST, NodeKind.LET, NodeKind.IND_STRING);
@@ -180,6 +185,7 @@ public final class Server {
             case "textDocument/documentSymbol" -> symbols(document(params));
             case "textDocument/foldingRange" -> folding(document(params));
             case "textDocument/selectionRange" -> selections(params);
+            case "textDocument/documentLink" -> links(params);
             case "textDocument/semanticTokens/full" -> Map.of("data", semanticTokens(document(params)));
             case "affogato/injections" -> injections(document(params));
             case "textDocument/codeAction" -> codeActions(params);
@@ -202,6 +208,7 @@ public final class Server {
         capabilities.put("documentSymbolProvider", true);
         capabilities.put("foldingRangeProvider", true);
         capabilities.put("selectionRangeProvider", true);
+        capabilities.put("documentLinkProvider", Map.of());
         capabilities.put("codeActionProvider", Map.of("codeActionKinds", List.of("quickfix", "source.fixAll")));
         capabilities.put(
                 "semanticTokensProvider",
@@ -419,6 +426,48 @@ public final class Server {
             selections.add(selection);
         }
         return selections;
+    }
+
+    /**
+     * The paths without interpolation, resolved against a {@code file:} document, the URIs, and the strings that are
+     * an http or https URL and nothing else.
+     */
+    private Object links(Map<?, ?> params) {
+        Document document = document(params);
+        SyntaxTree tree = document.tree();
+        URI base = URI.create(uri(params));
+        List<Object> links = new ArrayList<>();
+        collect(tree.root(), node -> {
+            List<Node> children = node.children();
+            String target = null;
+            Node range = node;
+            if (node.kind == NodeKind.PATH
+                    && "file".equals(base.getScheme())
+                    && children.size() == 1
+                    && children.getFirst().token == Lexeme.Kind.PATH) {
+                target = file(base.resolve(tree.text(node)).getPath());
+            } else if (node.kind == NodeKind.URI) {
+                target = tree.text(node);
+            } else if (node.kind == NodeKind.STRING
+                    && children.size() == 3
+                    && children.get(1).token == Lexeme.Kind.STR_TEXT
+                    && URL.matcher(tree.text(children.get(1))).matches()) {
+                range = children.get(1);
+                target = tree.text(range);
+            }
+            if (target != null)
+                links.add(Map.of("range", document.lines().range(range.start(), range.end()), "target", target));
+        });
+        return links;
+    }
+
+    /** {@code file:///path}, where {@link URI#resolve} gives {@code file:/path}, which not every client reads. */
+    private static String file(String path) {
+        try {
+            return new URI("file", "", path, null).toString();
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException(e);
+        }
     }
 
     /**
