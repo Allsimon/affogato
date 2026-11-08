@@ -106,7 +106,53 @@ public final class Json {
     }
 
     private void string(String s) {
+        checkUtf8(s);
         quote(out, s);
+    }
+
+    /** nlohmann::json's check when it serializes: well-formed UTF-8, without overlong forms or surrogates. */
+    private static void checkUtf8(String s) {
+        int i = 0;
+        while (i < s.length()) {
+            int b = s.charAt(i);
+            int n;
+            int lo = 0x80;
+            int hi = 0xbf;
+            if (b < 0x80) {
+                i++;
+                continue;
+            } else if (b >= 0xc2 && b <= 0xdf) {
+                n = 1;
+            } else if (b >= 0xe0 && b <= 0xef) {
+                n = 2;
+                if (b == 0xe0) lo = 0xa0;
+                if (b == 0xed) hi = 0x9f;
+            } else if (b >= 0xf0 && b <= 0xf4) {
+                n = 3;
+                if (b == 0xf0) lo = 0x90;
+                if (b == 0xf4) hi = 0x8f;
+            } else {
+                throw invalidUtf8(i, b);
+            }
+            for (int k = 1; k <= n; k++) {
+                if (i + k >= s.length()) {
+                    throw new NixException("JSON serialization error: [json.exception.type_error.316] incomplete UTF-8"
+                            + " string; last byte: " + hexByte(s.charAt(s.length() - 1)));
+                }
+                int c = s.charAt(i + k);
+                if (c < (k == 1 ? lo : 0x80) || c > (k == 1 ? hi : 0xbf)) throw invalidUtf8(i + k, c);
+            }
+            i += n + 1;
+        }
+    }
+
+    private static NixException invalidUtf8(int index, int b) {
+        return new NixException("JSON serialization error: [json.exception.type_error.316] invalid UTF-8 byte at index "
+                + index + ": " + hexByte(b));
+    }
+
+    private static String hexByte(int b) {
+        return String.format("0x%02X", b);
     }
 
     static void quote(StringBuilder out, String s) {
@@ -287,7 +333,7 @@ public final class Json {
             while (true) {
                 if (i >= s.length()) throw error("unterminated string");
                 char c = s.charAt(i++);
-                if (c == '"') return sb.toString();
+                if (c == '"') return NixString.checkNoNul(sb.toString());
                 if (c != '\\') {
                     sb.append(c);
                     continue;

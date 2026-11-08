@@ -91,7 +91,7 @@ public final class Translator {
         NixNode n = switch (e) {
             case IntLit i -> new ConstantNode(i.value());
             case FloatLit f -> new ConstantNode(f.value());
-            case StrLit str -> new ConstantNode(new NixString(str.value()));
+            case StrLit str -> new ConstantNode(new NixString(noNul(str.value(), contentStart(str.pos()))));
             case PathLit p -> new ConstantNode(new NixPath(resolvePath(p.raw(), false)));
             case Interp i -> interp(i, s);
             case SearchPath sp -> {
@@ -107,9 +107,9 @@ public final class Translator {
             case Select sel ->
                 new SelectNode(
                         tr(sel.target(), s),
-                        keys(sel.path(), s),
+                        keys(sel.path(), s, sel.pos()),
                         sel.fallback() == null ? null : tr(sel.fallback(), s));
-            case HasAttr h -> new HasAttrNode(tr(h.target(), s), keys(h.path(), s));
+            case HasAttr h -> new HasAttrNode(tr(h.target(), s), keys(h.path(), s, h.pos()));
             case Attrs a -> attrs(a, s);
             case ListExpr l -> {
                 if (l.items().isEmpty()) yield new ConstantNode(NixList.EMPTY);
@@ -141,6 +141,24 @@ public final class Translator {
             case CurPos c -> new ConstantNode(position(c.pos()));
         };
         return n.at(section(e.pos()));
+    }
+
+    /** Nix rejects these when it lexes the string. */
+    private static String noNul(String value, int offset) {
+        String error = NixString.nulError(value);
+        if (error != null) throw new ParseException(error, offset);
+        return value;
+    }
+
+    /** Where Nix reports a string literal: after the quotes, and after the first line of '' when it is blank. */
+    private int contentStart(Pos pos) {
+        CharSequence t = source.getCharacters();
+        int i = pos.start();
+        if (i < t.length() && t.charAt(i) == '"') return i + 1;
+        if (i + 1 >= t.length() || t.charAt(i) != '\'' || t.charAt(i + 1) != '\'') return i;
+        int j = i + 2;
+        while (j < t.length() && (t.charAt(j) == ' ' || t.charAt(j) == '\t')) j++;
+        return j < t.length() && t.charAt(j) == '\n' ? j + 1 : i + 2;
     }
 
     private String text(Pos pos) {
@@ -272,11 +290,13 @@ public final class Translator {
         return new WithVarNode(name, depths, slots);
     }
 
-    private AttrKey[] keys(List<AttrName> path, Scope s) {
+    private AttrKey[] keys(List<AttrName> path, Scope s, Pos pos) {
         AttrKey[] keys = new AttrKey[path.size()];
         for (int i = 0; i < keys.length; i++) {
             AttrName a = path.get(i);
-            keys[i] = new AttrKey(a.name(), a.dynamic() == null ? null : tr(a.dynamic(), s));
+            keys[i] = new AttrKey(
+                    a.name() == null ? null : noNul(a.name(), pos.start()),
+                    a.dynamic() == null ? null : tr(a.dynamic(), s));
         }
         return keys;
     }
@@ -443,8 +463,10 @@ public final class Translator {
                 };
             }
         }
-        for (int i = 0; i < keys.length; i++)
+        for (int i = 0; i < keys.length; i++) {
             positions[i] = section(sorted.get(keys[i]).pos());
+            noNul(keys[i], sorted.get(keys[i]).pos().start());
+        }
         int nd = a.dynamic.size();
         NixNode[] dynNames = new NixNode[nd];
         NixNode[] dynValues = new NixNode[nd];

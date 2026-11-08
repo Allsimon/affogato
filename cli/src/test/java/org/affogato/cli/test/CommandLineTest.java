@@ -263,6 +263,13 @@ class CommandLineTest {
     }
 
     @Test
+    void evalPrintsErrorsInUtf8() {
+        assertThat(run("eval", "-E", "throw \"caf\u00e9 \u2400\"")).isEqualTo(1);
+
+        assertThat(err.toString()).isEqualTo("error: caf\u00e9 \u2400\n");
+    }
+
+    @Test
     void evalStopsAtTheTimeout() {
         assertThat(run("eval", "--timeout", "100", "-E", NESTED_FOLDS)).isEqualTo(1);
 

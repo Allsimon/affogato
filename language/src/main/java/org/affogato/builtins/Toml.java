@@ -379,12 +379,18 @@ final class Toml {
     private static Object toNix(Object v) {
         if (v instanceof Map<?, ?> m) {
             TreeMap<String, Object> out = new TreeMap<>();
-            m.forEach((k, x) -> out.put((String) k, toNix(x)));
+            m.forEach((k, x) -> out.put(noNul((String) k), toNix(x)));
             return NixAttrs.of(out);
         }
         if (v instanceof List<?> l)
             return new NixList(l.stream().map(Toml::toNix).toArray());
-        if (v instanceof String str) return new NixString(str);
+        if (v instanceof String str) return new NixString(noNul(str));
         return v;
+    }
+
+    private static String noNul(String s) {
+        String error = NixString.nulError(s);
+        if (error != null) throw new NixException("while parsing TOML: error: " + error);
+        return s;
     }
 }

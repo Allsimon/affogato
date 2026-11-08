@@ -20,6 +20,19 @@ public final class NixString {
         this.context = context == null || context.isEmpty() ? null : context;
     }
 
+    /** Nix's message for a string it cannot hold, or null; {@code ␀} as UTF-8 bytes stands for each NUL. */
+    public static String nulError(String s) {
+        if (s.indexOf('\0') < 0) return null;
+        return "input string '" + s.replace("\0", "\u00e2\u0090\u0080")
+                + "' cannot be represented as Nix string because it contains null bytes";
+    }
+
+    public static String checkNoNul(String s) {
+        String error = nulError(s);
+        if (error != null) throw new NixException(error);
+        return s;
+    }
+
     public boolean hasContext() {
         return context != null;
     }

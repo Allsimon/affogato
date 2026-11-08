@@ -6,17 +6,6 @@ eval-fail-home-path-fatal
 eval-fail-short-path-literal
 eval-fail-url-literal
 
-# Strings containing NUL bytes are not rejected
-eval-fail-string-nul-1
-eval-fail-string-nul-2
-eval-fail-fromJSON-keyWithNullByte
-eval-fail-fromJSON-valueWithNullByte
-eval-fail-fromTOML-keyWithNullByte
-eval-fail-fromTOML-valueWithNullByte
-
-# toJSON does not validate UTF-8
-eval-fail-toJSON-non-utf-8
-
 # Flake builtins are not implemented
 eval-okay-flake-ref-to-string
 eval-okay-parse-flake-ref

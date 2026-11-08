@@ -108,6 +108,12 @@ abstract class Evaluate implements Callable<Integer> {
         return new String(s.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1);
     }
 
+    /** Nix strings hold one byte per char; decode them as UTF-8 for the writer, which encodes. */
+    private static String text(String bytes) {
+        for (int i = 0; i < bytes.length(); i++) if (bytes.charAt(i) > 0xff) return bytes;
+        return new String(bytes.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+    }
+
     private static void pairs(boolean string, List<String> values, List<Interpreter.Arg> out) {
         for (int i = 0; i < values.size(); i += 2) {
             out.add(new Interpreter.Arg(values.get(i), bytes(values.get(i + 1)), string));
@@ -141,8 +147,8 @@ abstract class Evaluate implements Callable<Integer> {
             out.println(Interpreter.evaluate(options, file, content, timeout));
             return 0;
         } catch (EvalException e) {
-            err.println("error: " + e.getMessage());
-            if (showTrace && e.location != null) err.println("       at " + e.location);
+            err.println("error: " + text(e.getMessage()));
+            if (showTrace && e.location != null) err.println("       at " + text(e.location));
             return 1;
         } catch (IOException e) {
             err.println("error: " + e.getMessage());
