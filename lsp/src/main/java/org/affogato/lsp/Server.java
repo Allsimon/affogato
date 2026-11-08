@@ -1,6 +1,7 @@
 package org.affogato.lsp;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -293,6 +294,12 @@ public final class Server {
 
     private Object definition(Map<?, ?> params) {
         Document document = document(params);
+        Node path = document.tree().at(offset(document, params)).parent();
+        String target = path == null ? null : pathTarget(document.tree(), path, URI.create(uri(params)));
+        if (target != null) {
+            Map<String, Object> start = Map.of("line", 0L, "character", 0L);
+            return Map.of("uri", file(target), "range", Map.of("start", start, "end", start));
+        }
         Node definition = definitionAt(document, offset(document, params));
         return definition == null ? null : location(uri(params), document, nameToken(definition));
     }
@@ -511,13 +518,10 @@ public final class Server {
         List<Object> links = new ArrayList<>();
         collect(tree.root(), node -> {
             List<Node> children = node.children();
-            String target = null;
+            String target = pathTarget(tree, node, base);
             Node range = node;
-            if (node.kind == NodeKind.PATH
-                    && "file".equals(base.getScheme())
-                    && children.size() == 1
-                    && children.getFirst().token == Lexeme.Kind.PATH) {
-                target = file(base.resolve(tree.text(node)).getPath());
+            if (target != null) {
+                target = file(target);
             } else if (node.kind == NodeKind.URI) {
                 target = tree.text(node);
             } else if (node.kind == NodeKind.STRING
@@ -531,6 +535,21 @@ public final class Server {
                 links.add(Map.of("range", document.lines().range(range.start(), range.end()), "target", target));
         });
         return links;
+    }
+
+    /**
+     * The file a path without interpolation names, resolved against a {@code file:} document, the {@code default.nix}
+     * in it when it is a directory, as {@code import} has it; else null.
+     */
+    private static String pathTarget(SyntaxTree tree, Node node, URI base) {
+        List<Node> children = node.children();
+        if (node.kind != NodeKind.PATH
+                || !"file".equals(base.getScheme())
+                || children.size() != 1
+                || children.getFirst().token != Lexeme.Kind.PATH) return null;
+        String path = base.resolve(tree.text(node)).getPath();
+        if (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
+        return new File(path).isDirectory() ? path + "/default.nix" : path;
     }
 
     /** {@code file:///path}, where {@link URI#resolve} gives {@code file:/path}, which not every client reads. */

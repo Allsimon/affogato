@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +14,7 @@ import org.affogato.lsp.Evaluator;
 import org.affogato.lsp.Json;
 import org.affogato.lsp.Server;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ServerTest {
     private static final String URI = "file:///p/default.nix";
@@ -249,6 +252,27 @@ class ServerTest {
                         Map.of("range", range(0, 15, 0, 19), "target", "file:///b"),
                         Map.of("range", range(0, 37, 0, 50), "target", "https://a.org"),
                         Map.of("range", range(0, 52, 0, 71), "target", "https://b.org/c?d=1"));
+    }
+
+    @Test
+    void goesToTheFileAPathNamesAndToTheDefaultNixOfADirectory(@TempDir Path dir) throws Exception {
+        Files.createDirectories(dir.resolve("foo"));
+        Files.writeString(dir.resolve("foo/default.nix"), "{ }: 1");
+        String uri = dir.resolve("default.nix").toUri().toString();
+        server.handle(Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":"
+                + "{\"textDocument\":{\"uri\":\"" + uri + "\",\"languageId\":\"nix\",\"version\":1,\"text\":"
+                + Json.write("{ callPackage }: [ (callPackage ./foo { }) ./foo/default.nix ./bar.nix ]") + "}}}"));
+        String foo = "file://" + dir.resolve("foo/default.nix");
+        String position = "{\"textDocument\":{\"uri\":\"" + uri + "\"},\"position\":{\"line\":0,\"character\":";
+        Map<String, Object> top =
+                Map.of("start", Map.of("line", 0L, "character", 0L), "end", Map.of("line", 0L, "character", 0L));
+        assertThat(result("textDocument/definition", position + "33}}")).isEqualTo(Map.of("uri", foo, "range", top));
+        assertThat(result("textDocument/definition", position + "45}}")).isEqualTo(Map.of("uri", foo, "range", top));
+        assertThat(result("textDocument/definition", position + "63}}"))
+                .isEqualTo(Map.of("uri", "file://" + dir.resolve("bar.nix"), "range", top));
+        assertThat(list(result("textDocument/documentLink", "{\"textDocument\":{\"uri\":\"" + uri + "\"}}")))
+                .first()
+                .isEqualTo(Map.of("range", range(0, 32, 0, 37), "target", foo));
     }
 
     @Test
