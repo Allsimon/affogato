@@ -66,6 +66,14 @@ public final class Server {
 
     private static final Pattern IDENTIFIER = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_'-]*");
 
+    private static final Map<String, String> SNIPPETS = snippets(
+            "let … in", "let\n  ${1:name} = ${2:value};\nin\n${0}",
+            "if … then … else", "if ${1:condition} then ${2} else ${0}",
+            "with …;", "with ${1:pkgs}; ${0}",
+            "inherit (…) …;", "inherit (${1:set}) ${0};",
+            "assert …;", "assert ${1:condition}; ${0}",
+            "rec { … }", "rec {\n  ${0}\n}");
+
     private static final Set<String> CONSTANTS = Set.of("true", "false", "null");
 
     private static final Pattern URL = Pattern.compile("https?://[^\\s\\\\]+");
@@ -80,6 +88,7 @@ public final class Server {
     private final Consumer<Map<String, Object>> send;
     private final AtomicBoolean refreshing = new AtomicBoolean();
     private boolean refreshSupport;
+    private boolean snippetSupport;
     private int requests;
     private int width = Formatter.DEFAULT_WIDTH;
     private boolean strict;
@@ -188,6 +197,11 @@ public final class Server {
                         && c.get("workspace") instanceof Map<?, ?> w
                         && w.get("inlayHint") instanceof Map<?, ?> h
                         && Boolean.TRUE.equals(h.get("refreshSupport"));
+                snippetSupport = params.get("capabilities") instanceof Map<?, ?> c
+                        && c.get("textDocument") instanceof Map<?, ?> t
+                        && t.get("completion") instanceof Map<?, ?> completion
+                        && completion.get("completionItem") instanceof Map<?, ?> item
+                        && Boolean.TRUE.equals(item.get("snippetSupport"));
                 configure(params.get("initializationOptions"));
                 yield Map.of("capabilities", capabilities(), "serverInfo", Map.of("name", "affogato"));
             }
@@ -536,6 +550,18 @@ public final class Server {
         items.addAll(scope);
         for (String name : new TreeSet<>(Linter.GLOBALS)) if (!local.containsKey(name)) items.add(builtin(name));
         for (String keyword : KEYWORDS) items.add(Map.of("label", keyword, "kind", 14L));
+        if (snippetSupport)
+            SNIPPETS.forEach((label, body) -> items.add(Map.of(
+                    "label",
+                    label,
+                    "kind",
+                    15L,
+                    "filterText",
+                    label.substring(0, label.indexOf(' ')),
+                    "insertText",
+                    body,
+                    "insertTextFormat",
+                    2L)));
         List<List<String>> scopes = evaluator == null
                 ? List.of()
                 : withScopes(document.tree(), document.tree().at(Math.max(offset - 1, 0)));
@@ -556,7 +582,13 @@ public final class Server {
     }
 
     private static Map<String, Object> builtin(String name) {
-        return Map.of("label", name, "kind", CONSTANTS.contains(name) ? 21L : 3L);
+        return Map.of("label", name, "kind", CONSTANTS.contains(name) ? 21L : 3L, "detail", "builtin");
+    }
+
+    private static Map<String, String> snippets(String... labelsAndBodies) {
+        Map<String, String> snippets = new LinkedHashMap<>();
+        for (int i = 0; i < labelsAndBodies.length; i += 2) snippets.put(labelsAndBodies[i], labelsAndBodies[i + 1]);
+        return snippets;
     }
 
     /** The item with the version or type as its detail, and the description or doc comment as its documentation. */

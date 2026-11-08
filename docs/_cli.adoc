@@ -33,8 +33,9 @@ the same parser as the other commands. It answers with:
   bindings a range touches, the whole file when it touches none;
 * go to definition, find references, document highlight, and rename, which
   refuses up front a name that is not defined in the file, such as a builtin;
-* completion of the names in scope, the builtins and the keywords, of the
-  attributes of `builtins` after `builtins.`, and of those of nixpkgs after
+* completion of the names in scope, the builtins, with `builtin` as their
+  detail, and the keywords, with snippets such as `let … in` for an editor that
+  takes them, of the attributes of `builtins` after `builtins.`, and of those of nixpkgs after
   `pkgs.` and `lib.`, unless the file binds them otherwise than as a parameter;
 * on such an attribute, as `pkgs.hello` or `lib.strings.concatStrings`: a hover
   with the version, description and homepage of a package, the doc comment of

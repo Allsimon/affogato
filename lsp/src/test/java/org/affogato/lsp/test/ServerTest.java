@@ -144,26 +144,51 @@ class ServerTest {
                 .toList();
         assertThat(items)
                 .contains(
-                        Map.of("label", "import", "kind", 3L),
-                        Map.of("label", "null", "kind", 21L),
+                        Map.of("label", "import", "kind", 3L, "detail", "builtin"),
+                        Map.of("label", "null", "kind", 21L, "detail", "builtin"),
                         Map.of("label", "inherit", "kind", 14L))
                 .filteredOn(i -> i.get("label").equals("map"))
                 .containsExactly(Map.of("label", "map", "kind", 6L));
     }
 
     @Test
+    void completesKeywordSnippetsWhenTheClientTakesThem() {
+        open("x\n");
+        assertThat(list(result("textDocument/completion", at(0, 1))))
+                .noneMatch(i -> map(i).get("kind").equals(15L));
+        result(
+                "initialize",
+                "{\"capabilities\":{\"textDocument\":{\"completion\":{\"completionItem\":{\"snippetSupport\":true}}}}}");
+        open("x\n");
+        assertThat(list(result("textDocument/completion", at(0, 1))))
+                .contains(Map.of(
+                        "label",
+                        "let … in",
+                        "kind",
+                        15L,
+                        "filterText",
+                        "let",
+                        "insertText",
+                        "let\n  ${1:name} = ${2:value};\nin\n${0}",
+                        "insertTextFormat",
+                        2L));
+    }
+
+    @Test
     void completesTheAttributesOfBuiltins() {
         open("let a = 1; in builtins.ma\n");
         assertThat(list(result("textDocument/completion", at(0, 25))))
-                .contains(Map.of("label", "mapAttrs", "kind", 3L), Map.of("label", "true", "kind", 21L))
+                .contains(
+                        Map.of("label", "mapAttrs", "kind", 3L, "detail", "builtin"),
+                        Map.of("label", "true", "kind", 21L, "detail", "builtin"))
                 .doesNotContain(Map.of("label", "a", "kind", 6L));
         open("x.builtins.\n");
         assertThat(list(result("textDocument/completion", at(0, 11))))
-                .doesNotContain(Map.of("label", "mapAttrs", "kind", 3L));
+                .doesNotContain(Map.of("label", "mapAttrs", "kind", 3L, "detail", "builtin"));
         open("builtins: builtins.\n");
         assertThat(list(result("textDocument/completion", at(0, 19))))
                 .contains(Map.of("label", "builtins", "kind", 6L))
-                .doesNotContain(Map.of("label", "mapAttrs", "kind", 3L));
+                .doesNotContain(Map.of("label", "mapAttrs", "kind", 3L, "detail", "builtin"));
     }
 
     private static final class Nixpkgs implements Evaluator {
