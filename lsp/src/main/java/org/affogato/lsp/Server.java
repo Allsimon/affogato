@@ -647,6 +647,10 @@ public final class Server {
             local.putIfAbsent(name, definition);
             scope.add(Map.of("label", name, "kind", 6L));
         }
+        if (Flakes.isFlake(uri(params))) {
+            List<Object> flake = flakeCompletion(document, offset, local);
+            if (flake != null) return flake;
+        }
         List<String> option = evaluator == null ? null : typedOption(document, offset);
         if (option != null) {
             List<String> parent = option.subList(0, option.size() - 1);
@@ -734,6 +738,47 @@ public final class Server {
                 if (seen.add((String) ((Map<?, ?>) item).get("label"))) items.add(item);
         }
         return Map.of("isIncomplete", incomplete, "items", items);
+    }
+
+    /**
+     * In a flake: the names its schema has for a binding typed there, and the inputs as formals of {@code outputs}
+     * or after {@code inputs.}, the name {@code outputs} binds its argument to; else null.
+     */
+    private static List<Object> flakeCompletion(Document document, int offset, Map<String, Node> local) {
+        SyntaxTree tree = document.tree();
+        Typed typed = typedBinding(document, offset);
+        List<String> names = typed == null ? null : Flakes.names(tree, typed.set(), typed.names());
+        if (names != null) {
+            List<Object> items = new ArrayList<>();
+            for (String name : names) items.add(Map.of("label", name, "kind", 10L));
+            return items;
+        }
+        Node outputs = Flakes.outputs(tree);
+        if (outputs == null) return null;
+        List<String> inputs = new ArrayList<>(List.of("self"));
+        inputs.addAll(Flakes.inputs(tree));
+        Node formals = tree.at(Math.max(offset - 1, 0));
+        for (int i = 0; i < 2 && formals != null && formals.kind != NodeKind.FORMALS; i++) formals = formals.parent();
+        if (formals != null && formals.kind == NodeKind.FORMALS && formals.parent() == outputs) {
+            Set<String> present = new HashSet<>();
+            for (Node formal : formals.children())
+                if (formal.kind == NodeKind.FORMAL && formal.end() < offset)
+                    present.add(Scopes.name(tree.view(), formal));
+            List<Object> items = new ArrayList<>();
+            for (String input : inputs) if (!present.contains(input)) items.add(Map.of("label", input, "kind", 6L));
+            return items;
+        }
+        List<String> selection = selection(document.text(), offset);
+        Node definition = selection == null || selection.size() != 2 ? null : local.get(selection.getFirst());
+        if (definition == null
+                || definition.kind != NodeKind.PARAM && definition.kind != NodeKind.FORMAL
+                || !selection.getFirst().equals("inputs") && definition.kind == NodeKind.FORMAL) return null;
+        Node lambda = definition.parent();
+        if (lambda != null && lambda.kind == NodeKind.FORMALS) lambda = lambda.parent();
+        if (lambda != outputs) return null;
+        List<Object> items = new ArrayList<>();
+        for (String input : inputs) items.add(Map.of("label", input, "kind", 10L));
+        return items;
     }
 
     private static Map<String, Object> builtin(String name) {
@@ -875,8 +920,10 @@ public final class Server {
         return null;
     }
 
-    /** The option path being typed at {@code offset} as a binding name in a module, its last name partial, or null. */
-    private List<String> typedOption(Document document, int offset) {
+    /** The names of a binding typed up to {@code offset}, and the set it is typed in. */
+    private record Typed(List<String> names, Node set) {}
+
+    private static Typed typedBinding(Document document, int offset) {
         String text = document.text();
         List<String> typed = new ArrayList<>();
         int end = offset;
@@ -899,9 +946,15 @@ public final class Server {
             if (set.kind == NodeKind.LET) return null;
             set = set.parent();
         }
-        List<String> path = optionPrefix(document.tree(), set);
+        return set == null ? null : new Typed(typed, set);
+    }
+
+    private List<String> typedOption(Document document, int offset) {
+        Typed typed = typedBinding(document, offset);
+        if (typed == null) return null;
+        List<String> path = optionPrefix(document.tree(), typed.set());
         if (path == null) return null;
-        path.addAll(typed);
+        path.addAll(typed.names());
         path = options(path);
         return path == null || path.isEmpty() ? null : path;
     }

@@ -157,6 +157,19 @@ class ServerTest {
                 .toList();
     }
 
+    private List<Object> flakeLabels(String text, int character) {
+        server.handle(Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":"
+                + "{\"textDocument\":{\"uri\":\"file:///p/flake.nix\",\"languageId\":\"nix\",\"version\":1,\"text\":"
+                + Json.write(text) + "}}}"));
+        return list(result(
+                        "textDocument/completion",
+                        "{\"textDocument\":{\"uri\":\"file:///p/flake.nix\"},\"position\":{\"line\":0,\"character\":"
+                                + character + "}}"))
+                .stream()
+                .map(i -> map(i).get("label"))
+                .toList();
+    }
+
     @Test
     void completesAndDefinesTheNamesOfALocalWith() {
         open("let s = { a = 1; t = { b = 2; }; map = 3; }; a = 0; in with s; with t; [ b a map c ]\n");
@@ -215,6 +228,26 @@ class ServerTest {
                         "let\n  ${1:name} = ${2:value};\nin\n${0}",
                         "insertTextFormat",
                         2L));
+    }
+
+    @Test
+    void completesTheSchemaOfAFlake() {
+        assertThat(flakeLabels("{ d }", 3)).containsExactly("description", "inputs", "outputs", "nixConfig");
+        assertThat(flakeLabels("{ inputs.a.u }", 12)).containsExactly("url", "flake", "follows", "inputs");
+        assertThat(flakeLabels("{ inputs = { a = { u }; }; }", 20)).contains("follows");
+        assertThat(flakeLabels("{ outputs = { self }: { p }; }", 25)).contains("packages", "devShells");
+        assertThat(flakeLabels("{ outputs = { self }: { packages.x }; }", 34)).contains("x86_64-linux");
+        assertThat(flakeLabels("{ outputs = { self }: { nixosModules.x }; }", 38))
+                .doesNotContain("x86_64-linux");
+    }
+
+    @Test
+    void completesTheInputsOfAFlake() {
+        String flake =
+                "{ inputs.a.url = \"x\"; inputs = { b.url = \"y\"; }; outputs = { self, a, n }@inputs: inputs.a; }";
+        assertThat(flakeLabels(flake, flake.indexOf("n }"))).containsExactly("b");
+        assertThat(flakeLabels(flake, flake.indexOf("n }") + 1)).containsExactly("b");
+        assertThat(flakeLabels(flake, flake.indexOf("inputs.a;") + 7)).containsExactly("self", "a", "b");
     }
 
     @Test
