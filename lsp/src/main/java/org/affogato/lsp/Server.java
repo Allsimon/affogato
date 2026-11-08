@@ -524,6 +524,14 @@ public final class Server {
             return Map.of("isIncomplete", found.get("isIncomplete"), "items", items);
         }
         List<String> selection = selection(document.text(), offset);
+        if (selection != null) {
+            Map<String, Node> attributes = new LocalSets(document.tree())
+                    .attributes(local.get(selection.getFirst()), selection.subList(1, selection.size() - 1));
+            if (attributes != null) {
+                for (String name : attributes.keySet()) items.add(Map.of("label", name, "kind", 5L));
+                return items;
+            }
+        }
         if (evaluator != null
                 && selection != null
                 && isModuleArgument(document.tree(), local.get(selection.getFirst()))) {

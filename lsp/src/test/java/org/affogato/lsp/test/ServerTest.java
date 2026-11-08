@@ -151,6 +151,24 @@ class ServerTest {
                 .containsExactly(Map.of("label", "map", "kind", 6L));
     }
 
+    private List<Object> labels(int line, int character) {
+        return list(result("textDocument/completion", at(line, character))).stream()
+                .map(i -> map(i).get("label"))
+                .toList();
+    }
+
+    @Test
+    void completesTheAttributesOfALocalSet() {
+        open("let x = { a = 1; b.c = 2; \"d\" = 3; ${e} = 4; inherit f; }; in x.\n");
+        assertThat(labels(0, 64)).containsExactly("a", "b", "d", "f");
+        open("rec { x = { a.b = 1; a = { c = 2; }; }; y = x; z = y.a.; }\n");
+        assertThat(labels(0, 55)).containsExactly("b", "c");
+        open("let s = { a = { b = 1; }; }; inherit (s) a; in a.\n");
+        assertThat(labels(0, 49)).containsExactly("b");
+        open("let y = { b = 1; }; x = { inherit y; }; in x.y.\n");
+        assertThat(labels(0, 47)).containsExactly("b");
+    }
+
     @Test
     void completesKeywordSnippetsWhenTheClientTakesThem() {
         open("x\n");
