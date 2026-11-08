@@ -85,7 +85,9 @@ the same parser as the other commands. It answers with:
   `lua`) or `file` (a file name whose type tells the language).
 
 The `affogato` section of the `workspace/didChangeConfiguration` settings, or
-the `initializationOptions`, may set the `width`, `strict`, and the `rules` to
+of the client's configuration, which the server asks for with
+`workspace/configuration` once initialized and when told it changed, or the
+`initializationOptions`, may set the `width`, `strict`, and the `rules` to
 lint with, a list of ids, all when empty, and `nixpkgs.expr`, the expression
 nixpkgs is evaluated from, `import <nixpkgs> { }` unless `--nixpkgs` says
 otherwise, and `options`, a name for each set of options with the `expr` it is

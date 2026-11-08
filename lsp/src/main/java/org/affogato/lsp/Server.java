@@ -91,6 +91,9 @@ public final class Server {
     private final AtomicBoolean refreshing = new AtomicBoolean();
     private boolean refreshSupport;
     private boolean snippetSupport;
+
+    private boolean configurationSupport;
+    private Object configurationRequest;
     private int requests;
     private int width = Formatter.DEFAULT_WIDTH;
     private boolean strict;
@@ -181,6 +184,12 @@ public final class Server {
         Map<?, ?> params = m.get("params") instanceof Map<?, ?> p ? p : Map.of();
         List<Map<String, Object>> out = new ArrayList<>();
         try {
+            if (method == null && id != null && id.equals(configurationRequest)) {
+                configurationRequest = null;
+                if (m.get("result") instanceof List<?> sections && !sections.isEmpty())
+                    reconfigure(sections.getFirst(), out);
+                return out;
+            }
             Object result = dispatch(method, params, out);
             if (id != null && method != null) out.addFirst(response(id, result));
         } catch (UnsupportedOperationException e) {
@@ -195,6 +204,9 @@ public final class Server {
         if (method == null) return null;
         return switch (method) {
             case "initialize" -> {
+                configurationSupport = params.get("capabilities") instanceof Map<?, ?> c
+                        && c.get("workspace") instanceof Map<?, ?> w
+                        && Boolean.TRUE.equals(w.get("configuration"));
                 refreshSupport = params.get("capabilities") instanceof Map<?, ?> c
                         && c.get("workspace") instanceof Map<?, ?> w
                         && w.get("inlayHint") instanceof Map<?, ?> h
@@ -207,11 +219,15 @@ public final class Server {
                 configure(params.get("initializationOptions"));
                 yield Map.of("capabilities", capabilities(), "serverInfo", Map.of("name", "affogato"));
             }
-            case "initialized", "$/cancelRequest", "$/setTrace" -> null;
+            case "initialized" -> {
+                pullConfiguration(out);
+                yield null;
+            }
+            case "$/cancelRequest", "$/setTrace" -> null;
             case "workspace/didChangeConfiguration" -> {
-                if (params.get("settings") instanceof Map<?, ?> settings) configure(settings.get("affogato"));
-                for (Map.Entry<String, Document> e : documents.entrySet())
-                    open(e.getKey(), e.getValue().text(), out);
+                if (params.get("settings") instanceof Map<?, ?> settings && settings.get("affogato") != null)
+                    reconfigure(settings.get("affogato"), out);
+                else if (!pullConfiguration(out)) reconfigure(null, out);
                 yield null;
             }
             case "shutdown" -> null;
@@ -304,6 +320,25 @@ public final class Server {
      * ...}}}}, each optional, the rules ids of those to lint with, all when absent or empty; the indent is the
      * formatting request's {@code tabSize}.
      */
+    /** Asks the client for the {@code affogato} settings, when it takes the request; whether it was asked. */
+    private boolean pullConfiguration(List<Map<String, Object>> out) {
+        if (!configurationSupport) return false;
+        configurationRequest = "affogato-" + ++requests;
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("jsonrpc", "2.0");
+        request.put("id", configurationRequest);
+        request.put("method", "workspace/configuration");
+        request.put("params", Map.of("items", List.of(Map.of("section", "affogato"))));
+        out.add(request);
+        return true;
+    }
+
+    private void reconfigure(Object settings, List<Map<String, Object>> out) {
+        configure(settings);
+        for (Map.Entry<String, Document> e : documents.entrySet())
+            open(e.getKey(), e.getValue().text(), out);
+    }
+
     private void configure(Object settings) {
         if (!(settings instanceof Map<?, ?> s)) return;
         if (s.get("width") instanceof Long w) width = (int) (long) w;

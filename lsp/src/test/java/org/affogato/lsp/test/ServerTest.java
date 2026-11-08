@@ -696,6 +696,26 @@ class ServerTest {
     }
 
     @Test
+    void pullsTheConfigurationFromTheClient() {
+        result("initialize", "{\"capabilities\":{\"workspace\":{\"configuration\":true}}}");
+        open("let unused = 1; in x: 2\n");
+        Map<String, Object> request = server.handle(
+                        Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"initialized\",\"params\":{}}"))
+                .getFirst();
+        assertThat(request)
+                .containsEntry("method", "workspace/configuration")
+                .containsEntry("params", Map.of("items", List.of(Map.of("section", "affogato"))));
+        List<Map<String, Object>> published = server.handle(Json.parse("{\"jsonrpc\":\"2.0\",\"id\":"
+                + Json.write(request.get("id")) + ",\"result\":[{\"rules\":[\"unused-lambda-arg\"]}]}"));
+        List<Object> diagnostics = list(map(published.getFirst().get("params")).get("diagnostics"));
+        assertThat(diagnostics.stream().map(d -> map(d).get("code"))).containsExactly("unused-lambda-arg");
+        assertThat(server.handle(Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"workspace/didChangeConfiguration\","
+                                + "\"params\":{\"settings\":null}}"))
+                        .getFirst())
+                .containsEntry("method", "workspace/configuration");
+    }
+
+    @Test
     void republishesTheDiagnosticsOfTheConfiguredRules() {
         open("let unused = 1; in x: 2\n");
         List<Map<String, Object>> published =
