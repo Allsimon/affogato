@@ -2,6 +2,7 @@ package org.affogato.cli;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,30 +44,41 @@ public final class Lsp implements Callable<Integer> {
     }
 
     private static final class Worker implements Evaluator, AutoCloseable {
-        private final Session session;
+        private static final String NIXPKGS = "nixpkgs";
+        /** Prefixes the name of each option set, which the client chooses, to keep it apart from nixpkgs. */
+        private static final String OPTIONS = "options.";
+
+        private final Session session = new Session("", "", "");
         private String expression;
-        private final Map<String, Session> options = new LinkedHashMap<>();
-        private Map<String, String> optionExpressions = Map.of();
+        private Map<String, String> optionExpressions;
 
         Worker(String expression, Map<String, String> optionExpressions) {
-            session = new Session("", "", "", expression, dir());
             this.expression = expression;
-            prefetch();
-            configureOptions(optionExpressions);
+            this.optionExpressions = Collections.unmodifiableMap(new LinkedHashMap<>(optionExpressions));
+            configureSession();
         }
 
         private static String dir() {
             return System.getProperty("user.dir");
         }
 
+        private void configureSession() {
+            Map<String, Session.Root> roots = new LinkedHashMap<>();
+            roots.put(NIXPKGS, new Session.Root(expression, false));
+            for (Map.Entry<String, String> e : optionExpressions.entrySet())
+                roots.put(OPTIONS + e.getKey(), new Session.Root(e.getValue(), true));
+            session.configure(roots, dir());
+            prefetch();
+        }
+
         private void prefetch() {
-            session.names(List.of());
-            session.names(List.of("lib"));
+            session.names(NIXPKGS, List.of());
+            session.names(NIXPKGS, List.of("lib"));
         }
 
         @Override
         public List<String> names(List<String> path) {
-            return get(session.names(path), List.of(), TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS));
+            return get(session.names(NIXPKGS, path), List.of(), TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS));
         }
 
         /** The value, {@code failed} when its evaluation broke off, null when it takes longer than a request may wait. */
@@ -86,7 +98,7 @@ public final class Lsp implements Callable<Integer> {
         @Override
         public List<Attribute> describeAll(List<List<String>> paths) {
             List<Future<Session.Description>> futures = new ArrayList<>();
-            for (List<String> path : paths) futures.add(session.describe(path));
+            for (List<String> path : paths) futures.add(session.describe(NIXPKGS, path));
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
             List<Attribute> attributes = new ArrayList<>();
             for (Future<Session.Description> f : futures)
@@ -96,14 +108,16 @@ public final class Lsp implements Callable<Integer> {
 
         @Override
         public void whenDescribed(List<List<String>> paths, Runnable then) {
-            CompletableFuture.allOf(paths.stream().map(session::describe).toArray(CompletableFuture[]::new))
+            CompletableFuture.allOf(paths.stream()
+                            .map(path -> session.describe(NIXPKGS, path))
+                            .toArray(CompletableFuture[]::new))
                     .whenComplete((v, e) -> then.run());
         }
 
         @Override
         public synchronized List<String> optionNames(List<String> path) {
             List<Future<List<String>>> futures = new ArrayList<>();
-            for (Session s : options.values()) futures.add(s.names(path));
+            for (String name : optionExpressions.keySet()) futures.add(session.names(OPTIONS + name, path));
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
             TreeSet<String> names = new TreeSet<>();
             for (Future<List<String>> f : futures) {
@@ -117,7 +131,7 @@ public final class Lsp implements Callable<Integer> {
         @Override
         public synchronized Attribute describeOption(List<String> path) {
             List<Future<Session.Description>> futures = new ArrayList<>();
-            for (Session s : options.values()) futures.add(s.describe(path));
+            for (String name : optionExpressions.keySet()) futures.add(session.describe(OPTIONS + name, path));
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
             for (Future<Session.Description> f : futures) {
                 Session.Description d = get(f, Session.Description.NONE, deadline - System.nanoTime());
@@ -129,11 +143,8 @@ public final class Lsp implements Callable<Integer> {
         @Override
         public synchronized void configureOptions(Map<String, String> expressions) {
             if (expressions.equals(optionExpressions)) return;
-            optionExpressions = Map.copyOf(expressions);
-            for (Session s : options.values()) s.close();
-            options.clear();
-            for (Map.Entry<String, String> e : expressions.entrySet())
-                options.put(e.getKey(), new Session("", "", "", e.getValue(), dir(), true));
+            optionExpressions = Collections.unmodifiableMap(new LinkedHashMap<>(expressions));
+            configureSession();
         }
 
         private static Attribute attribute(Session.Description d) {
@@ -155,24 +166,21 @@ public final class Lsp implements Callable<Integer> {
         }
 
         @Override
-        public void configure(String expression) {
+        public synchronized void configure(String expression) {
             if (expression.equals(this.expression)) return;
             this.expression = expression;
-            session.configure(expression, dir());
-            prefetch();
+            configureSession();
         }
 
         @Override
         public synchronized void reset() {
             session.reset();
             prefetch();
-            for (Session s : options.values()) s.reset();
         }
 
         @Override
-        public synchronized void close() {
+        public void close() {
             session.close();
-            for (Session s : options.values()) s.close();
         }
     }
 }
