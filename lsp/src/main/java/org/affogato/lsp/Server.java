@@ -179,6 +179,7 @@ public final class Server {
             case "textDocument/completion" -> completion(params);
             case "textDocument/documentSymbol" -> symbols(document(params));
             case "textDocument/foldingRange" -> folding(document(params));
+            case "textDocument/selectionRange" -> selections(params);
             case "textDocument/semanticTokens/full" -> Map.of("data", semanticTokens(document(params)));
             case "affogato/injections" -> injections(document(params));
             case "textDocument/codeAction" -> codeActions(params);
@@ -200,6 +201,7 @@ public final class Server {
         capabilities.put("completionProvider", Map.of());
         capabilities.put("documentSymbolProvider", true);
         capabilities.put("foldingRangeProvider", true);
+        capabilities.put("selectionRangeProvider", true);
         capabilities.put("codeActionProvider", Map.of("codeActionKinds", List.of("quickfix", "source.fixAll")));
         capabilities.put(
                 "semanticTokensProvider",
@@ -367,6 +369,32 @@ public final class Server {
             if (start < end) ranges.add(Map.of("startLine", (long) start, "endLine", (long) end));
         }
         for (Node child : node.children()) fold(document, child, ranges);
+    }
+
+    /** For each position, the token there inside each node that holds it and spans more. */
+    private Object selections(Map<?, ?> params) {
+        Document document = document(params);
+        List<Object> selections = new ArrayList<>();
+        for (Object position : (List<?>) params.get("positions")) {
+            Map<String, Object> selection = null;
+            int start = -1;
+            int end = -1;
+            List<Node> nodes = new ArrayList<>();
+            for (Node node = document.tree().at(document.lines().offset((Map<?, ?>) position));
+                    node != null;
+                    node = node.parent()) nodes.add(node);
+            for (Node node : nodes.reversed()) {
+                if (node.start() == start && node.end() == end) continue;
+                start = node.start();
+                end = node.end();
+                Map<String, Object> inner = new LinkedHashMap<>();
+                inner.put("range", document.lines().range(start, end));
+                if (selection != null) inner.put("parent", selection);
+                selection = inner;
+            }
+            selections.add(selection);
+        }
+        return selections;
     }
 
     /**

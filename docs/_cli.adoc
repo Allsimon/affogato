@@ -33,7 +33,7 @@ the same parser as the other commands. It answers with:
 * go to definition, find references, document highlight, and rename, which
   refuses up front a name that is not defined in the file, such as a builtin;
 * completion of the names in scope, the builtins and the keywords;
-* document symbols, folding ranges and semantic tokens;
+* document symbols, folding ranges, selection ranges and semantic tokens;
 * code actions for the linter's fixes and suppression comments, and
   `source.fixAll` for all the fixes;
 * `affogato/injections`, a request of its own, which takes a `textDocument` and

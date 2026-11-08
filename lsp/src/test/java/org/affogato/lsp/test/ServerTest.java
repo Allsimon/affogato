@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.affogato.lsp.Json;
@@ -151,6 +152,20 @@ class ServerTest {
         List<Object> symbols = list(result("textDocument/documentSymbol", DOCUMENT));
         assertThat(names(symbols)).containsExactly("a", "b.c");
         assertThat(names(map(symbols.getLast()).get("children"))).containsExactly("d");
+    }
+
+    @Test
+    void growsTheSelectionThroughTheTree() {
+        open("{ a = [ b c ]; }");
+        Object selection = list(result(
+                        "textDocument/selectionRange",
+                        "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"positions\":[{\"line\":0,\"character\":8}]}"))
+                .getFirst();
+        List<Object> ranges = new ArrayList<>();
+        for (; selection != null; selection = map(selection).get("parent"))
+            ranges.add(map(selection).get("range"));
+        assertThat(ranges)
+                .containsExactly(range(0, 8, 0, 9), range(0, 6, 0, 13), range(0, 2, 0, 14), range(0, 0, 0, 16));
     }
 
     @Test
