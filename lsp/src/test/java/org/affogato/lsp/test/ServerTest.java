@@ -123,6 +123,21 @@ class ServerTest {
     }
 
     @Test
+    void completesTheGlobalsAndKeywords() {
+        open("let map = 1; in f\n");
+        List<Map<String, Object>> items = list(result("textDocument/completion", at(0, 17))).stream()
+                .map(ServerTest::map)
+                .toList();
+        assertThat(items)
+                .contains(
+                        Map.of("label", "import", "kind", 3L),
+                        Map.of("label", "null", "kind", 21L),
+                        Map.of("label", "inherit", "kind", 14L))
+                .filteredOn(i -> i.get("label").equals("map"))
+                .containsExactly(Map.of("label", "map", "kind", 6L));
+    }
+
+    @Test
     void listsTheBindingsAsSymbols() {
         open("{\n  a = 1;\n  b.c = { d = 2; };\n}\n");
         List<Object> symbols = list(result("textDocument/documentSymbol", DOCUMENT));
