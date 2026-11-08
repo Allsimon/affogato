@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,6 +46,18 @@ public final class Derivations {
     private static final Map<String, Map<String, byte[]>> HASH_MODULO = new HashMap<>();
 
     private static final AtermWriter ATERM = new AtermWriter(Hashes.digest("sha256"));
+
+    /**
+     * drvPaths by masked hash, store and input derivations: the full ATerm differs from the masked one only by the
+     * output paths, derived from those, and the input derivations' paths, which fixed-output inputs keep from the
+     * masked hash.
+     */
+    private static final LinkedHashMap<String, String> DRV_PATHS = new LinkedHashMap<>(1024, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > 1 << 16;
+        }
+    };
 
     static void register(Builtins b) {
         b.add("derivationStrict", 1, a -> derivationStrict(NixContext.get(), Types.attrs(a[0])));
@@ -159,6 +172,7 @@ public final class Derivations {
             }
         }
 
+        String memoKey = null;
         if (outputHash != null) {
             if (!outputs.equals(Set.of("out")))
                 throw error(drvName, "multiple outputs are not supported in fixed-output derivations");
@@ -190,11 +204,30 @@ public final class Derivations {
                 drv.env.put(o, path);
                 drv.outputs.put(o, new Output(path, "", ""));
             }
+            StringBuilder k = new StringBuilder(Hashes.hex(hashes.get(outputs.first())))
+                    .append('\0')
+                    .append(ctx.storeDir);
+            for (var e : drv.inputDrvs.entrySet()) {
+                k.append('\0').append(e.getKey());
+                for (String o : e.getValue()) k.append('\1').append(o);
+            }
+            memoKey = k.toString();
         }
 
-        TreeSet<String> refs = new TreeSet<>(drv.inputSrcs);
-        refs.addAll(drv.inputDrvs.keySet());
-        String drvPath = StorePaths.text(ctx.storeDir, drvName + ".drv", atermHash(drv, false, null), refs);
+        String drvPath;
+        synchronized (DRV_PATHS) {
+            drvPath = memoKey == null ? null : DRV_PATHS.get(memoKey);
+        }
+        if (drvPath == null) {
+            TreeSet<String> refs = new TreeSet<>(drv.inputSrcs);
+            refs.addAll(drv.inputDrvs.keySet());
+            drvPath = StorePaths.text(ctx.storeDir, drvName + ".drv", atermHash(drv, false, null), refs);
+            if (memoKey != null) {
+                synchronized (DRV_PATHS) {
+                    DRV_PATHS.put(memoKey, drvPath);
+                }
+            }
+        }
         if (!DRVS.containsKey(drvPath)) {
             HASH_MODULO.put(drvPath, hashModulo(drv, false));
             DRVS.put(drvPath, new Closure(drv.outputs.keySet(), drv.inputSrcs, drv.inputDrvs.keySet()));

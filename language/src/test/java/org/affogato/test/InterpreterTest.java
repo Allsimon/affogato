@@ -111,6 +111,18 @@ class InterpreterTest {
     }
 
     @Test
+    void derivationsOnEquivalentFixedOutputsShareOutPathsButNotDrvPaths() throws Exception {
+        String expr =
+                "let fod = b: derivation { name = \"f\"; system = \"x\"; builder = b; outputHashAlgo = \"sha256\";"
+                        + " outputHash = \"0000000000000000000000000000000000000000000000000000000000000000\"; };"
+                        + " d = f: derivation { name = \"d\"; system = \"x\"; builder = \"/b\"; src = f; };"
+                        + " a = d (fod \"/a\"); b = d (fod \"/b\");"
+                        + " in [ (a.drvPath == b.drvPath) (a.outPath == b.outPath) ]";
+        assertThat(eval(Interpreter.Output.JSON, expr, 0)).isEqualTo("[false,true]");
+        assertThat(eval(Interpreter.Output.JSON, expr, 0)).isEqualTo("[false,true]");
+    }
+
+    @Test
     void stopsAtTheTimeout() {
         long start = System.nanoTime();
         assertThatThrownBy(() -> eval(
