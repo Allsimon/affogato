@@ -429,6 +429,13 @@ public final class Server {
             return Map.of("isIncomplete", found.get("isIncomplete"), "items", items);
         }
         List<String> selection = selection(document.text(), offset);
+        if (evaluator != null
+                && selection != null
+                && isModuleArgument(document.tree(), local.get(selection.getFirst()))) {
+            List<String> path = new ArrayList<>(selection.subList(0, selection.size() - 1));
+            path.addFirst(Evaluator.MODULE_ARGUMENTS);
+            return attributes(evaluator.names(path), path, selection.getLast());
+        }
         if (evaluator != null && selection != null) {
             String root = selection.getFirst();
             Node definition = local.get(root);
@@ -648,11 +655,7 @@ public final class Server {
                     node = parent;
                 }
                 case LAMBDA -> {
-                    if (parts.getLast() != node || parent.parent() == null || parent.parent().kind != null) return null;
-                    for (Node formal : Scopes.definitions(tree.view(), parent))
-                        if (Set.of("config", "lib", "pkgs", "modulesPath").contains(Scopes.name(tree.view(), formal)))
-                            return path;
-                    return null;
+                    return parts.getLast() == node && isModule(tree, parent) ? path : null;
                 }
                 default -> {
                     return null;
@@ -700,7 +703,7 @@ public final class Server {
         int after = 0;
         for (int i = children.size() - 1; children.get(i) != name; i--) if (children.get(i).token == null) after++;
         List<List<String>> candidates = new ArrayList<>();
-        for (List<String> path : selectionCandidates(tree, attrPath.parent()))
+        for (List<String> path : selectionCandidates(tree, attrPath.parent(), new ArrayList<>()))
             candidates.add(path.subList(0, path.size() - after));
         return candidates.size() == 1 ? new Selected(name, candidates.getFirst()) : first(name, candidates);
     }
@@ -721,7 +724,7 @@ public final class Server {
      * else those of a variable a {@code with} of nixpkgs brings into scope, as {@code unstable.hello} under
      * {@code with pkgs;}, followed by its attribute names.
      */
-    private static List<List<String>> selectionCandidates(SyntaxTree tree, Node select) {
+    private List<List<String>> selectionCandidates(SyntaxTree tree, Node select, List<List<String>> pending) {
         List<String> own = nixpkgsPath(tree, select);
         if (own != null) return List.of(own);
         if (select == null || select.kind != NodeKind.SELECT) return List.of();
@@ -731,17 +734,71 @@ public final class Server {
         List<String> names = new ArrayList<>();
         for (Node child : attrPath.children()) {
             if (child.token != null) continue;
-            String text = attrName(tree, child);
+            String text =
+                    child.kind == NodeKind.DYNAMIC_ATTR ? computedName(tree, child, pending) : attrName(tree, child);
             if (text == null) return List.of();
             names.add(text);
         }
+        List<List<String>> bases = isModuleArgument(tree, Scopes.resolve(tree.view(), tree.text(base), base))
+                ? List.of(List.of(Evaluator.MODULE_ARGUMENTS, tree.text(base)))
+                : candidates(tree, base);
         List<List<String>> candidates = new ArrayList<>();
-        for (List<String> path : candidates(tree, base)) {
+        for (List<String> path : bases) {
             List<String> full = new ArrayList<>(path);
             full.addAll(names);
             candidates.add(full);
         }
         return candidates;
+    }
+
+    /**
+     * The string a {@code ${...}} name evaluates to, when it is a selection from nixpkgs, as
+     * {@code ${pkgs.stdenv.hostPlatform.system}}, and a plain one; else null, and its paths in {@code pending} while
+     * they are evaluated.
+     */
+    private String computedName(SyntaxTree tree, Node dynamic, List<List<String>> pending) {
+        Node expr = dynamic.children().stream()
+                .filter(c -> c.token == null)
+                .findFirst()
+                .orElse(null);
+        List<List<String>> candidates = selectionCandidates(tree, expr, pending);
+        if (candidates.isEmpty()) return null;
+        for (Evaluator.Attribute a : evaluator.describeAll(candidates)) {
+            if (a == null) {
+                pending.addAll(candidates);
+                return null;
+            }
+            if (a.type() == null) continue;
+            String v = a.value();
+            boolean plain = "string".equals(a.type())
+                    && v != null
+                    && v.length() >= 2
+                    && v.startsWith("\"")
+                    && v.endsWith("\"")
+                    && v.indexOf('\\') < 0;
+            return plain ? v.substring(1, v.length() - 1) : null;
+        }
+        return null;
+    }
+
+    /**
+     * Whether {@code definition} is an argument of a module's function that the evaluator looks up among the arguments
+     * its modules receive: one other than {@code pkgs} and {@code lib}, taken from nixpkgs, and {@code config} and
+     * {@code options}.
+     */
+    private static boolean isModuleArgument(SyntaxTree tree, Node definition) {
+        if (definition == null || definition.kind != NodeKind.FORMAL) return false;
+        if (Set.of("pkgs", "lib", "config", "options").contains(Scopes.name(tree.view(), definition))) return false;
+        Node lambda = definition.parent() == null ? null : definition.parent().parent();
+        return lambda != null && lambda.kind == NodeKind.LAMBDA && isModule(tree, lambda);
+    }
+
+    /** Whether {@code lambda} is the file, a function of {@code config}, {@code lib}, {@code pkgs} or {@code modulesPath}. */
+    private static boolean isModule(SyntaxTree tree, Node lambda) {
+        if (lambda.parent() == null || lambda.parent().kind != null) return false;
+        for (Node formal : Scopes.definitions(tree.view(), lambda))
+            if (Set.of("config", "lib", "pkgs", "modulesPath").contains(Scopes.name(tree.view(), formal))) return true;
+        return false;
     }
 
     /**
@@ -821,12 +878,13 @@ public final class Server {
         int end = document.lines().offset((Map<?, ?>) range.get("end"));
         SyntaxTree tree = document.tree();
         List<Integer> ends = new ArrayList<>();
+        List<List<String>> pending = new ArrayList<>();
         List<Integer> counts = new ArrayList<>();
         List<List<String>> paths = new ArrayList<>();
         collect(tree.root(), node -> {
             if (node.end() < start || node.start() > end) return;
             if (node.kind == NodeKind.SELECT) {
-                List<List<String>> candidates = selectionCandidates(tree, node).stream()
+                List<List<String>> candidates = selectionCandidates(tree, node, pending).stream()
                         .filter(path -> !path.isEmpty() && !path.getFirst().equals("lib"))
                         .toList();
                 if (candidates.isEmpty()) return;
@@ -842,8 +900,12 @@ public final class Server {
             }
         });
         List<Evaluator.Attribute> attributes = evaluator.describeAll(paths);
-        if (attributes.contains(null) && send != null && refreshSupport && refreshing.compareAndSet(false, true))
-            evaluator.whenDescribed(paths, () -> {
+        pending.addAll(paths);
+        if ((attributes.contains(null) || pending.size() > paths.size())
+                && send != null
+                && refreshSupport
+                && refreshing.compareAndSet(false, true))
+            evaluator.whenDescribed(pending, () -> {
                 refreshing.set(false);
                 Map<String, Object> request = new LinkedHashMap<>();
                 request.put("jsonrpc", "2.0");

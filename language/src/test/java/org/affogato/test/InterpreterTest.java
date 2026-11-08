@@ -222,6 +222,26 @@ class InterpreterTest {
     }
 
     @Test
+    void looksUpTheArgumentsTheModulesOfAnOptionSetReceive(@TempDir Path dir) throws Exception {
+        String options = "{ _module = {"
+                + " args = { _type = \"option\"; value = { a = 1; pkgs = { }; }; };"
+                + " specialArgs = { _type = \"option\"; value = { a = 2; inputs.x.y = 3; }; }; }; }";
+        try (Session session = new Session("", "", "")) {
+            session.configure(
+                    Map.of("o", new Session.Root(options, true), "p", new Session.Root("{ }", false)), dir.toString());
+            assertThat(session.names(Session.arguments("o"), List.of()).get()).containsExactly("a", "inputs", "pkgs");
+            assertThat(session.names(Session.arguments("o"), List.of("inputs", "x"))
+                            .get())
+                    .containsExactly("y");
+            assertThat(session.describe(Session.arguments("o"), List.of("a"))
+                            .get()
+                            .value())
+                    .isEqualTo("2");
+            assertThat(session.names(Session.arguments("p"), List.of()).get()).isEmpty();
+        }
+    }
+
+    @Test
     void printsTheEntryTypesOfReadDir(@TempDir Path dir) throws Exception {
         Files.createDirectory(dir.resolve("d"));
         Files.writeString(dir.resolve("f"), "");
