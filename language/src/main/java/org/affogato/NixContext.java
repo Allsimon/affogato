@@ -39,6 +39,9 @@ public final class NixContext {
 
     public final Map<String, Object> globals = new HashMap<>();
     private final Map<String, Thunk> imports = new HashMap<>();
+    /** The flakes {@code builtins.getFlake} evaluated, by reference. */
+    public final Map<String, Thunk> flakes = new HashMap<>();
+
     private final Map<String, String> copiedPaths = new HashMap<>();
 
     NixContext(String storeDir, String system, String np) {

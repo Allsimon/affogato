@@ -173,6 +173,35 @@ class InterpreterTest {
     }
 
     @Test
+    void evaluatesALocalFlakeAndItsPathInputs(@TempDir Path dir) throws Exception {
+        Files.createDirectories(dir.resolve("sub"));
+        Files.writeString(
+                dir.resolve("flake.nix"),
+                "{ inputs.sub.url = \"path:./sub\"; outputs = { self, sub }: { x = sub.y + 1; me = self.outPath; }; }");
+        Files.writeString(dir.resolve("sub/flake.nix"), "{ outputs = { self }: { y = 41; }; }");
+        Files.writeString(dir.resolve("flake.lock"), """
+            {"nodes": {"root": {"inputs": {"sub": "sub"}},
+             "sub": {"locked": {"path": "./sub", "type": "path"}, "original": {"path": "./sub", "type": "path"},
+                     "parent": []}},
+             "root": "root", "version": 7}
+            """);
+        assertThat(eval(Interpreter.Output.EVAL, "(builtins.getFlake \"path:" + dir + "\").x", 0))
+                .isEqualTo("42");
+        assertThat(eval(Interpreter.Output.EVAL, "(builtins.getFlake \"git+file://" + dir + "\").me", 0))
+                .isEqualTo("\"" + dir + "\"");
+        assertThat(eval(Interpreter.Output.EVAL, "(builtins.getFlake \"" + dir + "?dir=sub\").y", 0))
+                .isEqualTo("41");
+        assertThatThrownBy(() -> eval(
+                        Interpreter.Output.EVAL,
+                        "builtins.fetchTree { type = \"github\"; owner = \"o\"; repo = \"r\";"
+                                + " narHash = \"sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\"; }",
+                        0))
+                .hasMessageContaining("input 'github:o/r' is not in the Nix store at /nix/store/");
+        assertThatThrownBy(() -> eval(Interpreter.Output.EVAL, "builtins.getFlake \"github:o/r\"", 0))
+                .hasMessageContaining("only for local flakes");
+    }
+
+    @Test
     void printsTheEntryTypesOfReadDir(@TempDir Path dir) throws Exception {
         Files.createDirectory(dir.resolve("d"));
         Files.writeString(dir.resolve("f"), "");
