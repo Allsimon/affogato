@@ -82,10 +82,14 @@ public final class NixContext {
     }
 
     public NixRootNode parse(String content, String fileName, String baseDir, String[] scopeNames) {
+        return parse(content, fileName, baseDir, scopeNames, false);
+    }
+
+    private NixRootNode parse(String content, String fileName, String baseDir, String[] scopeNames, boolean cached) {
         Source source = new Source(fileName, content);
         Ast.Expr expr;
         try {
-            expr = Parser.parse(content);
+            expr = cached ? ParseCache.parse(fileName, content) : Parser.parse(content);
             return Translator.translate(source, expr, fileName, baseDir, globals, scopeNames);
         } catch (ParseException e) {
             var sec = source.createSection(Math.min(e.offset, source.getLength()), 0);
@@ -113,7 +117,7 @@ public final class NixContext {
         String file = resolveImport(path);
         Thunk t = imports.get(file);
         if (t == null) {
-            NixRootNode target = parse(readFile(file), file, parentDir(file), new String[0]);
+            NixRootNode target = parse(readFile(file), file, parentDir(file), new String[0], true);
             t = new Thunk(target, null);
             imports.put(file, t);
         }
@@ -122,7 +126,7 @@ public final class NixContext {
 
     public Object scopedImport(NixAttrs scope, String path) {
         String file = resolveImport(path);
-        NixRootNode target = parse(readFile(file), file, parentDir(file), scope.keys());
+        NixRootNode target = parse(readFile(file), file, parentDir(file), scope.keys(), true);
         return Thunk.force(target.call(null, scope));
     }
 
