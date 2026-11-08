@@ -445,7 +445,26 @@ public final class Server {
         Node definition = definitionAt(document, offset(document, params));
         if (definition != null) return location(uri(params), document, nameToken(definition));
         Node attribute = selectedAttribute(document, offset(document, params));
+        if (attribute == null) attribute = withAttribute(document, offset(document, params));
         return attribute == null ? null : location(uri(params), document, attribute);
+    }
+
+    /** Where the set literal of the innermost {@code with} that has it binds the variable at {@code offset}. */
+    private static Node withAttribute(Document document, int offset) {
+        SyntaxTree tree = document.tree();
+        Node var = tree.at(offset).parent();
+        if (var == null || var.kind != NodeKind.VAR) return null;
+        String name = tree.text(var);
+        if (Linter.GLOBALS.contains(name) || Scopes.resolve(tree.view(), name, var) != null) return null;
+        LocalSets sets = new LocalSets(tree);
+        for (Node with : LocalSets.withs(var)) {
+            Map<String, Node> names = sets.attributes(with.children().stream()
+                    .filter(c -> c.token == null)
+                    .findFirst()
+                    .orElseThrow());
+            if (names != null && names.containsKey(name)) return names.get(name);
+        }
+        return null;
     }
 
     /** Where a local set literal binds the attribute a selection names at {@code offset}, as {@code a} in {@code x.a}. */
@@ -599,6 +618,18 @@ public final class Server {
                     body,
                     "insertTextFormat",
                     2L)));
+
+        Set<String> seen = new HashSet<>(local.keySet());
+        seen.addAll(Linter.GLOBALS);
+        LocalSets sets = new LocalSets(document.tree());
+        for (Node with : LocalSets.withs(document.tree().at(Math.max(offset - 1, 0)))) {
+            Map<String, Node> names = sets.attributes(with.children().stream()
+                    .filter(c -> c.token == null)
+                    .findFirst()
+                    .orElseThrow());
+            if (names != null)
+                for (String name : names.keySet()) if (seen.add(name)) items.add(Map.of("label", name, "kind", 6L));
+        }
         List<List<String>> scopes = evaluator == null
                 ? List.of()
                 : withScopes(document.tree(), document.tree().at(Math.max(offset - 1, 0)));
@@ -607,8 +638,6 @@ public final class Server {
         while (start > 0 && isNameChar(document.text().charAt(start - 1))) start--;
         String prefix = document.text().substring(start, offset);
         boolean incomplete = false;
-        Set<String> seen = new HashSet<>(local.keySet());
-        seen.addAll(Linter.GLOBALS);
         for (List<String> path : scopes) {
             Map<String, Object> found = attributes(evaluator.names(path), path, prefix);
             incomplete |= (Boolean) found.get("isIncomplete");

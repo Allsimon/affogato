@@ -158,6 +158,20 @@ class ServerTest {
     }
 
     @Test
+    void completesAndDefinesTheNamesOfALocalWith() {
+        open("let s = { a = 1; t = { b = 2; }; map = 3; }; a = 0; in with s; with t; [ b a map c ]\n");
+        assertThat(labels(0, 74)).contains("a", "b", "s", "t").doesNotHaveDuplicates();
+        assertThat(map(result("textDocument/definition", at(0, 73)))).containsEntry("range", range(0, 23, 0, 24));
+        assertThat(map(result("textDocument/definition", at(0, 75)))).containsEntry("range", range(0, 45, 0, 46));
+        assertThat(result("textDocument/definition", at(0, 77))).isNull();
+        assertThat(result("textDocument/definition", at(0, 81))).isNull();
+        open("with { x = 1; }; y\n");
+        assertThat(labels(0, 18)).contains("x");
+        open("let s.a = { x = 1; }; in with (s.a); y\n");
+        assertThat(labels(0, 38)).contains("x");
+    }
+
+    @Test
     void goesToTheAttributeASelectionNames() {
         open("let x = { a.b = 1; \"c\" = { d = 2; }; }; y = x; in [ y.a.b x.\"c\".d (x ? c) y.e ]\n");
         assertThat(map(result("textDocument/definition", at(0, 56)))).containsEntry("range", range(0, 12, 0, 13));

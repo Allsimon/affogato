@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.affogato.lint.Linter;
+import org.affogato.parser.Lexeme;
 import org.affogato.parser.NodeKind;
 import org.affogato.parser.Scopes;
 import org.affogato.parser.SyntaxTree;
@@ -35,6 +37,35 @@ final class LocalSets {
             if (members == null) return null;
             members = step(members, name, 0);
         }
+        return names(members);
+    }
+
+    /**
+     * The attributes of the set literal {@code expr} is, or names through a name the file binds and a selection, as
+     * in {@code with x.a;}; null when no set literal is found.
+     */
+    Map<String, Node> attributes(Node expr) {
+        return names(value(expr, 0));
+    }
+
+    /** The {@code with}s whose body holds {@code node}, the innermost first. */
+    static List<Node> withs(Node node) {
+        List<Node> withs = new ArrayList<>();
+        for (Node child = node, parent = node.parent(); parent != null; child = parent, parent = parent.parent()) {
+            if (parent.kind != NodeKind.WITH) continue;
+            List<Node> parts =
+                    parent.children().stream().filter(c -> c.kind != null).toList();
+            if (parts.size() >= 2 && parts.getLast() == child) withs.add(parent);
+        }
+        return withs;
+    }
+
+    /** The set a {@code with} brings into scope. */
+    static Node scope(Node with) {
+        return firstNode(with.children(), null);
+    }
+
+    private Map<String, Node> names(List<Member> members) {
         if (members == null) return null;
         Map<String, Node> names = new LinkedHashMap<>();
         for (Member m : members) {
@@ -94,10 +125,32 @@ final class LocalSets {
 
     private List<Member> value(Node expr, int depth) {
         while (expr != null && expr.kind == NodeKind.PAREN) expr = firstNode(expr.children(), null);
-        if (expr == null) return null;
+        if (expr == null || depth > DEPTH) return null;
         if (expr.kind == NodeKind.ATTR_SET) return bindings(expr);
-        if (expr.kind == NodeKind.VAR) return members(Scopes.resolve(view, tree.text(expr), expr), depth);
-        return null;
+        if (expr.kind == NodeKind.VAR) {
+            String name = tree.text(expr);
+            Node definition = Scopes.resolve(view, name, expr);
+            if (definition != null) return members(definition, depth + 1);
+            if (Linter.GLOBALS.contains(name)) return null;
+            for (Node with : withs(expr)) {
+                List<Member> scope = value(scope(with), depth + 1);
+                if (scope != null && names(scope).containsKey(name)) return step(scope, name, depth + 1);
+            }
+            return null;
+        }
+        if (expr.kind != NodeKind.SELECT) return null;
+        List<Member> members = value(expr.children().getFirst(), depth + 1);
+        for (Node child : expr.children()) {
+            if (child.token == Lexeme.Kind.OR_KW) return null;
+            if (child.kind != NodeKind.ATTR_PATH) continue;
+            for (Node segment : child.children()) {
+                if (segment.kind == null) continue;
+                String name = name(segment);
+                if (name == null || members == null) return null;
+                members = step(members, name, depth + 1);
+            }
+        }
+        return members;
     }
 
     private static List<Member> bindings(Node container) {

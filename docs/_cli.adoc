@@ -66,6 +66,9 @@ the same parser as the other commands. It answers with:
   nixpkgs brings into scope, as `hello` in `with pkgs; [ hello ]`: a name bound
   in the file or a builtin is not one, and the innermost `with` that has the
   name gives it, up to a `with` of something other than nixpkgs;
+* completion and go to definition for the names a `with` of a set literal of
+  the file brings into scope, written in place or reached through its names
+  and selections, as `with s.a;`;
 * document symbols, folding ranges, selection ranges and semantic tokens;
 * links on the paths without interpolation, the URIs, and the strings that are
   an http or https URL, and go to definition on such a path, both to the
