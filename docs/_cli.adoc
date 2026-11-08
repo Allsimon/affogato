@@ -28,7 +28,8 @@ separated by commas; `syntax-error` cannot be switched off.
 `affogato lsp` speaks the Language Server Protocol over stdin and stdout, from
 the same parser as the other commands. It answers with:
 
-* the linter's findings, as diagnostics;
+* the linter's findings, as diagnostics, for the last of the changes of a
+  document that wait to be read, and none for those before;
 * formatting, indented by the request's `tabSize`, of the file or of the
   bindings a range touches, the whole file when it touches none;
 * go to definition, find references, document highlight, and rename, which

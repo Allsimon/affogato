@@ -902,6 +902,33 @@ class ServerTest {
     }
 
     @Test
+    void lintsOnlyTheLastOfTheChangesWaitingAndSkipsCancelledRequests() throws Exception {
+        String open = "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":"
+                + "{\"uri\":\"" + URI + "\",\"languageId\":\"nix\",\"version\":1,\"text\":\"1\"}}}";
+        String change = "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":"
+                + "{\"uri\":\"" + URI + "\",\"version\":2},\"contentChanges\":[{\"text\":\"let a = 1; in 2\"}]}}";
+        String hover = "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"textDocument/hover\",\"params\":" + at(0, 0) + "}";
+        String cancel = "{\"jsonrpc\":\"2.0\",\"method\":\"$/cancelRequest\",\"params\":{\"id\":5}}";
+        String symbols =
+                "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"textDocument/documentSymbol\",\"params\":" + DOCUMENT + "}";
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        Server.serve(
+                new ByteArrayInputStream(
+                        (frame(open) + frame(change) + frame(symbols) + frame(change) + frame(hover) + frame(cancel))
+                                .getBytes(StandardCharsets.UTF_8)),
+                out,
+                null);
+
+        String output = out.toString(StandardCharsets.UTF_8);
+        assertThat(output.split("publishDiagnostics", -1)).hasSize(3);
+        assertThat(output)
+                .contains("\"name\":\"a\"")
+                .contains("\"id\":5,\"error\":{")
+                .contains("\"code\":-32800");
+    }
+
+    @Test
     void answersInvalidJsonWithAParseErrorAndGoesOn() throws Exception {
         String initialize = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}";
         ByteArrayOutputStream out = new ByteArrayOutputStream();

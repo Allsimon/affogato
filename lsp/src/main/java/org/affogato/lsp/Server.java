@@ -76,6 +76,8 @@ public final class Server {
 
     private static final int GROUP_NAMES = 50;
 
+    private static final int BATCH = 64;
+
     private static final Set<String> CONSTANTS = Set.of("true", "false", "null");
 
     private static final Pattern URL = Pattern.compile("https?://[^\\s\\\\]+");
@@ -99,6 +101,7 @@ public final class Server {
     private boolean strict;
     private Set<Rule> rules = EnumSet.allOf(Rule.class);
     private boolean exited;
+    private boolean changedAgain;
 
     public Server() {
         this(null);
@@ -124,17 +127,56 @@ public final class Server {
                 throw new UncheckedIOException(e);
             }
         });
-        while (!server.exited) {
-            String body = read(in);
-            if (body == null) return;
-            List<Map<String, Object>> replies;
-            try {
-                replies = server.handle(Json.parse(body));
-            } catch (IllegalArgumentException e) {
-                replies = List.of(error(null, -32700, e.getMessage()));
+        boolean end = false;
+        while (!server.exited && !end) {
+            List<String> bodies = new ArrayList<>();
+            do {
+                String body = read(in);
+                if (body == null) end = true;
+                else bodies.add(body);
+            } while (!end && bodies.size() < BATCH && in.available() > 0);
+            List<Object> messages = new ArrayList<>();
+            Set<Object> cancelled = new HashSet<>();
+            for (String body : bodies) {
+                Object message;
+                try {
+                    message = Json.parse(body);
+                } catch (IllegalArgumentException e) {
+                    message = e;
+                }
+                messages.add(message);
+                if (message instanceof Map<?, ?> m
+                        && "$/cancelRequest".equals(m.get("method"))
+                        && m.get("params") instanceof Map<?, ?> p) cancelled.add(p.get("id"));
             }
-            for (Map<String, Object> message : replies) write(out, message);
+            for (int i = 0; i < messages.size() && !server.exited; i++) {
+                List<Map<String, Object>> replies;
+                if (messages.get(i) instanceof IllegalArgumentException e)
+                    replies = List.of(error(null, -32700, e.getMessage()));
+                else if (messages.get(i) instanceof Map<?, ?> m
+                        && m.get("method") != null
+                        && m.get("id") != null
+                        && cancelled.contains(m.get("id"))) replies = List.of(error(m.get("id"), -32800, "cancelled"));
+                else replies = server.handle(messages.get(i), changedAgain(messages, i));
+                for (Map<String, Object> message : replies) write(out, message);
+            }
         }
+    }
+
+    /** Whether the message at {@code i} changes a document that a later one changes again. */
+    private static boolean changedAgain(List<Object> messages, int i) {
+        String uri = changed(messages.get(i));
+        if (uri == null) return false;
+        for (int j = i + 1; j < messages.size(); j++) if (uri.equals(changed(messages.get(j)))) return true;
+        return false;
+    }
+
+    private static String changed(Object message) {
+        return message instanceof Map<?, ?> m
+                        && "textDocument/didChange".equals(m.get("method"))
+                        && m.get("params") instanceof Map<?, ?> p
+                ? uri(p)
+                : null;
     }
 
     /** Writes from the request thread and from the evaluator's, when it sends a refresh. */
@@ -177,6 +219,15 @@ public final class Server {
 
     /** The messages answering {@code message}: a response to a request, and any notification it causes. */
     public List<Map<String, Object>> handle(Object message) {
+        return handle(message, false);
+    }
+
+    /**
+     * Answers {@code message}, a change of a document it does not lint when {@code changedAgain}, as a later change
+     * of that document waits.
+     */
+    public List<Map<String, Object>> handle(Object message, boolean changedAgain) {
+        this.changedAgain = changedAgain;
         if (!(message instanceof Map<?, ?> m) || m.get("method") != null && !(m.get("method") instanceof String))
             return List.of(error(null, -32600, "not a request"));
         String method = (String) m.get("method");
@@ -243,7 +294,8 @@ public final class Server {
             case "textDocument/didChange" -> {
                 List<?> changes = (List<?>) params.get("contentChanges");
                 String text = (String) ((Map<?, ?>) changes.getLast()).get("text");
-                open(uri(params), text, out);
+                if (changedAgain) documents.put(uri(params), Document.of(text));
+                else open(uri(params), text, out);
                 yield null;
             }
             case "textDocument/didSave" -> {
