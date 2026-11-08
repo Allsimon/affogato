@@ -99,6 +99,18 @@ class InterpreterTest {
     }
 
     @Test
+    void reReadsASettledImportedFileEditedBetweenEvaluations(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("a.nix");
+        String expr = "import " + file;
+        Files.writeString(file, "1");
+        Thread.sleep(1100);
+        assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("1");
+        assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("1");
+        Files.writeString(file, "2");
+        assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("2");
+    }
+
+    @Test
     void stopsAtTheTimeout() {
         long start = System.nanoTime();
         assertThatThrownBy(() -> eval(

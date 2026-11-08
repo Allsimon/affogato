@@ -81,16 +81,18 @@ public final class NixContext {
     }
 
     public NixRootNode parse(String content, String fileName, String baseDir, String[] scopeNames) {
-        return parse(content, fileName, baseDir, scopeNames, false);
+        return parse(content, fileName, baseDir, scopeNames, false, null);
     }
 
-    private NixRootNode parse(String content, String fileName, String baseDir, String[] scopeNames, boolean cached) {
+    private NixRootNode parse(
+            String content, String fileName, String baseDir, String[] scopeNames, boolean cached, List<Object> stamp) {
         Source source = new Source(fileName, content);
         try {
             if (cached && scopeNames.length == 0) {
                 return ParseCache.translate(
                         fileName,
                         content,
+                        stamp,
                         ast -> Translator.translate(source, ast, fileName, baseDir, globals, scopeNames));
             }
             Ast.Expr expr = cached ? ParseCache.parse(fileName, content) : Parser.parse(content);
@@ -121,7 +123,9 @@ public final class NixContext {
         String file = resolveImport(path);
         Thunk t = imports.get(file);
         if (t == null) {
-            NixRootNode target = parse(readFile(file), file, parentDir(file), new String[0], true);
+            List<Object> stamp = FileStamp.of(Path.of(file));
+            NixRootNode target = ParseCache.cached(file, stamp);
+            if (target == null) target = parse(readFile(file), file, parentDir(file), new String[0], true, stamp);
             t = new Thunk(target, null);
             imports.put(file, t);
         }
@@ -130,7 +134,7 @@ public final class NixContext {
 
     public Object scopedImport(NixAttrs scope, String path) {
         String file = resolveImport(path);
-        NixRootNode target = parse(readFile(file), file, parentDir(file), scope.keys(), true);
+        NixRootNode target = parse(readFile(file), file, parentDir(file), scope.keys(), true, null);
         return Thunk.force(target.call(null, scope));
     }
 

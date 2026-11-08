@@ -1,6 +1,7 @@
 package org.affogato;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.function.Function;
 import org.affogato.nodes.NixRootNode;
 import org.affogato.parser.Ast;
@@ -16,6 +17,8 @@ final class ParseCache {
         final Ast.Expr ast;
         /** For a plain {@code import}; translation needs the scope's names, so scopedImport does not share it. */
         volatile NixRootNode root;
+        /** Taken before {@code content} was read, so a later write makes it differ. */
+        volatile List<Object> stamp;
 
         Entry(String content, Ast.Expr ast) {
             this.content = content;
@@ -32,8 +35,19 @@ final class ParseCache {
         return entry(file, content).ast;
     }
 
-    static NixRootNode translate(String file, String content, Function<Ast.Expr, NixRootNode> translator) {
+    /** The translated root of {@code file} if its {@link FileStamp} is unchanged, without reading it. */
+    static NixRootNode cached(String file, List<Object> stamp) {
+        if (stamp == null) return null;
+        synchronized (ENTRIES) {
+            Entry e = ENTRIES.get(file);
+            return e != null && stamp.equals(e.stamp) ? e.root : null;
+        }
+    }
+
+    static NixRootNode translate(
+            String file, String content, List<Object> stamp, Function<Ast.Expr, NixRootNode> translator) {
         Entry e = entry(file, content);
+        e.stamp = stamp;
         NixRootNode root = e.root;
         if (root == null) e.root = root = translator.apply(e.ast);
         return root;
