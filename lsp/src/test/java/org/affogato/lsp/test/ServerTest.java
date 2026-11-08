@@ -177,6 +177,20 @@ class ServerTest {
         }
 
         @Override
+        public Attribute describe(List<String> path) {
+            asked.add(path);
+            return switch (String.join(".", path)) {
+                case "hello" ->
+                    new Attribute(
+                            "derivation", null, "hello", "2.12", "Greets", "https://h", null, "/p/hello.nix", 3, 1);
+                case "lib.inc" ->
+                    new Attribute("lambda", null, null, null, null, null, "Adds one.", "/p/lib.nix", 5, 9);
+                case "lib" -> new Attribute("set", null, null, null, null, null, null, null, 0, 0);
+                default -> new Attribute(null, null, null, null, null, null, null, null, 0, 0);
+            };
+        }
+
+        @Override
         public void configure(String expression) {
             this.expression = expression;
         }
@@ -196,7 +210,21 @@ class ServerTest {
                 .containsEntry("isIncomplete", false)
                 .containsEntry(
                         "items",
-                        List.of(Map.of("label", "hello", "kind", 5L), Map.of("label", "help2man", "kind", 5L)));
+                        List.of(
+                                Map.of(
+                                        "label",
+                                        "hello",
+                                        "kind",
+                                        5L,
+                                        "data",
+                                        Map.of("path", List.of("python3Packages", "hello"))),
+                                Map.of(
+                                        "label",
+                                        "help2man",
+                                        "kind",
+                                        5L,
+                                        "data",
+                                        Map.of("path", List.of("python3Packages", "help2man")))));
         open("lib.\n");
         result("textDocument/completion", at(0, 4));
         open("pkgs.slow.\n");
@@ -207,6 +235,35 @@ class ServerTest {
         open("let pkgs = { a = 1; }; in pkgs.\n");
         assertThat(list(result("textDocument/completion", at(0, 31)))).isNotEmpty();
         assertThat(nixpkgs.asked).hasSize(3);
+    }
+
+    @Test
+    void describesTheAttributesOfNixpkgs() {
+        server = new Server(new Nixpkgs());
+        open("{ pkgs, lib }: [ pkgs.hello lib.inc pkgs.none ]\n");
+        assertThat(map(result("textDocument/hover", at(0, 23))))
+                .containsEntry("contents", Map.of("kind", "markdown", "value", "`hello` 2.12\n\nGreets\n\nhttps://h"))
+                .containsEntry("range", range(0, 22, 0, 27));
+        assertThat(map(map(result("textDocument/hover", at(0, 33))).get("contents")))
+                .containsEntry("value", "`lambda`\n\nAdds one.");
+        assertThat(result("textDocument/hover", at(0, 42))).isNull();
+        assertThat(result("textDocument/definition", at(0, 23)))
+                .isEqualTo(Map.of("uri", "file:///p/hello.nix", "range", range(2, 0, 2, 0)));
+        assertThat(result("textDocument/definition", at(0, 18)))
+                .isEqualTo(Map.of("uri", URI, "range", range(0, 2, 0, 6)));
+    }
+
+    @Test
+    void resolvesTheCompletionsOfNixpkgs() {
+        server = new Server(new Nixpkgs());
+        open("{ pkgs, ... }: pkgs.hel\n");
+        Map<String, Object> item =
+                map(list(map(result("textDocument/completion", at(0, 23))).get("items"))
+                        .getFirst());
+        assertThat(item).containsEntry("data", Map.of("path", List.of("hello")));
+        assertThat(map(result("completionItem/resolve", Json.write(item))))
+                .containsEntry("detail", "2.12")
+                .containsEntry("documentation", Map.of("kind", "markdown", "value", "Greets"));
     }
 
     @Test

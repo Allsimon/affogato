@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.affogato.Session;
@@ -47,16 +48,39 @@ public final class Lsp implements Callable<Integer> {
 
         @Override
         public List<String> names(List<String> path) {
+            return get(session.names(path), List.of());
+        }
+
+        /** The value, {@code failed} when its evaluation broke off, null when it takes longer than a request may wait. */
+        private static <T> T get(Future<T> future, T failed) {
             try {
-                return session.names(path).get(WAIT_MILLIS, TimeUnit.MILLISECONDS);
+                return future.get(WAIT_MILLIS, TimeUnit.MILLISECONDS);
             } catch (TimeoutException e) {
                 return null;
             } catch (ExecutionException e) {
-                return List.of();
+                return failed;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return null;
             }
+        }
+
+        @Override
+        public Attribute describe(List<String> path) {
+            Session.Description d = get(session.describe(path), Session.Description.NONE);
+            return d == null
+                    ? null
+                    : new Attribute(
+                            d.type(),
+                            d.value(),
+                            d.name(),
+                            d.version(),
+                            d.description(),
+                            d.homepage(),
+                            d.doc(),
+                            d.file(),
+                            d.line(),
+                            d.column());
         }
 
         @Override

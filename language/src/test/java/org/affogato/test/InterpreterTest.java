@@ -56,6 +56,62 @@ class InterpreterTest {
     }
 
     @Test
+    void describesTheAttributesOfASession(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("a.nix");
+        Files.writeString(file, """
+            {
+              hello = {
+                type = "derivation";
+                pname = "hello";
+                version = "2.12";
+                meta = { description = "Greets"; longDescription = "  More.\\n"; homepage = [ "https://h" ]; position = "/p/hello.nix:3"; };
+              };
+              /**
+                Adds one.
+
+                # Example
+                  inc 1
+              */
+              inc = x: x + 1;
+              s = "str";
+              bad = throw "renamed";
+            }
+            """);
+        try (Session session = new Session("", "", "", "import " + file, dir.toString())) {
+            assertThat(session.describe(List.of("hello")).get())
+                    .isEqualTo(new Session.Description(
+                            "derivation",
+                            null,
+                            "hello",
+                            "2.12",
+                            "Greets\n\nMore.",
+                            "https://h",
+                            null,
+                            "/p/hello.nix",
+                            3,
+                            1));
+            assertThat(session.describe(List.of("inc")).get())
+                    .isEqualTo(new Session.Description(
+                            "lambda",
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            "Adds one.\n\n# Example\n  inc 1",
+                            file.toString(),
+                            14,
+                            9));
+            assertThat(session.describe(List.of("s")).get().value()).isEqualTo("\"str\"");
+            assertThat(session.describe(List.of("bad")).get())
+                    .extracting(Session.Description::type, Session.Description::line)
+                    .containsExactly("error", 16);
+            assertThat(session.describe(List.of("bad")).get().value()).contains("renamed");
+            assertThat(session.describe(List.of("none")).get()).isEqualTo(Session.Description.NONE);
+        }
+    }
+
+    @Test
     void printsTheEntryTypesOfReadDir(@TempDir Path dir) throws Exception {
         Files.createDirectory(dir.resolve("d"));
         Files.writeString(dir.resolve("f"), "");

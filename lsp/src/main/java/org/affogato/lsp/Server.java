@@ -194,12 +194,17 @@ public final class Server {
                 yield null;
             }
             case "textDocument/formatting" -> formatting(document(params), params);
-            case "textDocument/definition" -> definition(params);
+            case "textDocument/definition" -> {
+                Object location = attributeLocation(params);
+                yield location != null ? location : definition(params);
+            }
             case "textDocument/references" -> references(params);
             case "textDocument/documentHighlight" -> highlights(params);
             case "textDocument/prepareRename" -> prepareRename(params);
             case "textDocument/rename" -> rename(params);
             case "textDocument/completion" -> completion(params);
+            case "completionItem/resolve" -> resolve(params);
+            case "textDocument/hover" -> hover(params);
             case "textDocument/documentSymbol" -> symbols(document(params));
             case "textDocument/foldingRange" -> folding(document(params));
             case "textDocument/selectionRange" -> selections(params);
@@ -214,7 +219,7 @@ public final class Server {
         };
     }
 
-    private static Map<String, Object> capabilities() {
+    private Map<String, Object> capabilities() {
         Map<String, Object> capabilities = new LinkedHashMap<>();
         capabilities.put("textDocumentSync", Map.of("openClose", true, "change", 1L, "save", Map.of()));
         capabilities.put("documentFormattingProvider", true);
@@ -222,7 +227,8 @@ public final class Server {
         capabilities.put("referencesProvider", true);
         capabilities.put("documentHighlightProvider", true);
         capabilities.put("renameProvider", Map.of("prepareProvider", true));
-        capabilities.put("completionProvider", Map.of());
+        capabilities.put("completionProvider", Map.of("resolveProvider", evaluator != null));
+        if (evaluator != null) capabilities.put("hoverProvider", true);
         capabilities.put("documentSymbolProvider", true);
         capabilities.put("foldingRangeProvider", true);
         capabilities.put("selectionRangeProvider", true);
@@ -378,7 +384,7 @@ public final class Server {
                             || definition.kind == NodeKind.PARAM)) {
                 List<String> path = new ArrayList<>(selection.subList(1, selection.size() - 1));
                 if (root.equals("lib")) path.addFirst("lib");
-                return attributes(evaluator.names(path), selection.getLast());
+                return attributes(evaluator.names(path), path, selection.getLast());
             }
         }
         if (!local.containsKey("builtins") && afterBuiltins(document.text(), offset)) {
@@ -395,8 +401,93 @@ public final class Server {
         return Map.of("label", name, "kind", CONSTANTS.contains(name) ? 21L : 3L);
     }
 
+    /** The item with the version or type as its detail, and the description or doc comment as its documentation. */
+    private Object resolve(Map<?, ?> item) {
+        Map<Object, Object> resolved = new LinkedHashMap<>(item);
+        if (evaluator == null
+                || !(item.get("data") instanceof Map<?, ?> data)
+                || !(data.get("path") instanceof List<?> path)) return resolved;
+        Evaluator.Attribute a =
+                evaluator.describe(path.stream().map(String.class::cast).toList());
+        if (a == null || a.type() == null) return resolved;
+        resolved.put("detail", a.version() != null ? a.version() : a.type());
+        String documentation = a.description() != null ? a.description() : a.doc();
+        if (documentation != null) resolved.put("documentation", Map.of("kind", "markdown", "value", documentation));
+        return resolved;
+    }
+
+    private Object hover(Map<?, ?> params) {
+        Document document = document(params);
+        Selected selected = selected(document, offset(document, params));
+        if (selected == null) return null;
+        Evaluator.Attribute a = evaluator.describe(selected.path());
+        if (a == null || a.type() == null) return null;
+        StringBuilder text = new StringBuilder();
+        if (a.type().equals("derivation")) {
+            text.append("`")
+                    .append(a.name() != null ? a.name() : selected.path().getLast())
+                    .append("`");
+            if (a.version() != null) text.append(" ").append(a.version());
+            if (a.description() != null) text.append("\n\n").append(a.description());
+            if (a.homepage() != null) text.append("\n\n").append(a.homepage());
+        } else if (a.type().equals("error")) {
+            text.append("```\n").append(a.value()).append("\n```");
+        } else {
+            text.append("`").append(a.type()).append("`");
+            if (a.value() != null) text.append(" `").append(a.value()).append("`");
+            if (a.doc() != null) text.append("\n\n").append(a.doc());
+        }
+        return Map.of(
+                "contents",
+                Map.of("kind", "markdown", "value", text.toString()),
+                "range",
+                document.lines().range(selected.name().start(), selected.name().end()));
+    }
+
+    /** Where the nixpkgs attribute at the position is defined, or null. */
+    private Object attributeLocation(Map<?, ?> params) {
+        Document document = document(params);
+        Selected selected = selected(document, offset(document, params));
+        if (selected == null) return null;
+        Evaluator.Attribute a = evaluator.describe(selected.path());
+        if (a == null || a.file() == null || !a.file().startsWith("/")) return null;
+        Map<String, Object> at = Map.of("line", (long) a.line() - 1, "character", (long) Math.max(a.column() - 1, 0));
+        return Map.of("uri", file(a.file()), "range", Map.of("start", at, "end", at));
+    }
+
+    /** A name in a selection from nixpkgs, and the path from nixpkgs to it. */
+    private record Selected(Node name, List<String> path) {}
+
+    /** The attribute name at {@code offset} in {@code pkgs.a.b} or {@code lib.a.b}, or null elsewhere. */
+    private Selected selected(Document document, int offset) {
+        if (evaluator == null) return null;
+        SyntaxTree tree = document.tree();
+        Node token = tree.at(offset);
+        Node name = token.parent();
+        if (name == null || name.kind != NodeKind.ATTR_NAME) return null;
+        Node attrPath = name.parent();
+        if (attrPath == null || attrPath.kind != NodeKind.ATTR_PATH) return null;
+        Node select = attrPath.parent();
+        if (select == null || select.kind != NodeKind.SELECT) return null;
+        Node base = select.children().getFirst();
+        if (base.kind != NodeKind.VAR) return null;
+        String root = tree.text(base);
+        if (!root.equals("pkgs") && !root.equals("lib")) return null;
+        Node definition = Scopes.resolve(tree.view(), root, base);
+        if (definition != null && definition.kind != NodeKind.FORMAL && definition.kind != NodeKind.PARAM) return null;
+        List<String> path = new ArrayList<>();
+        if (root.equals("lib")) path.add("lib");
+        for (Node child : attrPath.children()) {
+            if (child.token != null) continue;
+            if (child.kind != NodeKind.ATTR_NAME) return null;
+            path.add(tree.text(child));
+            if (child == name) return new Selected(name, path);
+        }
+        return null;
+    }
+
     /** The names starting with {@code prefix}, incomplete while being evaluated or when there are too many. */
-    private static Map<String, Object> attributes(List<String> names, String prefix) {
+    private static Map<String, Object> attributes(List<String> names, List<String> path, String prefix) {
         List<Object> items = new ArrayList<>();
         boolean incomplete = names == null;
         if (names != null)
@@ -406,7 +497,9 @@ public final class Server {
                     incomplete = true;
                     break;
                 }
-                items.add(Map.of("label", name, "kind", 5L));
+                List<String> item = new ArrayList<>(path);
+                item.add(name);
+                items.add(Map.of("label", name, "kind", 5L, "data", Map.of("path", item)));
             }
         return Map.of("isIncomplete", incomplete, "items", items);
     }

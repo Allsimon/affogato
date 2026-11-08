@@ -35,6 +35,12 @@ the same parser as the other commands. It answers with:
 * completion of the names in scope, the builtins and the keywords, of the
   attributes of `builtins` after `builtins.`, and of those of nixpkgs after
   `pkgs.` and `lib.`, unless the file binds them otherwise than as a parameter;
+* on such an attribute, as `pkgs.hello` or `lib.strings.concatStrings`: a hover
+  with the version, description and homepage of a package, the doc comment of
+  a function, the value of a number, string or Boolean, or the error an alias
+  throws; go to definition, at the package's `meta.position` or where the
+  attribute or function is defined; and the version or type, and the
+  description or doc comment, of a completion item as the editor resolves it;
 * document symbols, folding ranges, selection ranges and semantic tokens;
 * links on the paths without interpolation, the URIs, and the strings that are
   an http or https URL, and go to definition on such a path, both to the
