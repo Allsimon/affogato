@@ -60,6 +60,9 @@ the same parser as the other commands. It answers with:
 * inlay hints with the version of each package selected from nixpkgs, those
   evaluated within 200 ms of the request, and the others once evaluated, as the
   server then sends `workspace/inlayHint/refresh` to an editor that supports it;
+* to an editor that takes `window.workDoneProgress`, the progress of what it
+  evaluates, as `Evaluating nixpkgs`: what a request waited for more than
+  200 ms, nixpkgs as it starts and after a save, and `devenv lsp --print-config`;
 * in a module, the same for a selection from one of its arguments other than
   `pkgs`, `lib`, `config` and `options`, as `inputs.agenix.packages`, looked up
   among the arguments the option sets give their modules, the special ones

@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import org.affogato.format.Formatter;
@@ -100,7 +101,9 @@ public final class Server {
     private final Evaluator evaluator;
     private final Consumer<Map<String, Object>> send;
     private final AtomicBoolean refreshing = new AtomicBoolean();
+    private final AtomicInteger progressTokens = new AtomicInteger();
     private boolean refreshSupport;
+    private boolean progressSupport;
     private boolean snippetSupport;
 
     private boolean configurationSupport;
@@ -274,6 +277,9 @@ public final class Server {
                         && c.get("workspace") instanceof Map<?, ?> w
                         && w.get("inlayHint") instanceof Map<?, ?> h
                         && Boolean.TRUE.equals(h.get("refreshSupport"));
+                progressSupport = params.get("capabilities") instanceof Map<?, ?> c
+                        && c.get("window") instanceof Map<?, ?> w
+                        && Boolean.TRUE.equals(w.get("workDoneProgress"));
                 snippetSupport = params.get("capabilities") instanceof Map<?, ?> c
                         && c.get("textDocument") instanceof Map<?, ?> t
                         && t.get("completion") instanceof Map<?, ?> completion
@@ -290,6 +296,7 @@ public final class Server {
                 yield Map.of("capabilities", capabilities(), "serverInfo", Map.of("name", "affogato"));
             }
             case "initialized" -> {
+                if (evaluator != null && send != null && progressSupport) evaluator.progress(this::beginProgress);
                 pullConfiguration(out);
                 yield null;
             }
@@ -395,6 +402,27 @@ public final class Server {
      * ...}}}}, each optional, the rules ids of those to lint with, all when absent or empty; the indent is the
      * formatting request's {@code tabSize}.
      */
+    /** Shows {@code title} in the client until the returned end runs, from any thread. */
+    private Runnable beginProgress(String title) {
+        String token = "affogato-progress-" + progressTokens.incrementAndGet();
+        Map<String, Object> create = new LinkedHashMap<>();
+        create.put("jsonrpc", "2.0");
+        create.put("id", token);
+        create.put("method", "window/workDoneProgress/create");
+        create.put("params", Map.of("token", token));
+        send.accept(create);
+        send.accept(progress(token, Map.of("kind", "begin", "title", title)));
+        return () -> send.accept(progress(token, Map.of("kind", "end")));
+    }
+
+    private static Map<String, Object> progress(String token, Map<String, Object> value) {
+        Map<String, Object> notification = new LinkedHashMap<>();
+        notification.put("jsonrpc", "2.0");
+        notification.put("method", "$/progress");
+        notification.put("params", Map.of("token", token, "value", value));
+        return notification;
+    }
+
     /** Asks the client for the {@code affogato} settings, when it takes the request; whether it was asked. */
     private boolean pullConfiguration(List<Map<String, Object>> out) {
         if (!configurationSupport) return false;
