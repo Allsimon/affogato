@@ -76,6 +76,18 @@ class InterpreterTest {
     }
 
     @Test
+    void reHashesAFileChangedBetweenEvaluations(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("a");
+        Files.writeString(file, "1");
+        Thread.sleep(1100);
+        String expr = "\"${" + file + "}\"";
+        String first = eval(Interpreter.Output.RAW, expr, 0);
+        assertThat(eval(Interpreter.Output.RAW, expr, 0)).isEqualTo(first);
+        Files.writeString(file, "2");
+        assertThat(eval(Interpreter.Output.RAW, expr, 0)).isNotEqualTo(first).endsWith("-a");
+    }
+
+    @Test
     void stopsAtTheTimeout() {
         long start = System.nanoTime();
         assertThatThrownBy(() -> eval(

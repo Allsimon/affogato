@@ -18,7 +18,6 @@ import org.affogato.runtime.NixAttrs;
 import org.affogato.runtime.NixException;
 import org.affogato.runtime.Source;
 import org.affogato.runtime.Thunk;
-import org.affogato.store.Nar;
 import org.affogato.store.StorePaths;
 
 public final class NixContext {
@@ -175,7 +174,7 @@ public final class NixContext {
         String name = org.affogato.runtime.Coerce.baseName(path);
         try {
             StorePaths.checkName(name);
-            sp = StorePaths.source(storeDir, name, Nar.hash("sha256", p), List.of());
+            sp = StorePaths.source(storeDir, name, NarCache.sha256(p), List.of());
         } catch (IOException e) {
             throw new NixException("cannot read '" + path + "': " + describe(e));
         } catch (IllegalArgumentException e) {
