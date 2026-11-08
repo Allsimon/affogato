@@ -147,6 +147,21 @@ class ServerTest {
     }
 
     @Test
+    void completesTheAttributesOfBuiltins() {
+        open("let a = 1; in builtins.ma\n");
+        assertThat(list(result("textDocument/completion", at(0, 25))))
+                .contains(Map.of("label", "mapAttrs", "kind", 3L), Map.of("label", "true", "kind", 21L))
+                .doesNotContain(Map.of("label", "a", "kind", 6L));
+        open("x.builtins.\n");
+        assertThat(list(result("textDocument/completion", at(0, 11))))
+                .doesNotContain(Map.of("label", "mapAttrs", "kind", 3L));
+        open("builtins: builtins.\n");
+        assertThat(list(result("textDocument/completion", at(0, 19))))
+                .contains(Map.of("label", "builtins", "kind", 6L))
+                .doesNotContain(Map.of("label", "mapAttrs", "kind", 3L));
+    }
+
+    @Test
     void listsTheBindingsAsSymbols() {
         open("{\n  a = 1;\n  b.c = { d = 2; };\n}\n");
         List<Object> symbols = list(result("textDocument/documentSymbol", DOCUMENT));

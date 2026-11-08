@@ -32,7 +32,8 @@ the same parser as the other commands. It answers with:
 * formatting, indented by the request's `tabSize`;
 * go to definition, find references, document highlight, and rename, which
   refuses up front a name that is not defined in the file, such as a builtin;
-* completion of the names in scope, the builtins and the keywords;
+* completion of the names in scope, the builtins and the keywords, and of the
+  attributes of `builtins` after `builtins.`;
 * document symbols, folding ranges, selection ranges and semantic tokens;
 * code actions for the linter's fixes and suppression comments, and
   `source.fixAll` for all the fixes;

@@ -317,20 +317,44 @@ public final class Server {
         return Map.of("changes", Map.of(uri(params), edits));
     }
 
+    /** The attributes of {@code builtins} after {@code builtins.}, else the names in scope, globals and keywords. */
     private Object completion(Map<?, ?> params) {
         Document document = document(params);
         SyntaxView<Node> view = document.tree().view();
+        int offset = offset(document, params);
         List<Object> items = new ArrayList<>();
         Set<String> local = new HashSet<>();
-        for (Node definition : Scopes.visible(view, document.tree().at(offset(document, params)))) {
+        List<Object> scope = new ArrayList<>();
+        for (Node definition : Scopes.visible(view, document.tree().at(offset))) {
             String name = Scopes.name(view, definition);
             local.add(name);
-            items.add(Map.of("label", name, "kind", 6L));
+            scope.add(Map.of("label", name, "kind", 6L));
         }
-        for (String name : new TreeSet<>(Linter.GLOBALS))
-            if (!local.contains(name)) items.add(Map.of("label", name, "kind", CONSTANTS.contains(name) ? 21L : 3L));
+        if (!local.contains("builtins") && afterBuiltins(document.text(), offset)) {
+            for (String name : new TreeSet<>(Linter.BUILTINS)) items.add(builtin(name));
+            return items;
+        }
+        items.addAll(scope);
+        for (String name : new TreeSet<>(Linter.GLOBALS)) if (!local.contains(name)) items.add(builtin(name));
         for (String keyword : KEYWORDS) items.add(Map.of("label", keyword, "kind", 14L));
         return items;
+    }
+
+    private static Map<String, Object> builtin(String name) {
+        return Map.of("label", name, "kind", CONSTANTS.contains(name) ? 21L : 3L);
+    }
+
+    /** Whether the name being typed at {@code offset} follows {@code builtins.}. */
+    private static boolean afterBuiltins(String text, int offset) {
+        int start = offset;
+        while (start > 0 && isNameChar(text.charAt(start - 1))) start--;
+        int at = start - "builtins.".length();
+        if (at < 0 || !text.startsWith("builtins.", at)) return false;
+        return at == 0 || !isNameChar(text.charAt(at - 1)) && text.charAt(at - 1) != '.';
+    }
+
+    private static boolean isNameChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_' || c == '\'' || c == '-';
     }
 
     private Object symbols(Document document) {
