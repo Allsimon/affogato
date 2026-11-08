@@ -6,28 +6,6 @@ import java.util.Map;
 /** Mirrors the longest-match rules of Nix's flex lexer (src/libexpr/lexer.l). */
 public final class Lexer {
 
-    private static final Map<String, TokenType> KEYWORDS = Map.of(
-            "if",
-            TokenType.IF,
-            "then",
-            TokenType.THEN,
-            "else",
-            TokenType.ELSE,
-            "assert",
-            TokenType.ASSERT,
-            "with",
-            TokenType.WITH,
-            "let",
-            TokenType.LET,
-            "in",
-            TokenType.IN,
-            "rec",
-            TokenType.REC,
-            "inherit",
-            TokenType.INHERIT,
-            "or",
-            TokenType.OR_KW);
-
     public enum PartKind {
         LIT,
         INTERP,
@@ -199,6 +177,9 @@ public final class Lexer {
         TokenType best = null;
         int bestLen = 0;
         int n;
+        int run = pos;
+        while (isPathChar(at(run))) run++;
+        char after = at(run);
         if ((n = matchId(pos)) > bestLen) {
             best = TokenType.ID;
             bestLen = n;
@@ -211,7 +192,7 @@ public final class Lexer {
             best = TokenType.FLOAT;
             bestLen = n;
         }
-        if ((isPathChar(c) || c == '/') && (n = matchPath(pos)) > bestLen) {
+        if ((after == '/') && (n = matchPath(pos)) > bestLen) {
             best = TokenType.PATH;
             bestLen = n;
         }
@@ -223,7 +204,7 @@ public final class Lexer {
             best = TokenType.SPATH;
             bestLen = n;
         }
-        if (isIdStart(c) && (n = matchUri(pos)) > bestLen) {
+        if (isIdStart(c) && after == ':' && (n = matchUri(pos)) > bestLen) {
             best = TokenType.URI;
             bestLen = n;
         }
@@ -231,7 +212,7 @@ public final class Lexer {
             pos += bestLen;
             String text = share(src.substring(start, pos));
             if (best == TokenType.ID) {
-                TokenType kw = KEYWORDS.get(text);
+                TokenType kw = keyword(text);
                 if (kw != null) best = kw;
             }
             boolean interp = false;
@@ -256,51 +237,95 @@ public final class Lexer {
             pos++;
             return new Token(TokenType.STR_OPEN, "\"", start, pos, false);
         }
-        for (Object[] op : OPERATORS) {
-            String s = (String) op[0];
-            if (startsWith(s, pos)) {
-                pos += s.length();
-                return new Token((TokenType) op[1], s, start, pos, false);
-            }
-        }
-        throw new ParseException("syntax error, unexpected '" + c + "'", start);
+        char d = at(pos + 1);
+        TokenType op = switch (c) {
+            case '.' -> d == '.' && at(pos + 2) == '.' ? TokenType.ELLIPSIS : TokenType.DOT;
+            case '$' -> d == '{' ? TokenType.DOLLAR_CURLY : null;
+            case '=' -> d == '=' ? TokenType.EQ : TokenType.ASSIGN;
+            case '!' -> d == '=' ? TokenType.NEQ : TokenType.NOT;
+            case '<' -> d == '=' ? TokenType.LEQ : d == '|' ? TokenType.PIPE_FROM : TokenType.LT;
+            case '>' -> d == '=' ? TokenType.GEQ : TokenType.GT;
+            case '&' -> d == '&' ? TokenType.AND : null;
+            case '|' -> d == '|' ? TokenType.OR : d == '>' ? TokenType.PIPE_INTO : null;
+            case '-' -> d == '>' ? TokenType.IMPL : TokenType.MINUS;
+            case '/' -> d == '/' ? TokenType.UPDATE : TokenType.SLASH;
+            case '+' -> d == '+' ? TokenType.CONCAT : TokenType.PLUS;
+            case '{' -> TokenType.LBRACE;
+            case '}' -> TokenType.RBRACE;
+            case '[' -> TokenType.LBRACK;
+            case ']' -> TokenType.RBRACK;
+            case '(' -> TokenType.LPAREN;
+            case ')' -> TokenType.RPAREN;
+            case ';' -> TokenType.SEMI;
+            case ':' -> TokenType.COLON;
+            case ',' -> TokenType.COMMA;
+            case '@' -> TokenType.AT;
+            case '?' -> TokenType.QUESTION;
+            case '*' -> TokenType.STAR;
+            default -> null;
+        };
+        if (op == null) throw new ParseException("syntax error, unexpected '" + c + "'", start);
+        String s = OPERATOR_TEXT[op.ordinal()];
+        pos += s.length();
+        return new Token(op, s, start, pos, false);
     }
 
-    private static final Object[][] OPERATORS = {
-        {"...", TokenType.ELLIPSIS},
-        {"${", TokenType.DOLLAR_CURLY},
-        {"==", TokenType.EQ},
-        {"!=", TokenType.NEQ},
-        {"<=", TokenType.LEQ},
-        {">=", TokenType.GEQ},
-        {"&&", TokenType.AND},
-        {"||", TokenType.OR},
-        {"->", TokenType.IMPL},
-        {"//", TokenType.UPDATE},
-        {"++", TokenType.CONCAT},
-        {"|>", TokenType.PIPE_INTO},
-        {"<|", TokenType.PIPE_FROM},
-        {"{", TokenType.LBRACE},
-        {"}", TokenType.RBRACE},
-        {"[", TokenType.LBRACK},
-        {"]", TokenType.RBRACK},
-        {"(", TokenType.LPAREN},
-        {")", TokenType.RPAREN},
-        {";", TokenType.SEMI},
-        {":", TokenType.COLON},
-        {",", TokenType.COMMA},
-        {".", TokenType.DOT},
-        {"@", TokenType.AT},
-        {"?", TokenType.QUESTION},
-        {"=", TokenType.ASSIGN},
-        {"+", TokenType.PLUS},
-        {"-", TokenType.MINUS},
-        {"*", TokenType.STAR},
-        {"/", TokenType.SLASH},
-        {"<", TokenType.LT},
-        {">", TokenType.GT},
-        {"!", TokenType.NOT},
-    };
+    private static TokenType keyword(String id) {
+        return switch (id) {
+            case "if" -> TokenType.IF;
+            case "then" -> TokenType.THEN;
+            case "else" -> TokenType.ELSE;
+            case "assert" -> TokenType.ASSERT;
+            case "with" -> TokenType.WITH;
+            case "let" -> TokenType.LET;
+            case "in" -> TokenType.IN;
+            case "rec" -> TokenType.REC;
+            case "inherit" -> TokenType.INHERIT;
+            case "or" -> TokenType.OR_KW;
+            default -> null;
+        };
+    }
+
+    private static final String[] OPERATOR_TEXT = new String[TokenType.values().length];
+
+    static {
+        Object[][] text = {
+            {"...", TokenType.ELLIPSIS},
+            {"${", TokenType.DOLLAR_CURLY},
+            {"==", TokenType.EQ},
+            {"!=", TokenType.NEQ},
+            {"<=", TokenType.LEQ},
+            {">=", TokenType.GEQ},
+            {"&&", TokenType.AND},
+            {"||", TokenType.OR},
+            {"->", TokenType.IMPL},
+            {"//", TokenType.UPDATE},
+            {"++", TokenType.CONCAT},
+            {"|>", TokenType.PIPE_INTO},
+            {"<|", TokenType.PIPE_FROM},
+            {"{", TokenType.LBRACE},
+            {"}", TokenType.RBRACE},
+            {"[", TokenType.LBRACK},
+            {"]", TokenType.RBRACK},
+            {"(", TokenType.LPAREN},
+            {")", TokenType.RPAREN},
+            {";", TokenType.SEMI},
+            {":", TokenType.COLON},
+            {",", TokenType.COMMA},
+            {".", TokenType.DOT},
+            {"@", TokenType.AT},
+            {"?", TokenType.QUESTION},
+            {"=", TokenType.ASSIGN},
+            {"+", TokenType.PLUS},
+            {"-", TokenType.MINUS},
+            {"*", TokenType.STAR},
+            {"/", TokenType.SLASH},
+            {"<", TokenType.LT},
+            {">", TokenType.GT},
+            {"!", TokenType.NOT},
+        };
+        for (Object[] t : text) OPERATOR_TEXT[((TokenType) t[1]).ordinal()] = (String) t[0];
+    }
 
     private Token tok(TokenType type, int start) {
         return new Token(type, src.substring(start, pos), start, pos, false);

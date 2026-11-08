@@ -180,9 +180,10 @@ final class Lower {
                 continue;
             }
             String s = p.text();
-            for (int j = 0; j < s.length(); j++) {
-                char c = s.charAt(j);
+            int j = 0;
+            while (j < s.length()) {
                 if (atStartOfLine) {
+                    char c = s.charAt(j++);
                     if (c == ' ') {
                         curIndent++;
                     } else if (c == '\n') {
@@ -191,9 +192,12 @@ final class Lower {
                         atStartOfLine = false;
                         if (curIndent < minIndent) minIndent = curIndent;
                     }
-                } else if (c == '\n') {
+                } else {
+                    int nl = s.indexOf('\n', j);
+                    if (nl < 0) break;
                     atStartOfLine = true;
                     curIndent = 0;
+                    j = nl + 1;
                 }
             }
         }
@@ -205,23 +209,24 @@ final class Lower {
         for (Part o : parts) {
             if (o instanceof Lit p) {
                 String s = p.text();
-                StringBuilder sb = new StringBuilder();
-                for (int j = 0; j < s.length(); j++) {
-                    char c = s.charAt(j);
+                StringBuilder sb = new StringBuilder(s.length());
+                int j = 0;
+                while (j < s.length()) {
                     if (atStartOfLine) {
+                        char c = s.charAt(j++);
                         if (c == ' ') {
                             if (curDropped++ >= minIndent) sb.append(c);
-                        } else if (c == '\n') {
-                            curDropped = 0;
-                            sb.append(c);
                         } else {
-                            atStartOfLine = false;
+                            if (c != '\n') atStartOfLine = false;
                             curDropped = 0;
                             sb.append(c);
                         }
                     } else {
-                        sb.append(c);
-                        if (c == '\n') atStartOfLine = true;
+                        int nl = s.indexOf('\n', j);
+                        int end = nl < 0 ? s.length() : nl + 1;
+                        sb.append(s, j, end);
+                        j = end;
+                        if (nl >= 0) atStartOfLine = true;
                     }
                 }
                 String s2 = sb.toString();
