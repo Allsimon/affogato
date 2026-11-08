@@ -37,8 +37,9 @@ the same parser as the other commands. It answers with:
 * document symbols, folding ranges, selection ranges and semantic tokens;
 * links on the paths without interpolation, the URIs, and the strings that are
   an http or https URL;
-* code actions for the linter's fixes and suppression comments, and
-  `source.fixAll` for all the fixes;
+* code actions for the linter's fixes and suppression comments,
+  `source.fixAll` for all the fixes, and rewrites of a binding: `a.b = x;` into
+  `a = { b = x; };` and back;
 * `affogato/injections`, a request of its own, which takes a `textDocument` and
   lists the strings written in another language: the range between their
   quotes, and a `kind` of `shell`, `named` (the `value` a comment names, such as
