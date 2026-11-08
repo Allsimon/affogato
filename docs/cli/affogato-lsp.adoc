@@ -19,7 +19,7 @@ affogato-lsp - Run a language server for Nix over stdin and stdout.
 // tag::picocli-generated-man-section-synopsis[]
 == Synopsis
 
-*affogato lsp* [*-h*]
+*affogato lsp* [*-h*] [*--nixpkgs*=_EXPR_]
 
 // end::picocli-generated-man-section-synopsis[]
 
@@ -35,6 +35,9 @@ Run a language server for Nix over stdin and stdout.
 
 *-h*, *--help*::
   Show this help and exit.
+
+*--nixpkgs*=_EXPR_::
+  Complete pkgs and lib from this expression (default: import <nixpkgs> { }).
 
 // end::picocli-generated-man-section-options[]
 

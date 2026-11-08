@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.affogato.lsp.Evaluator;
 import org.affogato.lsp.Json;
 import org.affogato.lsp.Server;
 import org.junit.jupiter.api.Test;
@@ -16,7 +17,7 @@ class ServerTest {
     private static final String URI = "file:///p/default.nix";
     private static final String DOCUMENT = "{\"textDocument\":{\"uri\":\"" + URI + "\"}}";
 
-    private final Server server = new Server();
+    private Server server = new Server();
     private int id;
 
     @SuppressWarnings("unchecked")
@@ -159,6 +160,62 @@ class ServerTest {
         assertThat(list(result("textDocument/completion", at(0, 19))))
                 .contains(Map.of("label", "builtins", "kind", 6L))
                 .doesNotContain(Map.of("label", "mapAttrs", "kind", 3L));
+    }
+
+    private static final class Nixpkgs implements Evaluator {
+        final List<List<String>> asked = new ArrayList<>();
+        String expression;
+        boolean reset;
+
+        @Override
+        public List<String> names(List<String> path) {
+            asked.add(path);
+            return path.equals(List.of("slow")) ? null : List.of("hello", "help2man", "lib");
+        }
+
+        @Override
+        public void configure(String expression) {
+            this.expression = expression;
+        }
+
+        @Override
+        public void reset() {
+            reset = true;
+        }
+    }
+
+    @Test
+    void completesTheAttributesOfNixpkgs() {
+        Nixpkgs nixpkgs = new Nixpkgs();
+        server = new Server(nixpkgs);
+        open("{ pkgs, ... }: pkgs.python3Packages.hel\n");
+        assertThat(map(result("textDocument/completion", at(0, 39))))
+                .containsEntry("isIncomplete", false)
+                .containsEntry(
+                        "items",
+                        List.of(Map.of("label", "hello", "kind", 5L), Map.of("label", "help2man", "kind", 5L)));
+        open("lib.\n");
+        result("textDocument/completion", at(0, 4));
+        open("pkgs.slow.\n");
+        assertThat(map(result("textDocument/completion", at(0, 10))))
+                .containsEntry("isIncomplete", true)
+                .containsEntry("items", List.of());
+        assertThat(nixpkgs.asked).containsExactly(List.of("python3Packages"), List.of("lib"), List.of("slow"));
+        open("let pkgs = { a = 1; }; in pkgs.\n");
+        assertThat(list(result("textDocument/completion", at(0, 31)))).isNotEmpty();
+        assertThat(nixpkgs.asked).hasSize(3);
+    }
+
+    @Test
+    void configuresAndResetsTheEvaluator() {
+        Nixpkgs nixpkgs = new Nixpkgs();
+        server = new Server(nixpkgs);
+        result("initialize", "{\"initializationOptions\":{\"nixpkgs\":{\"expr\":\"import ./. { }\"}}}");
+        assertThat(nixpkgs.expression).isEqualTo("import ./. { }");
+        open("1\n");
+        server.handle(
+                Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didSave\",\"params\":" + DOCUMENT + "}"));
+        assertThat(nixpkgs.reset).isTrue();
     }
 
     @Test
@@ -350,7 +407,8 @@ class ServerTest {
         Server.serve(
                 new ByteArrayInputStream(
                         (frame(initialize) + frame(exit) + frame(initialize)).getBytes(StandardCharsets.UTF_8)),
-                out);
+                out,
+                null);
 
         String output = out.toString(StandardCharsets.UTF_8);
         assertThat(output).startsWith("Content-Length: ").contains("\"capabilities\"");
@@ -364,7 +422,8 @@ class ServerTest {
 
         Server.serve(
                 new ByteArrayInputStream((frame("{\"id\":") + frame(initialize)).getBytes(StandardCharsets.UTF_8)),
-                out);
+                out,
+                null);
 
         String output = out.toString(StandardCharsets.UTF_8);
         assertThat(output).contains("\"id\":null", "-32700", "\"capabilities\"");
