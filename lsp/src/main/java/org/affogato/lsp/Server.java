@@ -692,25 +692,56 @@ public final class Server {
         SyntaxTree tree = document.tree();
         Node token = tree.at(offset);
         Node name = token.parent();
-        if (name != null && name.kind == NodeKind.VAR) {
-            List<List<String>> candidates = candidates(tree, name);
-            if (candidates.isEmpty()) return null;
-            List<Evaluator.Attribute> found = evaluator.describeAll(candidates);
-            for (int i = 0; i < found.size(); i++) {
-                if (found.get(i) == null) return null;
-                if (found.get(i).type() != null) return new Selected(name, candidates.get(i));
-            }
-            return null;
-        }
+        if (name != null && name.kind == NodeKind.VAR) return first(name, candidates(tree, name));
         if (name == null || name.kind != NodeKind.ATTR_NAME) return null;
         Node attrPath = name.parent();
         if (attrPath == null || attrPath.kind != NodeKind.ATTR_PATH) return null;
-        List<String> path = nixpkgsPath(tree, attrPath.parent());
-        if (path == null) return null;
         List<Node> children = attrPath.children();
         int after = 0;
         for (int i = children.size() - 1; children.get(i) != name; i--) if (children.get(i).token == null) after++;
-        return new Selected(name, path.subList(0, path.size() - after));
+        List<List<String>> candidates = new ArrayList<>();
+        for (List<String> path : selectionCandidates(tree, attrPath.parent()))
+            candidates.add(path.subList(0, path.size() - after));
+        return candidates.size() == 1 ? new Selected(name, candidates.getFirst()) : first(name, candidates);
+    }
+
+    /** The first of {@code candidates} that nixpkgs has, or null when there is none or one is still evaluated. */
+    private Selected first(Node name, List<List<String>> candidates) {
+        if (candidates.isEmpty()) return null;
+        List<Evaluator.Attribute> found = evaluator.describeAll(candidates);
+        for (int i = 0; i < found.size(); i++) {
+            if (found.get(i) == null) return null;
+            if (found.get(i).type() != null) return new Selected(name, candidates.get(i));
+        }
+        return null;
+    }
+
+    /**
+     * The paths from nixpkgs that {@code select} may stand for: its own when it starts from {@code pkgs} or {@code lib},
+     * else those of a variable a {@code with} of nixpkgs brings into scope, as {@code unstable.hello} under
+     * {@code with pkgs;}, followed by its attribute names.
+     */
+    private static List<List<String>> selectionCandidates(SyntaxTree tree, Node select) {
+        List<String> own = nixpkgsPath(tree, select);
+        if (own != null) return List.of(own);
+        if (select == null || select.kind != NodeKind.SELECT) return List.of();
+        Node base = select.children().getFirst();
+        Node attrPath = attrPath(select);
+        if (base.kind != NodeKind.VAR || attrPath == null) return List.of();
+        List<String> names = new ArrayList<>();
+        for (Node child : attrPath.children()) {
+            if (child.token != null) continue;
+            String text = attrName(tree, child);
+            if (text == null) return List.of();
+            names.add(text);
+        }
+        List<List<String>> candidates = new ArrayList<>();
+        for (List<String> path : candidates(tree, base)) {
+            List<String> full = new ArrayList<>(path);
+            full.addAll(names);
+            candidates.add(full);
+        }
+        return candidates;
     }
 
     /**
@@ -795,11 +826,13 @@ public final class Server {
         collect(tree.root(), node -> {
             if (node.end() < start || node.start() > end) return;
             if (node.kind == NodeKind.SELECT) {
-                List<String> path = nixpkgsPath(tree, node);
-                if (path == null || path.isEmpty() || path.getFirst().equals("lib")) return;
+                List<List<String>> candidates = selectionCandidates(tree, node).stream()
+                        .filter(path -> !path.isEmpty() && !path.getFirst().equals("lib"))
+                        .toList();
+                if (candidates.isEmpty()) return;
                 ends.add(attrPath(node).end());
-                counts.add(1);
-                paths.add(path);
+                counts.add(candidates.size());
+                paths.addAll(candidates);
             } else if (node.kind == NodeKind.VAR && !(node.parent() != null && node.parent().kind == NodeKind.SELECT)) {
                 List<List<String>> candidates = candidates(tree, node);
                 if (candidates.isEmpty()) return;

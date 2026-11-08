@@ -193,6 +193,8 @@ class ServerTest {
             asked.add(path);
             return switch (String.join(".", path)) {
                 case "slow" -> null;
+                case "unstable.hello" ->
+                    new Attribute("derivation", null, "hello", "2.13", null, null, null, null, null, null, 0, 0);
                 case "hello" ->
                     new Attribute(
                             "derivation",
@@ -340,6 +342,20 @@ class ServerTest {
                         "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":" + Json.write(range(0, 0, 1, 0)) + "}"))
                 .isEqualTo(List.of(Map.of(
                         "position", Map.of("line", 0L, "character", 33L), "label", "2.12", "paddingLeft", true)));
+    }
+
+    @Test
+    void describesTheSelectionsFromANameThatAWithOfNixpkgsBrings() {
+        server = new Server(new Nixpkgs());
+        open("{ pkgs }: with pkgs; [ unstable.hello unstable.none ]\n");
+        assertThat(result(
+                        "textDocument/inlayHint",
+                        "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":" + Json.write(range(0, 0, 1, 0)) + "}"))
+                .isEqualTo(List.of(Map.of(
+                        "position", Map.of("line", 0L, "character", 37L), "label", "2.13", "paddingLeft", true)));
+        assertThat(map(map(result("textDocument/hover", at(0, 33))).get("contents")))
+                .containsEntry("value", "`hello` 2.13");
+        assertThat(result("textDocument/hover", at(0, 48))).isNull();
     }
 
     @Test
