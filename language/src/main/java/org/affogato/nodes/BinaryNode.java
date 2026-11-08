@@ -1,18 +1,12 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.frame.VirtualFrame;
 import org.affogato.parser.Ast.Op;
-import org.affogato.runtime.Ops;
+import org.affogato.runtime.*;
 
-/** Strict binary operators. */
 public final class BinaryNode extends NixNode {
     private final Op op;
-
-    @Child
-    private NixNode left;
-
-    @Child
-    private NixNode right;
+    private final NixNode left;
+    private final NixNode right;
 
     public BinaryNode(Op op, NixNode left, NixNode right) {
         this.op = op;
@@ -21,7 +15,7 @@ public final class BinaryNode extends NixNode {
     }
 
     @Override
-    public Object execute(VirtualFrame frame) {
+    public Object execute(Object[] frame) {
         Object l = left.execute(frame);
         Object r = right.execute(frame);
         return switch (op) {

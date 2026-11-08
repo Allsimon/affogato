@@ -12,7 +12,7 @@
 // tag::picocli-generated-man-section-name[]
 == Name
 
-affogato - A Nix language implementation on GraalVM.
+affogato - A Nix language implementation in Java.
 
 // end::picocli-generated-man-section-name[]
 
@@ -26,7 +26,7 @@ affogato - A Nix language implementation on GraalVM.
 // tag::picocli-generated-man-section-description[]
 == Description
 
-A Nix language implementation on GraalVM.
+A Nix language implementation in Java.
 
 // end::picocli-generated-man-section-description[]
 

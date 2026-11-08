@@ -5,13 +5,9 @@ against musl), which starts in milliseconds rather than half a second:
 
 [source,sh]
 ----
-nix build .#affogato-truffle          # on OpenJDK 25
-nix build .#affogato-truffle-native   # native image, built with GraalVM
+nix build .#affogato          # on OpenJDK 25
+nix build .#affogato-native   # native image, built with GraalVM
 ----
-
-To format and lint only, `affogato` and `affogato-native` provide a `affogato`
-command with only `format`, `check` and `fix`, without the evaluator and
-Truffle.
 
 Each package installs bash and zsh completions; `affogato generate-completion`
 prints the script, to source in a shell where it is not installed.

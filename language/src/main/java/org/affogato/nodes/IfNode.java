@@ -1,20 +1,11 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.frame.VirtualFrame;
-import com.oracle.truffle.api.profiles.CountingConditionProfile;
-import org.affogato.runtime.Types;
+import org.affogato.runtime.*;
 
 public final class IfNode extends NixNode {
-    @Child
-    private NixNode cond;
-
-    @Child
-    private NixNode then;
-
-    @Child
-    private NixNode otherwise;
-
-    private final CountingConditionProfile profile = CountingConditionProfile.create();
+    private final NixNode cond;
+    private final NixNode then;
+    private final NixNode otherwise;
 
     public IfNode(NixNode cond, NixNode then, NixNode otherwise) {
         this.cond = cond;
@@ -23,7 +14,7 @@ public final class IfNode extends NixNode {
     }
 
     @Override
-    public Object execute(VirtualFrame frame) {
-        return profile.profile(Types.bool(cond.execute(frame))) ? then.execute(frame) : otherwise.execute(frame);
+    public Object execute(Object[] frame) {
+        return Types.bool(cond.execute(frame)) ? then.execute(frame) : otherwise.execute(frame);
     }
 }

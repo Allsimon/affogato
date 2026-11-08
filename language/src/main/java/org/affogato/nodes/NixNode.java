@@ -1,39 +1,15 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.frame.VirtualFrame;
-import com.oracle.truffle.api.nodes.Node;
-import com.oracle.truffle.api.source.SourceSection;
+import org.affogato.runtime.SourceSection;
 
-public abstract sealed class NixNode extends Node
-        permits AssertNode,
-                AttrKey,
-                AttrsNode,
-                BinaryNode,
-                BindNode,
-                CallNode,
-                ConstantNode,
-                ForceNode,
-                HasAttrNode,
-                IfNode,
-                InPlaceThunkNode,
-                InterpNode,
-                LambdaBodyNode,
-                LambdaNode,
-                ListNode,
-                LogicNode,
-                NotNode,
-                ReadVarNode,
-                ScopeArgNode,
-                SelectNode,
-                ThunkNode,
-                WithVarNode {
+public abstract class NixNode {
     private SourceSection section;
 
     /** Evaluates to weak head normal form: never returns a {@link org.affogato.runtime.Thunk}. */
-    public abstract Object execute(VirtualFrame frame);
+    public abstract Object execute(Object[] frame);
 
     /** Evaluates for storage in a lazy position; may return a thunk instead of a value. */
-    public Object executeLazy(VirtualFrame frame) {
+    public Object executeLazy(Object[] frame) {
         return execute(frame);
     }
 
@@ -42,7 +18,6 @@ public abstract sealed class NixNode extends Node
         return this;
     }
 
-    @Override
     public SourceSection getSourceSection() {
         return section;
     }

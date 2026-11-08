@@ -1,17 +1,15 @@
 package org.affogato.runtime;
 
-import com.oracle.truffle.api.CallTarget;
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.frame.MaterializedFrame;
 import java.util.function.Supplier;
 import org.affogato.nodes.NixNode;
+import org.affogato.nodes.NixRootNode;
 
 public final class Thunk {
     /** Stands in for {@code env} while the thunk is being evaluated. */
     private static final Object EVALUATING = new Object();
 
     /**
-     * A {@link CallTarget} called with {@code env}, a {@link NixNode} executed on {@code env}, a {@link Supplier}, a {@link MapAttrs} entry whose key is {@code
+     * A {@link NixRootNode} called with {@code env} as parent frame, a {@link NixNode} executed on {@code env}, a {@link Supplier}, a {@link MapAttrs} entry whose key is {@code
      * env}, or a function applied to {@code env}.
      */
     private Object code;
@@ -20,13 +18,13 @@ public final class Thunk {
     private Object value;
 
     /** A suspended expression evaluated on {@code frame}, the frame it was translated for. */
-    public Thunk(NixNode body, MaterializedFrame frame) {
+    public Thunk(NixNode body, Object[] frame) {
         this.code = body;
         this.env = frame;
     }
 
-    /** A suspended root: forcing calls {@code target} with {@code env} as its only argument. */
-    public Thunk(CallTarget target, Object env) {
+    /** A suspended root: forcing calls {@code target} with {@code env} as its parent frame. */
+    public Thunk(NixRootNode target, Object env) {
         this.code = target;
         this.env = env;
     }
@@ -67,15 +65,14 @@ public final class Thunk {
         return evaluate();
     }
 
-    @TruffleBoundary
     private Object evaluate() {
         Object e = env;
         if (e == EVALUATING) throw new NixException("infinite recursion encountered" + describeSource());
         env = EVALUATING;
         try {
             Object v = switch (code) {
-                case CallTarget target -> target.call(e);
-                case NixNode body -> body.execute((MaterializedFrame) e);
+                case NixRootNode target -> target.call(e, null);
+                case NixNode body -> body.execute((Object[]) e);
                 case Supplier<?> supplier -> supplier.get();
                 case MapAttrs m -> {
                     String key = (String) e;
@@ -98,10 +95,9 @@ public final class Thunk {
             return "\n       while evaluating <thunk> at " + s.getSource().getName() + ":" + s.getStartLine() + ":"
                     + s.getStartColumn();
         }
-        if (code instanceof com.oracle.truffle.api.RootCallTarget rt
-                && rt.getRootNode().getSourceSection() != null) {
-            var s = rt.getRootNode().getSourceSection();
-            return "\n       while evaluating " + rt.getRootNode().getName() + " at "
+        if (code instanceof NixRootNode rt && rt.section != null) {
+            var s = rt.section;
+            return "\n       while evaluating " + rt.name + " at "
                     + s.getSource().getName() + ":" + s.getStartLine() + ":" + s.getStartColumn();
         }
         return "";

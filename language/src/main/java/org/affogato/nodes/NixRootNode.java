@@ -1,38 +1,27 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.TruffleLanguage;
-import com.oracle.truffle.api.frame.FrameDescriptor;
-import com.oracle.truffle.api.frame.VirtualFrame;
-import com.oracle.truffle.api.source.SourceSection;
+import org.affogato.runtime.SourceSection;
 
-/** Root of a file, thunk or lambda body. Arguments are {@code [parent frame, argument]}. */
-public final class NixRootNode extends com.oracle.truffle.api.nodes.RootNode {
-    @Child
-    private NixNode body;
+/** A file, thunk or lambda body with a frame of its own: {@code [parent frame, argument, slots...]}. */
+public final class NixRootNode {
+    public static final int FIRST_SLOT = 2;
 
-    private final String name;
-    private final SourceSection section;
+    private final int frameSize;
+    private final NixNode body;
+    public final String name;
+    public final SourceSection section;
 
-    public NixRootNode(
-            TruffleLanguage<?> language, FrameDescriptor descriptor, NixNode body, String name, SourceSection section) {
-        super(language, descriptor);
+    public NixRootNode(int frameSize, NixNode body, String name, SourceSection section) {
+        this.frameSize = frameSize;
         this.body = body;
         this.name = name;
         this.section = section;
     }
 
-    @Override
-    public Object execute(VirtualFrame frame) {
+    public Object call(Object parent, Object arg) {
+        Object[] frame = new Object[frameSize];
+        frame[0] = parent;
+        frame[1] = arg;
         return body.execute(frame);
-    }
-
-    @Override
-    public String getName() {
-        return name;
-    }
-
-    @Override
-    public SourceSection getSourceSection() {
-        return section;
     }
 }

@@ -1,18 +1,16 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.frame.VirtualFrame;
-import org.affogato.runtime.Types;
+import org.affogato.runtime.*;
 
 public final class NotNode extends NixNode {
-    @Child
-    private NixNode operand;
+    private final NixNode operand;
 
     public NotNode(NixNode operand) {
         this.operand = operand;
     }
 
     @Override
-    public Object execute(VirtualFrame frame) {
+    public Object execute(Object[] frame) {
         return !Types.bool(operand.execute(frame));
     }
 }

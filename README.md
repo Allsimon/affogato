@@ -9,24 +9,18 @@ A suite of tools for the Nix language, written in Java:
   [nixd](https://github.com/nix-community/nixd), many with an automatic fix;
 - a **syntax highlighter**, which works from the lexer alone and so copes with
   syntax errors;
-- an **evaluator** on GraalVM, as a Truffle AST interpreter, which evaluates
-  nixpkgs unmodified and computes store paths and `.drv` paths in memory,
+- an **evaluator**, a tree-walking interpreter, which evaluates nixpkgs
+  unmodified and computes store paths and `.drv` paths in memory,
   without writing anything to `/nix/store`;
 - a **playground**: a Monaco editor with the language server running in the
   browser, compiled to JavaScript with [TeaVM](https://teavm.org/).
 
 ```sh
-nix build .#affogato                  # format, check and fix, on OpenJDK 25
+nix build .#affogato                  # on OpenJDK 25
 nix build .#affogato-native           # the same as a static native binary (musl), built with GraalVM
 ./result/bin/affogato format .        # format like nixfmt
 ./result/bin/affogato check .         # lint
 ./result/bin/affogato fix .           # apply the lint fixes, then format
-```
-
-The evaluator comes in its own package, which adds `eval` and `drv-path`:
-
-```sh
-nix build .#affogato-truffle          # on OpenJDK 25; also affogato-truffle-native
 ./result/bin/affogato eval --strict -E 'builtins.map (x: x * 2) [ 1 2 3 ]'
 ./result/bin/affogato drv-path -I nixpkgs=/path/to/nixpkgs -E 'import <nixpkgs> {}' -A hello
 ```

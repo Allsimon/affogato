@@ -1,6 +1,6 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.frame.VirtualFrame;
+import org.affogato.runtime.*;
 
 public final class ConstantNode extends NixNode {
     private final Object value;
@@ -10,7 +10,7 @@ public final class ConstantNode extends NixNode {
     }
 
     @Override
-    public Object execute(VirtualFrame frame) {
+    public Object execute(Object[] frame) {
         return value;
     }
 }

@@ -1,15 +1,13 @@
 package org.affogato.runtime;
 
-import com.oracle.truffle.api.RootCallTarget;
-import com.oracle.truffle.api.frame.MaterializedFrame;
-import com.oracle.truffle.api.source.SourceSection;
+import org.affogato.nodes.NixRootNode;
 
 public final class NixLambda {
-    public final RootCallTarget target;
-    public final MaterializedFrame closure;
+    public final NixRootNode target;
+    public final Object[] closure;
     public final LambdaInfo info;
 
-    public NixLambda(RootCallTarget target, MaterializedFrame closure, LambdaInfo info) {
+    public NixLambda(NixRootNode target, Object[] closure, LambdaInfo info) {
         this.target = target;
         this.closure = closure;
         this.info = info;

@@ -38,7 +38,7 @@ final class AttrSets {
             if (dropped == 0) return s;
             String[] k = new String[s.size() - dropped];
             Object[] v = new Object[k.length];
-            var p = s.positions() == null ? null : new com.oracle.truffle.api.source.SourceSection[k.length];
+            var p = s.positions() == null ? null : new SourceSection[k.length];
             for (int i = 0, o = 0; i < s.size(); i++) {
                 if (drop[i]) continue;
                 k[o] = s.keys()[i];
@@ -67,7 +67,7 @@ final class AttrSets {
                 String[] xk = x.keys();
                 String[] k = new String[xk.length];
                 Object[] v = new Object[xk.length];
-                var p = new com.oracle.truffle.api.source.SourceSection[xk.length];
+                var p = new SourceSection[xk.length];
                 int n = 0;
                 for (String key : xk) {
                     Object value = y.getRaw(key);
@@ -113,7 +113,7 @@ final class AttrSets {
             for (int i = 0; i < l.info.formals().length; i++) order.put(l.info.formals()[i], i);
             String[] k = order.keySet().toArray(new String[0]);
             Object[] v = new Object[k.length];
-            var p = new com.oracle.truffle.api.source.SourceSection[k.length];
+            var p = new SourceSection[k.length];
             for (int i = 0; i < k.length; i++) {
                 int j = order.get(k[i]);
                 v[i] = l.info.hasDefault()[j];
@@ -126,7 +126,7 @@ final class AttrSets {
     static NixAttrs subset(NixAttrs s, List<Integer> keep) {
         String[] k = new String[keep.size()];
         Object[] v = new Object[keep.size()];
-        var p = s.positions() == null ? null : new com.oracle.truffle.api.source.SourceSection[keep.size()];
+        var p = s.positions() == null ? null : new SourceSection[keep.size()];
         for (int i = 0; i < k.length; i++) {
             k[i] = s.keys()[keep.get(i)];
             v[i] = s.values()[keep.get(i)];

@@ -16,7 +16,6 @@ module org.affogato.test {
     requires org.affogato;
     requires org.affogato.parser;
     requires org.affogato.lint;
-    requires org.graalvm.polyglot;
     requires org.junit.jupiter;
     requires org.assertj.core;
 }

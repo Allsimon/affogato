@@ -1,16 +1,10 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.frame.VirtualFrame;
-import org.affogato.runtime.NixException;
-import org.affogato.runtime.Types;
+import org.affogato.runtime.*;
 
 public final class AssertNode extends NixNode {
-    @Child
-    private NixNode cond;
-
-    @Child
-    private NixNode body;
-
+    private final NixNode cond;
+    private final NixNode body;
     private final String text;
 
     public AssertNode(NixNode cond, NixNode body, String text) {
@@ -20,13 +14,8 @@ public final class AssertNode extends NixNode {
     }
 
     @Override
-    public Object execute(VirtualFrame frame) {
-        if (!Types.bool(cond.execute(frame))) throw failed();
+    public Object execute(Object[] frame) {
+        if (!Types.bool(cond.execute(frame))) throw new NixException("assertion '" + text + "' failed", this, true);
         return body.execute(frame);
-    }
-
-    @com.oracle.truffle.api.CompilerDirectives.TruffleBoundary
-    private NixException failed() {
-        return new NixException("assertion '" + text + "' failed", this, true);
     }
 }

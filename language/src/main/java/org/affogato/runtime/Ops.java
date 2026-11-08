@@ -1,13 +1,11 @@
 package org.affogato.runtime;
 
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import java.util.Arrays;
 
 public final class Ops {
     private Ops() {}
 
     /** {@code ==}: its operands are fresh values in Nix, so they are never the same cell. */
-    @TruffleBoundary
     public static boolean equal(Object a, Object b) {
         return equalForced(Thunk.force(a), Thunk.force(b));
     }
@@ -16,7 +14,6 @@ public final class Ops {
      * Nix's {@code eqValues} on values held in lists, sets or arguments: forced first, then equal if they are the same
      * cell. The same forced object stands in for the same cell, which Nix code observes on functions.
      */
-    @TruffleBoundary
     public static boolean equalCells(Object a, Object b) {
         a = Thunk.force(a);
         b = Thunk.force(b);
@@ -54,7 +51,6 @@ public final class Ops {
         return false;
     }
 
-    @TruffleBoundary
     public static boolean lessThan(Object a, Object b) {
         a = Thunk.force(a);
         b = Thunk.force(b);
@@ -74,7 +70,6 @@ public final class Ops {
         throw new NixException("cannot compare " + Types.describe(a) + " with " + Types.describe(b));
     }
 
-    @TruffleBoundary
     public static Object add(Object a, Object b) {
         if (a instanceof Long x && b instanceof Long y) {
             try {
@@ -105,7 +100,6 @@ public final class Ops {
         return new NixException("expected a number but found " + Types.describe(bad));
     }
 
-    @TruffleBoundary
     public static Object sub(Object a, Object b) {
         if (a instanceof Long x && b instanceof Long y) {
             try {
@@ -118,7 +112,6 @@ public final class Ops {
         return ((Number) a).doubleValue() - ((Number) b).doubleValue();
     }
 
-    @TruffleBoundary
     public static Object mul(Object a, Object b) {
         if (a instanceof Long x && b instanceof Long y) {
             try {
@@ -131,7 +124,6 @@ public final class Ops {
         return ((Number) a).doubleValue() * ((Number) b).doubleValue();
     }
 
-    @TruffleBoundary
     public static Object div(Object a, Object b) {
         if (!(a instanceof Number && b instanceof Number)) throw arith(a, b);
         if (((Number) b).doubleValue() == 0) throw new NixException("division by zero");
@@ -142,12 +134,10 @@ public final class Ops {
         return ((Number) a).doubleValue() / ((Number) b).doubleValue();
     }
 
-    @TruffleBoundary
     public static Object update(Object a, Object b) {
         return Types.attrs(a).update(Types.attrs(b));
     }
 
-    @TruffleBoundary
     public static Object concatLists(Object a, Object b) {
         NixList x = Types.list(a);
         NixList y = Types.list(b);

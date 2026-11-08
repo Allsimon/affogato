@@ -1,33 +1,18 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.frame.VirtualFrame;
-import com.oracle.truffle.api.nodes.ExplodeLoop;
 import java.util.Arrays;
 import org.affogato.NixContext;
-import org.affogato.runtime.NixAttrs;
-import org.affogato.runtime.NixException;
-import org.affogato.runtime.Types;
+import org.affogato.runtime.*;
 
 /** Binds the argument (and formals, if any) in the lambda's frame, then evaluates the body. */
 public final class LambdaBodyNode extends NixNode {
     private final String fnName;
     private final int argSlot;
-
-    @CompilationFinal(dimensions = 1)
     private final String[] formals;
-
-    @CompilationFinal(dimensions = 1)
     private final int[] formalSlots;
-
-    @Children
     private final NixNode[] defaults;
-
     private final boolean ellipsis;
-
-    @Child
-    private NixNode body;
+    private final NixNode body;
 
     public LambdaBodyNode(
             String fnName,
@@ -47,15 +32,16 @@ public final class LambdaBodyNode extends NixNode {
     }
 
     @Override
-    public Object execute(VirtualFrame frame) {
+    public Object execute(Object[] frame) {
         NixContext ctx = NixContext.get();
+        if (ctx.cancelled) throw new Cancelled();
         if (++ctx.callDepth > NixContext.MAX_CALL_DEPTH) {
             ctx.callDepth--;
-            throw stackOverflow();
+            throw new NixException("stack overflow; max-call-depth exceeded", this);
         }
         try {
-            Object arg = frame.getArguments()[1];
-            if (argSlot >= 0) frame.setObject(argSlot, arg);
+            Object arg = frame[1];
+            if (argSlot >= 0) frame[argSlot] = arg;
             if (formals != null) bindFormals(frame, arg);
             return body.execute(frame);
         } finally {
@@ -63,44 +49,29 @@ public final class LambdaBodyNode extends NixNode {
         }
     }
 
-    @TruffleBoundary
-    private NixException stackOverflow() {
-        return new NixException("stack overflow; max-call-depth exceeded", this);
-    }
-
-    @ExplodeLoop
-    private void bindFormals(VirtualFrame frame, Object arg) {
+    private void bindFormals(Object[] frame, Object arg) {
         NixAttrs attrs = Types.attrs(arg);
         int matched = 0;
         for (int i = 0; i < formals.length; i++) {
             Object v = attrs.getRaw(formals[i]);
             if (v == null) {
-                if (defaults[i] == null) throw missing(formals[i]);
+                if (defaults[i] == null)
+                    throw new NixException(fn() + " called without required argument '" + formals[i] + "'", this);
                 v = defaults[i].executeLazy(frame);
             } else {
                 matched++;
             }
-            frame.setObject(formalSlots[i], v);
+            frame[formalSlots[i]] = v;
         }
-        if (!ellipsis && matched < attrs.size()) throw unexpected(attrs);
+        if (!ellipsis && matched < attrs.size()) {
+            for (String k : attrs.keys()) {
+                if (!Arrays.asList(formals).contains(k))
+                    throw new NixException(fn() + " called with unexpected argument '" + k + "'", this);
+            }
+        }
     }
 
     private String fn() {
         return fnName == null ? "anonymous lambda" : "function '" + fnName + "'";
-    }
-
-    @TruffleBoundary
-    private NixException missing(String name) {
-        return new NixException(fn() + " called without required argument '" + name + "'", this);
-    }
-
-    @TruffleBoundary
-    private NixException unexpected(NixAttrs attrs) {
-        for (String k : attrs.keys()) {
-            if (!Arrays.asList(formals).contains(k)) {
-                return new NixException(fn() + " called with unexpected argument '" + k + "'", this);
-            }
-        }
-        throw new IllegalStateException();
     }
 }

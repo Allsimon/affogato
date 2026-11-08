@@ -1,6 +1,5 @@
 package org.affogato.runtime;
 
-import com.oracle.truffle.api.source.SourceSection;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
@@ -107,7 +106,6 @@ public final class NixAttrs {
         return null;
     }
 
-    // Leaves are flat, and staying out of recursion keeps Truffle from inlining lookups without bound.
     private Object flatGetRaw(String key) {
         int i = indexOf(key, 0, keys.length - 1);
         return i >= 0 ? values[i] : null;

@@ -1,15 +1,9 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.frame.VirtualFrame;
-import com.oracle.truffle.api.nodes.ExplodeLoop;
-import org.affogato.runtime.NixAttrs;
-import org.affogato.runtime.Thunk;
+import org.affogato.runtime.*;
 
 public final class HasAttrNode extends NixNode {
-    @Child
-    private NixNode target;
-
-    @Children
+    private final NixNode target;
     private final AttrKey[] path;
 
     public HasAttrNode(NixNode target, AttrKey[] path) {
@@ -18,8 +12,7 @@ public final class HasAttrNode extends NixNode {
     }
 
     @Override
-    @ExplodeLoop
-    public Object execute(VirtualFrame frame) {
+    public Object execute(Object[] frame) {
         Object v = target.execute(frame);
         for (int i = 0; i < path.length; i++) {
             String name = path[i].name(frame);

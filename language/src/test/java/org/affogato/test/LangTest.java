@@ -18,11 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
-import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.Engine;
-import org.graalvm.polyglot.PolyglotException;
-import org.graalvm.polyglot.Source;
-import org.junit.jupiter.api.AfterAll;
+import org.affogato.EvalException;
+import org.affogato.Interpreter;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
 
@@ -35,9 +32,6 @@ class LangTest {
     private static final Path LANG = TESTS.resolve("lang");
     private static final Path TVIX = TESTS.resolve("tvix");
     private static final Path OWN = TESTS.resolve("affogato");
-    private static final Engine ENGINE =
-            Engine.newBuilder().option("engine.WarnInterpreterOnly", "false").build();
-
     /** Tests known to fail, with the reason; keep this list short and shrinking. */
     private static final Set<String> SKIP = skipList();
 
@@ -91,11 +85,6 @@ class LangTest {
         }
     }
 
-    @AfterAll
-    static void close() {
-        ENGINE.close();
-    }
-
     private static String latin1(Path p) throws IOException {
         return new String(Files.readAllBytes(p), StandardCharsets.ISO_8859_1);
     }
@@ -122,30 +111,25 @@ class LangTest {
         return f.substring(0, f.length() - 4);
     }
 
-    private static String eval(Path file, List<String> flags) throws IOException {
-        Context.Builder b =
-                Context.newBuilder("nix").engine(ENGINE).allowAllAccess(true).option("nix.Output", "strict");
+    private static String eval(Path file, List<String> flags) throws Exception {
         List<String> searchPath = new ArrayList<>();
-        List<String> args = new ArrayList<>();
+        List<Interpreter.Arg> args = new ArrayList<>();
+        String attr = "";
         for (int i = 0; i < flags.size(); i++) {
             switch (flags.get(i)) {
                 case "-I" -> searchPath.add(absolutise(flags.get(++i)));
-                case "-A" -> b.option("nix.Attr", flags.get(++i));
+                case "-A" -> attr = flags.get(++i);
                 case "--arg" ->
-                    args.add("expr\u0002" + flags.get(++i) + "\u0002"
-                            + flags.get(++i).replace("lang/", LANG + "/"));
-                case "--argstr" -> args.add("str\u0002" + flags.get(++i) + "\u0002" + flags.get(++i));
+                    args.add(new Interpreter.Arg(flags.get(++i), flags.get(++i).replace("lang/", LANG + "/"), false));
+                case "--argstr" -> args.add(new Interpreter.Arg(flags.get(++i), flags.get(++i), true));
                 default -> {}
             }
         }
         searchPath.add(LANG + "/dir3");
         searchPath.add(LANG + "/dir4");
-        b.option("nix.NixPath", String.join(":", searchPath));
-        b.option("nix.Args", String.join("\u0001", args));
-        try (Context ctx = b.build()) {
-            Source src = Source.newBuilder("nix", latin1(file), file.toString()).build();
-            return ctx.eval(src).asString().replace(TESTS.toString(), "/pwd");
-        }
+        var options =
+                new Interpreter.Options(String.join(":", searchPath), "", "", Interpreter.Output.STRICT, attr, args);
+        return Interpreter.evaluate(options, file.toString(), latin1(file), 0).replace(TESTS.toString(), "/pwd");
     }
 
     private static String absolutise(String entry) {
@@ -183,10 +167,7 @@ class LangTest {
     Stream<DynamicTest> evalFail() throws IOException {
         return tests("eval-fail-").stream()
                 .map(p -> test(
-                        p,
-                        () -> assertThatThrownBy(() -> eval(p, flags(p)))
-                                .isInstanceOf(PolyglotException.class)
-                                .matches(e -> !((PolyglotException) e).isInternalError(), "is not an internal error")));
+                        p, () -> assertThatThrownBy(() -> eval(p, flags(p))).isInstanceOf(EvalException.class)));
     }
 
     private static void parse(Path p) throws IOException {
@@ -202,9 +183,6 @@ class LangTest {
     Stream<DynamicTest> parseFail() throws IOException {
         return tests("parse-fail-").stream()
                 .map(p -> test(
-                        p,
-                        () -> assertThatThrownBy(() -> eval(p, List.of()))
-                                .isInstanceOf(PolyglotException.class)
-                                .matches(e -> !((PolyglotException) e).isInternalError(), "is not an internal error")));
+                        p, () -> assertThatThrownBy(() -> eval(p, List.of())).isInstanceOf(EvalException.class)));
     }
 }
