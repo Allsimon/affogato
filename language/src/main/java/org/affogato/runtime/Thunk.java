@@ -38,7 +38,10 @@ public final class Thunk {
         this.env = arg;
     }
 
-    /** Computed on demand, but held as a value by Nix, so it prints as evaluated. */
+    /**
+     * Computed on demand, but held as a value by Nix, so it prints as evaluated. {@code supplier} must be pure and
+     * cannot recurse: such thunks may be forced from several threads at once.
+     */
     public static Thunk eager(Supplier<Object> supplier) {
         return new Thunk(new Eager(supplier), null, false);
     }
@@ -68,7 +71,9 @@ public final class Thunk {
     }
 
     public Object force() {
-        if (value != null) return value;
+        Object v = value;
+        if (v != null) return v;
+        if (code instanceof Eager x) return value = x.supplier.get();
         return evaluate();
     }
 
@@ -81,7 +86,6 @@ public final class Thunk {
                 case NixRootNode target -> target.call(e, null);
                 case NixNode body -> body.execute((Object[]) e);
                 case Supplier<?> supplier -> supplier.get();
-                case Eager x -> x.supplier.get();
                 case MapAttrs m -> {
                     String key = (String) e;
                     yield Apply.apply(Apply.apply(m.fn, new NixString(key)), m.attrs.getRaw(key));

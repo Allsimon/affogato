@@ -54,6 +54,17 @@ class InterpreterTest {
     }
 
     @Test
+    void reReadsADirectoryChangedBetweenEvaluations(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("a"), "");
+        Files.setLastModifiedTime(dir, java.nio.file.attribute.FileTime.fromMillis(0));
+        String expr = "builtins.attrNames (builtins.readDir " + dir + ")";
+        assertThat(eval(Interpreter.Output.JSON, expr, 0)).isEqualTo("[\"a\"]");
+        assertThat(eval(Interpreter.Output.JSON, expr, 0)).isEqualTo("[\"a\"]");
+        Files.writeString(dir.resolve("b"), "");
+        assertThat(eval(Interpreter.Output.JSON, expr, 0)).isEqualTo("[\"a\",\"b\"]");
+    }
+
+    @Test
     void stopsAtTheTimeout() {
         long start = System.nanoTime();
         assertThatThrownBy(() -> eval(
