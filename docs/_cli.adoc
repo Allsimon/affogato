@@ -58,7 +58,8 @@ the same parser as the other commands. It answers with:
 * in a module, a function of `config`, `lib`, `pkgs` or `modulesPath`: the
   completion of option names as a binding's name is typed, and on such a name a
   hover with the option's type, description, default and example, and go to its
-  declaration; a set bound to an option path, also through `mkIf`, `mkMerge`
+  declaration; a hover on a group of options, as `services.nginx`, lists the
+  names under it; a set bound to an option path, also through `mkIf`, `mkMerge`
   and the like, continues that path, `config.` is skipped, and each attribute
   of an `attrsOf` submodule takes a name of its own, as in
   `virtualHosts."example.org".root`;

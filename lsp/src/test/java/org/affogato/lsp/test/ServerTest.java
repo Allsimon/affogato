@@ -523,6 +523,15 @@ class ServerTest {
     }
 
     @Test
+    void listsTheOptionsOfAGroup() {
+        server = new Server(new Nixpkgs());
+        open("{ config, ... }: { services.web.enable = true; }\n");
+        assertThat(map(map(result("textDocument/hover", at(0, 28))).get("contents")))
+                .containsEntry("value", "`services.web`\n\n`enable`, `hosts`");
+        assertThat(result("textDocument/hover", at(0, 20))).isNull();
+    }
+
+    @Test
     void configuresTheOptionSets() {
         Nixpkgs nixpkgs = new Nixpkgs();
         server = new Server(nixpkgs);

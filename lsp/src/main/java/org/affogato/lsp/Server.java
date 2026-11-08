@@ -74,6 +74,8 @@ public final class Server {
             "assert …;", "assert ${1:condition}; ${0}",
             "rec { … }", "rec {\n  ${0}\n}");
 
+    private static final int GROUP_NAMES = 50;
+
     private static final Set<String> CONSTANTS = Set.of("true", "false", "null");
 
     private static final Pattern URL = Pattern.compile("https?://[^\\s\\\\]+");
@@ -678,6 +680,7 @@ public final class Server {
         int offset = offset(document, params);
         Selected selected = selected(document, offset);
         Evaluator.Attribute a;
+        boolean option = selected == null;
         if (selected != null) {
             a = evaluator.describe(selected.path());
         } else {
@@ -685,18 +688,25 @@ public final class Server {
             if (selected == null) return null;
             a = evaluator.describeOption(selected.path());
         }
-        if (a == null || a.type() == null) return null;
         StringBuilder text = new StringBuilder();
+        if (a != null && a.type() == null && option) {
+            List<String> names = evaluator.optionNames(selected.path());
+            if (names == null || names.isEmpty()) return null;
+            text.append(optionPath(selected.path())).append("\n\n");
+            for (int i = 0; i < Math.min(names.size(), GROUP_NAMES); i++)
+                text.append(i == 0 ? "" : ", ").append(optionPath(List.of(names.get(i))));
+            if (names.size() > GROUP_NAMES)
+                text.append(" and ").append(names.size() - GROUP_NAMES).append(" more");
+            return Map.of(
+                    "contents",
+                    Map.of("kind", "markdown", "value", text.toString()),
+                    "range",
+                    document.lines()
+                            .range(selected.name().start(), selected.name().end()));
+        }
+        if (a == null || a.type() == null) return null;
         if (a.type().equals("option")) {
-            text.append("`");
-            for (String name : selected.path()) {
-                if (text.length() > 1) text.append('.');
-                boolean plain = !name.isEmpty()
-                        && isNameStart(name.charAt(0))
-                        && name.chars().allMatch(c -> isNameChar((char) c));
-                text.append(plain ? name : Json.write(name));
-            }
-            text.append("`");
+            text.append(optionPath(selected.path()));
             if (a.value() != null) text.append(" ").append(a.value());
             if (a.description() != null) text.append("\n\n").append(a.description());
             if (a.defaultValue() != null) text.append("\n\n*Default:* ").append(code(a.defaultValue()));
@@ -720,6 +730,18 @@ public final class Server {
                 Map.of("kind", "markdown", "value", text.toString()),
                 "range",
                 document.lines().range(selected.name().start(), selected.name().end()));
+    }
+
+    private static String optionPath(List<String> path) {
+        StringBuilder text = new StringBuilder("`");
+        for (String name : path) {
+            if (text.length() > 1) text.append('.');
+            boolean plain = !name.isEmpty()
+                    && isNameStart(name.charAt(0))
+                    && name.chars().allMatch(c -> isNameChar((char) c));
+            text.append(plain ? name : Json.write(name));
+        }
+        return text.append("`").toString();
     }
 
     private static String code(String text) {
