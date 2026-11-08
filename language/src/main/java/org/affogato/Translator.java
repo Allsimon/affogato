@@ -1,6 +1,7 @@
 package org.affogato;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -424,8 +425,10 @@ public final class Translator {
     }
 
     private NixNode attrs(Attrs a, Scope s) {
-        TreeMap<String, AttrDef> sorted = new TreeMap<>(a.attrs);
-        String[] keys = sorted.keySet().toArray(new String[0]);
+        String[] keys = a.attrs.keySet().toArray(new String[0]);
+        Arrays.sort(keys);
+        AttrDef[] defs = new AttrDef[keys.length];
+        for (int i = 0; i < keys.length; i++) defs[i] = a.attrs.get(keys[i]);
         NixNode[] values = new NixNode[keys.length];
         SourceSection[] positions = new SourceSection[keys.length];
         List<Integer> slots = new ArrayList<>();
@@ -455,7 +458,7 @@ public final class Translator {
                 inner = new Scope(s, s.frame(), vars, -1);
             }
             for (int i = 0; i < keys.length; i++) {
-                AttrDef d = sorted.get(keys[i]);
+                AttrDef d = defs[i];
                 values[i] = switch (d.kind()) {
                     case PLAIN, INHERITED -> lazy(d.value(), s, keys[i]);
                     case INHERITED_FROM ->
@@ -464,8 +467,8 @@ public final class Translator {
             }
         }
         for (int i = 0; i < keys.length; i++) {
-            positions[i] = section(sorted.get(keys[i]).pos());
-            noNul(keys[i], sorted.get(keys[i]).pos().start());
+            positions[i] = section(defs[i].pos());
+            noNul(keys[i], defs[i].pos().start());
         }
         int nd = a.dynamic.size();
         NixNode[] dynNames = new NixNode[nd];
