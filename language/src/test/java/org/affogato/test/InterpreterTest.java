@@ -36,6 +36,14 @@ class InterpreterTest {
     }
 
     @Test
+    void printsTheEntryTypesOfReadDir(@TempDir Path dir) throws Exception {
+        Files.createDirectory(dir.resolve("d"));
+        Files.writeString(dir.resolve("f"), "");
+        assertThat(eval(Interpreter.Output.EVAL, "builtins.readDir " + dir, 0))
+                .isEqualTo("{ d = \"directory\"; f = \"regular\"; }");
+    }
+
+    @Test
     void stopsAtTheTimeout() {
         long start = System.nanoTime();
         assertThatThrownBy(() -> eval(

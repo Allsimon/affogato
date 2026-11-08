@@ -38,6 +38,13 @@ public final class Thunk {
         this.env = arg;
     }
 
+    /** Computed on demand, but held as a value by Nix, so it prints as evaluated. */
+    public static Thunk eager(Supplier<Object> supplier) {
+        return new Thunk(new Eager(supplier), null, false);
+    }
+
+    private record Eager(Supplier<Object> supplier) {}
+
     public static Thunk apply(Object fn, Object arg) {
         return new Thunk(fn, arg, true);
     }
@@ -57,7 +64,7 @@ public final class Thunk {
     }
 
     public boolean isEvaluated() {
-        return value != null;
+        return value != null || code instanceof Eager;
     }
 
     public Object force() {
@@ -74,6 +81,7 @@ public final class Thunk {
                 case NixRootNode target -> target.call(e, null);
                 case NixNode body -> body.execute((Object[]) e);
                 case Supplier<?> supplier -> supplier.get();
+                case Eager x -> x.supplier.get();
                 case MapAttrs m -> {
                     String key = (String) e;
                     yield Apply.apply(Apply.apply(m.fn, new NixString(key)), m.attrs.getRaw(key));

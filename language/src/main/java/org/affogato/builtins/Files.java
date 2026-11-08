@@ -43,7 +43,9 @@ final class Files {
             Path dir = Path.of(realPath(a[0]));
             TreeMap<String, Object> m = new TreeMap<>();
             try (Stream<Path> s = java.nio.file.Files.list(dir)) {
-                s.forEach(p -> m.put(utf8ToBytes(p.getFileName().toString()), new NixString(Nar.typeOf(p))));
+                // Nix gets the types free from d_type; a stat per pkgs/by-name entry is most of a nixpkgs eval.
+                s.forEach(p -> m.put(
+                        utf8ToBytes(p.getFileName().toString()), Thunk.eager(() -> new NixString(Nar.typeOf(p)))));
             } catch (IOException e) {
                 throw new NixException("reading directory '" + dir + "': " + NixContext.describe(e));
             }
