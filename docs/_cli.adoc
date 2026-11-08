@@ -64,7 +64,8 @@ the same parser as the other commands. It answers with:
   first; a `${...}` name that is itself a selection from nixpkgs giving a plain
   string, as `${pkgs.stdenv.hostPlatform.system}`, counts as that name;
 * in a module, a function of `config`, `lib`, `pkgs` or `modulesPath`: the
-  completion of option names as a binding's name is typed, and on such a name a
+  completion of option names as a binding's name is typed, also in a set not
+  closed yet, and on such a name a
   hover with the option's type, description, default and example, and go to its
   declaration; a hover on a group of options, as `services.nginx`, lists the
   names under it; a set bound to an option path, also through `mkIf`, `mkMerge`

@@ -545,6 +545,15 @@ class ServerTest {
     }
 
     @Test
+    void completesTheOptionsOfASetStillOpen() {
+        server = new Server(new Nixpkgs());
+        open("{ lib, ... }: {\n  services = lib.mkIf (true) { web.e\n  x = [ \"}\" ];\n");
+        assertThat(list(map(result("textDocument/completion", at(1, 36))).get("items")))
+                .extracting(i -> map(i).get("label"))
+                .containsExactly("enable");
+    }
+
+    @Test
     void describesTheOptionsOfAModule() {
         server = new Server(new Nixpkgs());
         open("{ config, ... }: { config.services.\"web\".enable = true; }\n");

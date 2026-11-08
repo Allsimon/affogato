@@ -37,6 +37,7 @@ import org.affogato.parser.Scopes;
 import org.affogato.parser.SyntaxTree;
 import org.affogato.parser.SyntaxTree.Node;
 import org.affogato.parser.SyntaxView;
+import org.affogato.parser.Tokenizer;
 
 /** A language server for Nix, speaking JSON-RPC with {@code Content-Length} framing, as the protocol has it. */
 public final class Server {
@@ -652,6 +653,10 @@ public final class Server {
             if (flake != null) return flake;
         }
         List<String> option = evaluator == null ? null : typedOption(document, offset);
+        if (evaluator != null && option == null) {
+            Document closed = closed(document.text(), offset);
+            if (closed != null) option = typedOption(closed, offset);
+        }
         if (option != null) {
             List<String> parent = option.subList(0, option.size() - 1);
             Map<String, Object> found = attributes(evaluator.optionNames(parent), parent, option.getLast());
@@ -949,6 +954,37 @@ public final class Server {
         return set == null ? null : new Typed(typed, set);
     }
 
+    /** The text up to {@code offset} with the brackets still open there closed, or null when none is. */
+    private static Document closed(String text, int offset) {
+        String prefix = text.substring(0, offset);
+        StringBuilder open = new StringBuilder();
+        for (Lexeme l : Tokenizer.tokenize(prefix)) {
+            switch (l.kind()) {
+                case LBRACE -> open.append('{');
+                case DOLLAR_CURLY -> open.append('$');
+                case LBRACK -> open.append('[');
+                case LPAREN -> open.append('(');
+                case RBRACE, RBRACK, RPAREN -> {
+                    if (!open.isEmpty()) open.setLength(open.length() - 1);
+                }
+                default -> {}
+            }
+        }
+        if (open.isEmpty()) return null;
+        StringBuilder closed = new StringBuilder(prefix).append(' ');
+        for (int i = open.length() - 1; i >= 0; i--) {
+            closed.append(
+                    switch (open.charAt(i)) {
+                        case '[' -> ']';
+                        case '(' -> ')';
+                        default -> '}';
+                    });
+            if (i > 0 && open.charAt(i - 1) == '{') closed.append(';');
+        }
+        return Document.of(closed.toString());
+    }
+
+    /** The option path being typed at {@code offset} as a binding name in a module, its last name partial, or null. */
     private List<String> typedOption(Document document, int offset) {
         Typed typed = typedBinding(document, offset);
         if (typed == null) return null;
