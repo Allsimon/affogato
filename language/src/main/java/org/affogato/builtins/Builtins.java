@@ -63,6 +63,7 @@ public final class Builtins {
         Xml.register(b);
         Toml.register(b);
         Files.register(b);
+        Flakes.register(b);
         Context.register(b);
         Derivations.register(b);
         return b.values;
@@ -169,7 +170,7 @@ public final class Builtins {
             m.put("column", (long) pos.getStartColumn());
             return NixAttrs.of(m);
         });
-        for (String f : List.of("fetchurl", "fetchTarball", "fetchGit", "fetchMercurial", "fetchTree", "getFlake")) {
+        for (String f : List.of("fetchurl", "fetchTarball", "fetchGit", "fetchMercurial")) {
             add(f, 1, a -> {
                 throw new NixException("'builtins." + f + "' is not supported by affogato yet");
             });

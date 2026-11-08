@@ -20,7 +20,13 @@ Heavier attributes::
 
 == Not supported
 
-* Fetchers (`fetchurl`, `fetchTarball`, `fetchGit`, `fetchTree`) and flakes.
+* Fetching: `fetchurl`, `fetchTarball` and `fetchGit` fail; `fetchTree` takes
+  only a locked input with a `narHash`, already in the store; and `getFlake`
+  only a local flake, `/dir`, `path:/dir` or `git+file:///dir`, whose locked
+  inputs are in the store, as after building it or `nix flake archive`. The
+  flake's own files are read in place, not from a copy in the store, so its
+  `outPath` is the directory and the paths it gives derivations differ from
+  Nix's.
 * Import from derivation.
 * Content-addressed and impure derivations.
 * `--xml` output.
