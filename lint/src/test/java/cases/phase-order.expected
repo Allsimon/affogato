@@ -1,0 +1,2 @@
+phase-order.nix:17:5: hint[phase-order]: 'postBuild' should come before 'installPhase', as stdenv runs it first [fix]
+phase-order.nix:38:54: hint[phase-order]: 'buildPhase' should come before 'installPhase', as stdenv runs it first

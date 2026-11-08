@@ -156,6 +156,10 @@ Each rule shows a case from the linter's tests: the original code, what the rule
 |⚠️ warning
 |A `NIX_` variable such as `NIX_CFLAGS_COMPILE` set beside the attributes of a derivation: with `__structuredAttrs`, only `env` is exported, so the compiler wrapper would not see it. The fix moves it to `env`, through `toString` unless it is a string already. It is withheld when `env` is not an attribute set written in place, or the file refers to the variable elsewhere, as `finalAttrs.NIX_LDFLAGS`.
 
+|<<lint-phase-order,`phase-order`>>
+|💡 hint
+|Phases of a derivation out of the order stdenv runs them: `unpackPhase`, `patchPhase`, `configurePhase`, `buildPhase`, `checkPhase`, `installPhase`, `fixupPhase`, `installCheckPhase`, `distPhase`, each between its `pre` and `post` hooks, as `preBuild`, `buildPhase`, `postBuild`. The fix puts them, with the comment lines above them and the comment after them, in that order in the places they take in the set, where the other attributes stay. It is withheld unless each starts a line, at the same indentation. Since the attributes of a set have no order in Nix, the derivation is the same.
+
 |<<lint-fake-hash,`fake-hash`>>
 |⚠️ warning
 |A placeholder hash: `lib.fakeHash`, `lib.fakeSha256`, `lib.fakeSha512`, or an SRI hash of `A` only. It makes the build fail and print the real hash, which is what it is for; it is reported so that none is left behind.
@@ -2225,6 +2229,114 @@ env-variable.nix:18:5: warning[env-variable]: set 'NIX_HARDENING_ENABLE' in 'env
 env-variable.nix:31:5: warning[env-variable]: set 'NIX_LDFLAGS' in 'env', or it is not exported with __structuredAttrs [fix]
 env-variable.nix:38:5: warning[env-variable]: set 'NIX_LDFLAGS' in 'env', or it is not exported with __structuredAttrs
 env-variable.nix:44:5: warning[env-variable]: set 'NIX_HARDENING_ENABLE' in 'env', or it is not exported with __structuredAttrs
+----
+
+[[lint-phase-order]]
+=== `phase-order`
+
+Severity: 💡 hint. Phases of a derivation out of the order stdenv runs them: `unpackPhase`, `patchPhase`, `configurePhase`, `buildPhase`, `checkPhase`, `installPhase`, `fixupPhase`, `installCheckPhase`, `distPhase`, each between its `pre` and `post` hooks, as `preBuild`, `buildPhase`, `postBuild`. The fix puts them, with the comment lines above them and the comment after them, in that order in the places they take in the set, where the other attributes stay. It is withheld unless each starts a line, at the same indentation. Since the attributes of a set have no order in Nix, the derivation is the same.
+
+link:playground/index.html?rule=phase-order[Try it in the playground]
+
+[source,nix,role="primary"]
+.Original
+----
+{ stdenv, buildPythonPackage }:
+{
+  # Hooks and phases swapped, with their comments and other attributes between them.
+  swapped = stdenv.mkDerivation (finalAttrs: {
+    pname = "swapped";
+    version = "1.0";
+
+    # Installs the binary.
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 a $out/bin/a
+      runHook postInstall
+    '';
+
+    meta.description = "Stays in place";
+
+    postBuild = "make docs"; # the docs
+    buildPhase = ''
+      runHook preBuild
+      make
+      runHook postBuild
+    '';
+    preBuild = "export A=1";
+  });
+
+  # Already in order, around attributes that are not phases.
+  ordered = buildPythonPackage {
+    pname = "ordered";
+    preConfigure = "a";
+    configurePhase = "b";
+    doCheck = true;
+    checkPhase = "c";
+    postInstall = "d";
+    installCheckPhase = "e";
+  };
+
+  # Reported, but not on lines of their own.
+  inline = stdenv.mkDerivation { installPhase = "a"; buildPhase = "b"; };
+
+  # Not a derivation.
+  plain = { installPhase = "a"; buildPhase = "b"; };
+}
+----
+
+[source,nix,role="secondary"]
+.Fixed
+----
+{ stdenv, buildPythonPackage }:
+{
+  # Hooks and phases swapped, with their comments and other attributes between them.
+  swapped = stdenv.mkDerivation (finalAttrs: {
+    pname = "swapped";
+    version = "1.0";
+
+    preBuild = "export A=1";
+
+    meta.description = "Stays in place";
+
+    buildPhase = ''
+      runHook preBuild
+      make
+      runHook postBuild
+    '';
+    postBuild = "make docs"; # the docs
+    # Installs the binary.
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 a $out/bin/a
+      runHook postInstall
+    '';
+  });
+
+  # Already in order, around attributes that are not phases.
+  ordered = buildPythonPackage {
+    pname = "ordered";
+    preConfigure = "a";
+    configurePhase = "b";
+    doCheck = true;
+    checkPhase = "c";
+    postInstall = "d";
+    installCheckPhase = "e";
+  };
+
+  # Reported, but not on lines of their own.
+  inline = stdenv.mkDerivation { installPhase = "a"; buildPhase = "b"; };
+
+  # Not a derivation.
+  plain = { installPhase = "a"; buildPhase = "b"; };
+}
+----
+
+[source,text,role="secondary"]
+.Diagnostics
+----
+phase-order.nix:17:5: hint[phase-order]: 'postBuild' should come before 'installPhase', as stdenv runs it first [fix]
+phase-order.nix:38:54: hint[phase-order]: 'buildPhase' should come before 'installPhase', as stdenv runs it first
 ----
 
 [[lint-fake-hash]]

@@ -35,6 +35,29 @@ final class Text {
         return new Edit(start, end, merge ? " " : "");
     }
 
+    /** The start of the {@code #} comment lines right above the line of {@code at}, else {@code at}. */
+    static int leadingComments(String src, int at) {
+        int from = at;
+        int lineStart = src.lastIndexOf('\n', at - 1) + 1;
+        while (lineStart > 0) {
+            int prev = src.lastIndexOf('\n', lineStart - 2) + 1;
+            String line = src.substring(prev, lineStart - 1).strip();
+            if (!line.startsWith("#")) break;
+            from = prev + src.substring(prev).indexOf('#');
+            lineStart = prev;
+        }
+        return from;
+    }
+
+    /** The end of a {@code #} comment that follows {@code at} on its line, else {@code at}. */
+    static int trailingComment(String src, int at) {
+        int i = at;
+        while (i < src.length() && isBlank(src.charAt(i))) i++;
+        if (i == src.length() || src.charAt(i) != '#') return at;
+        int end = src.indexOf('\n', i);
+        return end < 0 ? src.length() : end;
+    }
+
     // TeaVM 0.16.0's String.isBlank() only accepts spaces, so the playground would keep line breaks and tabs.
     // TODO: use String.isBlank() once TeaVM's matches the JDK.
     static boolean isBlank(String s) {

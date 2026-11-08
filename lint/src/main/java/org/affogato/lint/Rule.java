@@ -122,6 +122,15 @@ public enum Rule {
                     + " fix moves it to `env`, through `toString` unless it is a string already. It is withheld when"
                     + " `env` is not an attribute set written in place, or the file refers to the variable"
                     + " elsewhere, as `finalAttrs.NIX_LDFLAGS`."),
+    PHASE_ORDER(
+            HINT,
+            "Phases of a derivation out of the order stdenv runs them: `unpackPhase`, `patchPhase`,"
+                    + " `configurePhase`, `buildPhase`, `checkPhase`, `installPhase`, `fixupPhase`,"
+                    + " `installCheckPhase`, `distPhase`, each between its `pre` and `post` hooks, as `preBuild`,"
+                    + " `buildPhase`, `postBuild`. The fix puts them, with the comment lines above them and the"
+                    + " comment after them, in that order in the places they take in the set, where the other"
+                    + " attributes stay. It is withheld unless each starts a line, at the same indentation. Since"
+                    + " the attributes of a set have no order in Nix, the derivation is the same."),
     FAKE_HASH(
             WARNING,
             "A placeholder hash: `lib.fakeHash`, `lib.fakeSha256`, `lib.fakeSha512`, or an SRI hash of `A` only. It"

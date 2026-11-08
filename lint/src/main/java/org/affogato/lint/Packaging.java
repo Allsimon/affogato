@@ -28,6 +28,18 @@ final class Packaging {
             "installCheckPhase", "InstallCheck",
             "distPhase", "Dist");
 
+    /** The phases in the order stdenv runs them. */
+    private static final List<String> PHASE_ORDER = List.of(
+            "unpackPhase",
+            "patchPhase",
+            "configurePhase",
+            "buildPhase",
+            "checkPhase",
+            "installPhase",
+            "fixupPhase",
+            "installCheckPhase",
+            "distPhase");
+
     /** The attributes that these builders pass on unchanged in {@code finalAttrs}. */
     private static final Set<String> KEPT = Set.of("pname", "version", "src");
 
@@ -44,6 +56,7 @@ final class Packaging {
             fakeHash(src, n, out);
             if (n instanceof Call c) sriHash(src, scope, c, out);
             if (n instanceof Call c) env(src, scope, c, out);
+            if (n instanceof Call c) phaseOrder(src, c, out);
             if (n instanceof Call c) {
                 flag(src, c, Rule.MISSING_STRUCTURED_ATTRS, "__structuredAttrs", Builders.STRUCTURED_ATTRS, out);
                 flag(src, c, Rule.MISSING_STRICT_DEPS, "strictDeps", Builders.STRICT_DEPS, out);
@@ -216,6 +229,81 @@ final class Packaging {
             default -> null;
         };
         return set == null || set.rec() != null && set.rec().type() == TokenType.LET ? null : set;
+    }
+
+    /**
+     * Where a binding goes among the phases, three places to each in the order stdenv runs them: its pre hook, the
+     * phase, its post hook; -1 for any other binding.
+     */
+    private static int phaseRank(Binding b) {
+        if (!(b instanceof Assign a) || a.path().size() != 1) return -1;
+        String name = Nodes.staticName(a.path().getFirst().attr());
+        if (name == null) return -1;
+        for (int i = 0; i < PHASE_ORDER.size(); i++) {
+            String phase = PHASE_ORDER.get(i);
+            String hook = PHASES.get(phase);
+            if (name.equals("pre" + hook)) return 3 * i;
+            if (name.equals(phase)) return 3 * i + 1;
+            if (name.equals("post" + hook)) return 3 * i + 2;
+        }
+        return -1;
+    }
+
+    /** Reports the first phase or hook of a derivation set after one that stdenv runs later. */
+    private static void phaseOrder(String src, Call call, List<Diagnostic> out) {
+        AttrSet set = derivation(call);
+        if (set == null) return;
+        List<Assign> phases = new ArrayList<>();
+        for (Binding b : set.binds()) if (phaseRank(b) >= 0) phases.add((Assign) b);
+        for (int i = 1; i < phases.size(); i++) {
+            Assign early = phases.get(i);
+            Assign late = null;
+            for (Assign before : phases.subList(0, i)) {
+                if (phaseRank(before) > phaseRank(early)) {
+                    late = before;
+                    break;
+                }
+            }
+            if (late == null) continue;
+            AttrNode name = early.path().getFirst().attr();
+            out.add(new Diagnostic(
+                    Rule.PHASE_ORDER,
+                    Nodes.attrStart(name),
+                    Nodes.attrEnd(name),
+                    "'" + Nodes.staticName(name) + "' should come before '"
+                            + Nodes.staticName(late.path().getFirst().attr()) + "', as stdenv runs it first",
+                    phaseFix(src, phases)));
+            return;
+        }
+    }
+
+    /**
+     * Puts the phases and hooks, each with the comment lines above it and the comment after it, in the places they
+     * take in the set, in the order stdenv runs them; withheld unless each starts a line, at the same indentation.
+     */
+    private static List<Edit> phaseFix(String src, List<Assign> phases) {
+        String indent = null;
+        List<int[]> units = new ArrayList<>();
+        for (Assign a : phases) {
+            int start = Nodes.start(a);
+            String before = src.substring(src.lastIndexOf('\n', start - 1) + 1, start);
+            if (!Text.isBlank(before) || indent != null && !before.equals(indent)) return List.of();
+            indent = before;
+            units.add(new int[] {
+                Text.leadingComments(src, start),
+                Text.trailingComment(src, a.semi().end())
+            });
+        }
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < phases.size(); i++) order.add(i);
+        order.sort(java.util.Comparator.comparingInt(i -> phaseRank(phases.get(i))));
+        List<Edit> edits = new ArrayList<>();
+        for (int slot = 0; slot < units.size(); slot++) {
+            int[] into = units.get(slot);
+            int[] from = units.get(order.get(slot));
+            if (from != into) edits.add(new Edit(into[0], into[1], src.substring(from[0], from[1])));
+        }
+        return edits;
     }
 
     /** The functions whose result is a string, which {@code env} takes as it is. */
