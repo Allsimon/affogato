@@ -77,8 +77,33 @@ public final class Lsp implements Callable<Integer> {
         }
 
         @Override
-        public List<String> names(List<String> path) {
-            return get(session.names(NIXPKGS, path), List.of(), TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS));
+        public synchronized List<String> names(List<String> path) {
+            if (!isArgument(path))
+                return get(session.names(NIXPKGS, path), List.of(), TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS));
+            List<Future<List<String>>> futures = new ArrayList<>();
+            for (String name : optionExpressions.keySet())
+                futures.add(session.names(Session.arguments(OPTIONS + name), path.subList(1, path.size())));
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
+            TreeSet<String> names = new TreeSet<>();
+            for (Future<List<String>> f : futures) {
+                List<String> some = get(f, List.of(), deadline - System.nanoTime());
+                if (some == null) return null;
+                names.addAll(some);
+            }
+            return List.copyOf(names);
+        }
+
+        private static boolean isArgument(List<String> path) {
+            return !path.isEmpty() && path.getFirst().equals(MODULE_ARGUMENTS);
+        }
+
+        /** The descriptions to look the path up in, in order: nixpkgs, or the arguments of each option set. */
+        private List<CompletableFuture<Session.Description>> lookups(List<String> path) {
+            if (!isArgument(path)) return List.of(session.describe(NIXPKGS, path));
+            List<CompletableFuture<Session.Description>> lookups = new ArrayList<>();
+            for (String name : optionExpressions.keySet())
+                lookups.add(session.describe(Session.arguments(OPTIONS + name), path.subList(1, path.size())));
+            return lookups;
         }
 
         /** The value, {@code failed} when its evaluation broke off, null when it takes longer than a request may wait. */
@@ -96,20 +121,26 @@ public final class Lsp implements Callable<Integer> {
         }
 
         @Override
-        public List<Attribute> describeAll(List<List<String>> paths) {
-            List<Future<Session.Description>> futures = new ArrayList<>();
-            for (List<String> path : paths) futures.add(session.describe(NIXPKGS, path));
+        public synchronized List<Attribute> describeAll(List<List<String>> paths) {
+            List<List<CompletableFuture<Session.Description>>> lookups = new ArrayList<>();
+            for (List<String> path : paths) lookups.add(lookups(path));
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
             List<Attribute> attributes = new ArrayList<>();
-            for (Future<Session.Description> f : futures)
-                attributes.add(attribute(get(f, Session.Description.NONE, deadline - System.nanoTime())));
+            for (List<CompletableFuture<Session.Description>> futures : lookups) {
+                Session.Description found = Session.Description.NONE;
+                for (Future<Session.Description> f : futures) {
+                    found = get(f, Session.Description.NONE, deadline - System.nanoTime());
+                    if (found == null || found.type() != null) break;
+                }
+                attributes.add(attribute(found));
+            }
             return attributes;
         }
 
         @Override
-        public void whenDescribed(List<List<String>> paths, Runnable then) {
+        public synchronized void whenDescribed(List<List<String>> paths, Runnable then) {
             CompletableFuture.allOf(paths.stream()
-                            .map(path -> session.describe(NIXPKGS, path))
+                            .flatMap(path -> lookups(path).stream())
                             .toArray(CompletableFuture[]::new))
                     .whenComplete((v, e) -> then.run());
         }
