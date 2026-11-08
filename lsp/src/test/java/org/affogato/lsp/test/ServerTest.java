@@ -389,6 +389,13 @@ class ServerTest {
         public void reset() {
             reset = true;
         }
+
+        String saved;
+
+        @Override
+        public void saved(String path) {
+            saved = path;
+        }
     }
 
     @Test
@@ -697,7 +704,8 @@ class ServerTest {
         open("1\n");
         server.handle(
                 Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didSave\",\"params\":" + DOCUMENT + "}"));
-        assertThat(nixpkgs.reset).isTrue();
+        assertThat(nixpkgs.saved).isEqualTo(java.net.URI.create(URI).getPath());
+        assertThat(nixpkgs.reset).isFalse();
     }
 
     @Test

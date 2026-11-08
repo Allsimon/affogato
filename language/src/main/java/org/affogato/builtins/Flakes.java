@@ -106,6 +106,8 @@ final class Flakes {
                     "'builtins.getFlake' is supported by affogato only for local flakes, not '" + ref + "'");
         Path root = Path.of(location).normalize();
         Path flake = dir.isEmpty() ? root : root.resolve(dir);
+        NixContext.read(flake.resolve("flake.nix").toString());
+        NixContext.read(flake.resolve("flake.lock").toString());
         if (!Files.isRegularFile(flake.resolve("flake.nix")))
             throw new NixException("path '" + flake + "' does not contain a 'flake.nix'");
         String lock;

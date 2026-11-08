@@ -169,6 +169,17 @@ public final class Session implements AutoCloseable {
     }
 
     /**
+     * Drops every value, as {@link #reset()}, when one may depend on the file at {@code path}, an absolute normalized
+     * path, as one the evaluation read or a folder it listed holds; whether it did.
+     */
+    public synchronized boolean reset(String path) {
+        NixContext c = ctx;
+        if (c != null && !c.dependsOn(path)) return false;
+        reset();
+        return true;
+    }
+
+    /**
      * The name of the view of an options root as the arguments its modules receive: {@code _module.args} and, over
      * them, {@code _module.specialArgs}, which the module system takes first.
      */

@@ -29,15 +29,21 @@ final class Files {
             Object v = Thunk.force(a[0]);
             String s = realPath(v);
             boolean mustBeDir = v instanceof NixString str && (str.value.endsWith("/") || str.value.endsWith("/."));
+            NixContext.read(s);
             Path p = Path.of(s);
             return mustBeDir
                     ? java.nio.file.Files.isDirectory(p)
                     : java.nio.file.Files.exists(p, LinkOption.NOFOLLOW_LINKS);
         });
         b.add("readFile", 1, a -> new NixString(NixContext.readFile(realPath(a[0]))));
-        b.add("readFileType", 1, a -> new NixString(Nar.typeOf(Path.of(realPath(a[0])))));
+        b.add("readFileType", 1, a -> {
+            String path = realPath(a[0]);
+            NixContext.read(path);
+            return new NixString(Nar.typeOf(Path.of(path)));
+        });
         b.add("readDir", 1, a -> {
             Path dir = Path.of(realPath(a[0]));
+            NixContext.listed(dir.toString());
             try {
                 return DirCache.read(dir);
             } catch (IOException e) {
@@ -121,6 +127,7 @@ final class Files {
             NixContext ctx, String path, String name, Object filter, boolean recursive, String expected) {
         if (name == null) name = Coerce.baseName(path);
         checkName(name);
+        NixContext.readTree(path);
         Path p = Path.of(path);
         if (!java.nio.file.Files.exists(p, LinkOption.NOFOLLOW_LINKS))
             throw new NixException("path '" + path + "' does not exist");
@@ -167,6 +174,7 @@ final class Files {
             }
             if (base.contains("://")) continue;
             String candidate = Coerce.canonicalize(rest.isEmpty() ? base : base + "/" + rest);
+            NixContext.read(candidate);
             if (java.nio.file.Files.exists(Path.of(candidate))) return new NixPath(candidate);
         }
         throw Builtins.catchable(
