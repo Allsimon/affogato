@@ -203,56 +203,70 @@ final class Lower {
         }
 
         List<Expr> out = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        boolean pending = false;
+        /** The pending text when it is one interpolated constant, which keeps its own position. */
+        StrLit alone = null;
         atStartOfLine = true;
         int curDropped = 0;
         int n = parts.size();
         for (Part o : parts) {
-            if (o instanceof Lit p) {
-                String s = p.text();
-                StringBuilder sb = new StringBuilder(s.length());
-                int j = 0;
-                while (j < s.length()) {
-                    if (atStartOfLine) {
-                        char c = s.charAt(j++);
-                        if (c == ' ') {
-                            if (curDropped++ >= minIndent) sb.append(c);
-                        } else {
-                            if (c != '\n') atStartOfLine = false;
-                            curDropped = 0;
-                            sb.append(c);
-                        }
-                    } else {
-                        int nl = s.indexOf('\n', j);
-                        int end = nl < 0 ? s.length() : nl + 1;
-                        sb.append(s, j, end);
-                        j = end;
-                        if (nl >= 0) atStartOfLine = true;
-                    }
-                }
-                String s2 = sb.toString();
-                if (n == 1) {
-                    int nl = s2.lastIndexOf('\n');
-                    if (nl >= 0 && s2.substring(nl + 1).chars().allMatch(ch -> ch == ' ')) s2 = s2.substring(0, nl + 1);
-                }
-                out.add(new StrLit(pos, s2));
-            } else {
+            n--;
+            if (!(o instanceof Lit p)) {
                 atStartOfLine = false;
                 curDropped = 0;
-                out.add(lower(((Syntax.Interp) o).expr()));
+                Expr e = lower(((Syntax.Interp) o).expr());
+                if (e instanceof StrLit lit) {
+                    alone = pending ? null : lit;
+                    sb.append(lit.value());
+                    pending = true;
+                    continue;
+                }
+                if (pending) {
+                    out.add(alone != null ? alone : new StrLit(pos, sb.toString()));
+                    sb.setLength(0);
+                    pending = false;
+                }
+                out.add(e);
+                continue;
             }
-            n--;
+            pending = true;
+            alone = null;
+            String s = p.text();
+            int from = sb.length();
+            int j = 0;
+            while (j < s.length()) {
+                if (atStartOfLine) {
+                    char c = s.charAt(j++);
+                    if (c == ' ') {
+                        if (curDropped++ >= minIndent) sb.append(c);
+                    } else {
+                        if (c != '\n') atStartOfLine = false;
+                        curDropped = 0;
+                        sb.append(c);
+                    }
+                } else {
+                    int nl = s.indexOf('\n', j);
+                    int end = nl < 0 ? s.length() : nl + 1;
+                    sb.append(s, j, end);
+                    j = end;
+                    if (nl >= 0) atStartOfLine = true;
+                }
+            }
+            if (n == 0) {
+                int nl = sb.lastIndexOf("\n");
+                if (nl >= from && onlySpaces(sb, nl + 1)) sb.setLength(nl + 1);
+            }
         }
+        if (pending) out.add(alone != null ? alone : new StrLit(pos, sb.toString()));
+        if (out.size() == 1 && out.getFirst() instanceof StrLit lit)
+            return lit.pos() == pos ? lit : new StrLit(pos, lit.value());
+        return new Interp(pos, false, out);
+    }
 
-        List<Expr> merged = new ArrayList<>();
-        for (Expr e : out) {
-            if (e instanceof StrLit s && !merged.isEmpty() && merged.getLast() instanceof StrLit l) {
-                merged.set(merged.size() - 1, new StrLit(pos, l.value() + s.value()));
-            } else {
-                merged.add(e);
-            }
-        }
-        if (merged.size() == 1 && merged.getFirst() instanceof StrLit s) return new StrLit(pos, s.value());
-        return new Interp(pos, false, merged);
+    private static boolean onlySpaces(CharSequence s, int from) {
+        for (int i = from; i < s.length(); i++) if (s.charAt(i) != ' ') return false;
+        return true;
     }
 
     private static AttrName name(Syntax.AttrNode a) {
