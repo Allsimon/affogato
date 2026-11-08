@@ -2,6 +2,7 @@ package org.affogato.lsp;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -9,11 +10,14 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -79,6 +83,10 @@ public final class Server {
 
     private static final int BATCH = 64;
 
+    private static final int WORKSPACE_FILES = 20_000;
+
+    private static final Set<String> SKIPPED = Set.of("node_modules", "result", "target");
+
     private static final Set<String> CONSTANTS = Set.of("true", "false", "null");
 
     private static final Pattern URL = Pattern.compile("https?://[^\\s\\\\]+");
@@ -103,6 +111,9 @@ public final class Server {
     private Set<Rule> rules = EnumSet.allOf(Rule.class);
     private boolean exited;
     private boolean changedAgain;
+
+    private final List<String> roots = new ArrayList<>();
+    private final Map<String, Read> read = new HashMap<>();
 
     public Server() {
         this(null);
@@ -268,6 +279,13 @@ public final class Server {
                         && t.get("completion") instanceof Map<?, ?> completion
                         && completion.get("completionItem") instanceof Map<?, ?> item
                         && Boolean.TRUE.equals(item.get("snippetSupport"));
+
+                roots.clear();
+                if (params.get("workspaceFolders") instanceof List<?> folders) {
+                    for (Object folder : folders)
+                        if (folder instanceof Map<?, ?> f && f.get("uri") instanceof String u && path(u) != null)
+                            roots.add(path(u));
+                } else if (params.get("rootUri") instanceof String u && path(u) != null) roots.add(path(u));
                 configure(params.get("initializationOptions"));
                 yield Map.of("capabilities", capabilities(), "serverInfo", Map.of("name", "affogato"));
             }
@@ -536,7 +554,12 @@ public final class Server {
         if (definition != null) return location(uri(params), document, nameToken(definition));
         Node attribute = selectedAttribute(document, offset(document, params));
         if (attribute == null) attribute = withAttribute(document, offset(document, params));
-        return attribute == null ? null : location(uri(params), document, attribute);
+        if (attribute != null) return location(uri(params), document, attribute);
+        Imports.Attribute imported = importedAt(document, params);
+        if (imported == null || imported.file().equals(path(uri(params)))) return null;
+        Document declared = workspaceDocument(imported.file());
+        List<Node> declarations = declared == null ? List.of() : Imports.declarations(declared.tree(), imported.name());
+        return declarations.isEmpty() ? null : location(file(imported.file()), declared, declarations.getFirst());
     }
 
     /** Where the set literal of the innermost {@code with} that has it binds the variable at {@code offset}. */
@@ -587,12 +610,108 @@ public final class Server {
     private Object references(Map<?, ?> params) {
         Document document = document(params);
         Node definition = definitionAt(document, offset(document, params));
-        if (definition == null) return List.of();
         boolean declaration =
                 params.get("context") instanceof Map<?, ?> c && Boolean.TRUE.equals(c.get("includeDeclaration"));
-        List<Object> locations = new ArrayList<>();
-        for (Node use : uses(document, definition, declaration)) locations.add(location(uri(params), document, use));
-        return locations;
+        Set<Object> locations = new LinkedHashSet<>();
+        if (definition != null)
+            for (Node use : uses(document, definition, declaration))
+                locations.add(location(uri(params), document, use));
+        Imports.Attribute attribute = importedAt(document, params);
+        if (attribute != null)
+            for (Map.Entry<String, List<Node>> uses :
+                    importedUses(attribute, declaration).entrySet())
+                for (Node use : uses.getValue())
+                    locations.add(location(file(uses.getKey()), workspaceDocument(uses.getKey()), use));
+        return List.copyOf(locations);
+    }
+
+    /** The attribute of a file that the name at the position declares or selects through an {@code import}. */
+    private Imports.Attribute importedAt(Document document, Map<?, ?> params) {
+        String path = path(uri(params));
+        Node token = document.tree().at(offset(document, params));
+        if (path == null || token.token != Lexeme.Kind.ID) return null;
+        return Imports.at(document.tree(), path, token);
+    }
+
+    /** Each file of the workspace with its selections of {@code attribute}, and its declarations if asked. */
+    private Map<String, List<Node>> importedUses(Imports.Attribute attribute, boolean declaration) {
+        Map<String, List<Node>> uses = new LinkedHashMap<>();
+        if (declaration) {
+            Document target = workspaceDocument(attribute.file());
+            if (target != null)
+                uses.put(attribute.file(), new ArrayList<>(Imports.declarations(target.tree(), attribute.name())));
+        }
+        for (Map.Entry<String, Document> file : workspace().entrySet()) {
+            if (!file.getValue().text().contains("import")) continue;
+            List<Node> found = Imports.uses(file.getValue().tree(), file.getKey(), attribute);
+            if (!found.isEmpty())
+                uses.computeIfAbsent(file.getKey(), k -> new ArrayList<>()).addAll(found);
+        }
+        return uses;
+    }
+
+    /** A file read from the editor when open, else from the disk once for each change; null if unreadable. */
+    private Document workspaceDocument(String path) {
+        Document open = documents.get(file(path));
+        if (open != null) return open;
+        File file = new File(path);
+        Read cached = read.get(path);
+        if (cached != null && cached.modified() == file.lastModified() && cached.length() == file.length())
+            return cached.document();
+        try (InputStream in = new FileInputStream(file)) {
+            Document document = Document.of(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+            read.put(path, new Read(file.lastModified(), file.length(), document));
+            return document;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private record Read(long modified, long length, Document document) {}
+
+    /** The {@code .nix} files of the open documents and under the workspace folders, hidden folders aside. */
+    private Map<String, Document> workspace() {
+        Map<String, Document> files = new LinkedHashMap<>();
+        for (String uri : documents.keySet()) {
+            String path = path(uri);
+            if (path != null) files.put(path, documents.get(uri));
+        }
+        Deque<File> folders = new ArrayDeque<>();
+        for (String root : roots) folders.add(new File(root));
+        Set<String> seen = new HashSet<>();
+        int count = 0;
+        while (!folders.isEmpty() && count < WORKSPACE_FILES) {
+            File folder = folders.poll();
+            try {
+                if (!seen.add(folder.getCanonicalPath())) continue;
+            } catch (IOException e) {
+                continue;
+            }
+            File[] entries = folder.listFiles();
+            if (entries == null) continue;
+            for (File entry : entries) {
+                String name = entry.getName();
+                if (entry.isDirectory()) {
+                    if (!name.startsWith(".") && !SKIPPED.contains(name)) folders.add(entry);
+                } else if (name.endsWith(".nix") && count++ < WORKSPACE_FILES) {
+                    String path = entry.getPath();
+                    if (files.containsKey(path)) continue;
+                    Document document = workspaceDocument(path);
+                    if (document != null) files.put(path, document);
+                }
+            }
+        }
+        return files;
+    }
+
+    /** The path of a {@code file:} URI, else null. */
+    private static String path(String uri) {
+        if (!uri.startsWith("file:")) return null;
+        try {
+            return new URI(uri).getPath();
+        } catch (URISyntaxException e) {
+            return null;
+        }
     }
 
     /** The definition as a write, its uses as reads. */
@@ -612,7 +731,7 @@ public final class Server {
     private Object prepareRename(Map<?, ?> params) {
         Document document = document(params);
         int offset = offset(document, params);
-        if (definitionAt(document, offset) == null) return null;
+        if (definitionAt(document, offset) == null && importedAt(document, params) == null) return null;
         Node token = document.tree().at(offset);
         return Map.of(
                 "range",
@@ -624,12 +743,25 @@ public final class Server {
     private Object rename(Map<?, ?> params) {
         Document document = document(params);
         Node definition = definitionAt(document, offset(document, params));
-        if (definition == null) return null;
+        Imports.Attribute attribute = importedAt(document, params);
+        if (definition == null && attribute == null) return null;
         String name = (String) params.get("newName");
-        List<Object> edits = new ArrayList<>();
-        for (Node use : uses(document, definition, true))
-            edits.add(Map.of("range", document.lines().range(use.start(), use.end()), "newText", name));
-        return Map.of("changes", Map.of(uri(params), edits));
+        Map<String, Set<Object>> changes = new LinkedHashMap<>();
+        if (definition != null)
+            for (Node use : uses(document, definition, true))
+                changes.computeIfAbsent(uri(params), k -> new LinkedHashSet<>())
+                        .add(Map.of("range", document.lines().range(use.start(), use.end()), "newText", name));
+        if (attribute != null)
+            for (Map.Entry<String, List<Node>> uses :
+                    importedUses(attribute, true).entrySet()) {
+                Document file = workspaceDocument(uses.getKey());
+                for (Node use : uses.getValue())
+                    changes.computeIfAbsent(file(uses.getKey()), k -> new LinkedHashSet<>())
+                            .add(Map.of("range", file.lines().range(use.start(), use.end()), "newText", name));
+            }
+        Map<String, Object> edits = new LinkedHashMap<>();
+        changes.forEach((uri, set) -> edits.put(uri, List.copyOf(set)));
+        return Map.of("changes", edits);
     }
 
     /**

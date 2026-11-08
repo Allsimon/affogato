@@ -42,9 +42,11 @@ the same parser as the other commands. It answers with:
   nixpkgs after `pkgs.` and `lib.`, unless the file binds them otherwise than as
   a parameter, and of a set literal a `let` or `rec` set binds after its name
   and a dot, as `x.a.`, through the names bound to it and its `inherit`s;
-* completion of the names in scope, the builtins and the keywords, of the
-  attributes of `builtins` after `builtins.`, and of those of nixpkgs after
-  `pkgs.` and `lib.`, unless the file binds them otherwise than as a parameter;
+* across the files of the workspace folders, hidden folders and `result`
+  aside: find references and rename of an attribute of the set a file
+  evaluates to, under its function arguments and `let`s, with the selections
+  of it through `import`, as `(import ./lib { }).foo` or `l.foo` where
+  `l = import ./lib;`, and go to definition from such a selection;
 * in a `flake.nix`, completion of the attributes of a flake, of an input
   (`url`, `follows`, …) and of the outputs, with the systems under those that
   have one, as `packages.x86_64-linux`, and of the inputs it declares as the

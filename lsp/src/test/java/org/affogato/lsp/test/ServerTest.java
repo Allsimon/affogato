@@ -659,6 +659,47 @@ class ServerTest {
                         Map.of("range", range(0, 52, 0, 71), "target", "https://b.org/c?d=1"));
     }
 
+    private void openFile(String uri, String text) {
+        server.handle(Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":"
+                + "{\"textDocument\":{\"uri\":\"" + uri + "\",\"languageId\":\"nix\",\"version\":1,\"text\":"
+                + Json.write(text) + "}}}"));
+    }
+
+    private static String atIn(String uri, int character) {
+        return "{\"textDocument\":{\"uri\":\"" + uri + "\"},\"position\":{\"line\":0,\"character\":" + character
+                + "},\"context\":{\"includeDeclaration\":true},\"newName\":\"baz\"}";
+    }
+
+    @Test
+    void findsAndRenamesTheSelectionsOfAnAttributeOtherFilesImport(@TempDir Path dir) throws Exception {
+        Files.createDirectories(dir.resolve("lib"));
+        Files.writeString(dir.resolve("lib/default.nix"), "{ x }: { foo = 1; bar = 2; }");
+        String b = "let l = import ./lib; in l.foo + (import ./lib/default.nix { }).foo + l.bar";
+        Files.writeString(dir.resolve("b.nix"), b);
+        Files.createDirectories(dir.resolve(".git"));
+        Files.writeString(dir.resolve(".git/c.nix"), "(import ../lib).foo");
+        result("initialize", "{\"capabilities\":{},\"rootUri\":\"" + dir.toUri() + "\"}");
+        String lib = dir.resolve("lib/default.nix").toUri().toString();
+        String bUri = dir.resolve("b.nix").toUri().toString();
+        openFile(lib, "{ x }: { foo = 1; bar = 2; }");
+
+        assertThat(list(result("textDocument/references", atIn(lib, 9))))
+                .containsExactly(
+                        Map.of("uri", lib, "range", range(0, 9, 0, 12)),
+                        Map.of("uri", bUri, "range", range(0, 27, 0, 30)),
+                        Map.of("uri", bUri, "range", range(0, 64, 0, 67)));
+        assertThat(map(result("textDocument/prepareRename", atIn(lib, 9)))).containsEntry("placeholder", "foo");
+        Map<String, Object> changes =
+                map(map(result("textDocument/rename", atIn(lib, 9))).get("changes"));
+        assertThat(changes.keySet()).containsExactly(lib, bUri);
+        assertThat(list(changes.get(bUri))).hasSize(2);
+
+        openFile(bUri, b);
+        assertThat(result("textDocument/definition", atIn(bUri, 28)))
+                .isEqualTo(Map.of("uri", lib, "range", range(0, 9, 0, 12)));
+        assertThat(list(result("textDocument/references", atIn(bUri, 72)))).hasSize(2);
+    }
+
     @Test
     void goesToTheFileAPathNamesAndToTheDefaultNixOfADirectory(@TempDir Path dir) throws Exception {
         Files.createDirectories(dir.resolve("foo"));
