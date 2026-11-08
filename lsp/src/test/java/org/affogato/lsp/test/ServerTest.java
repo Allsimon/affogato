@@ -677,7 +677,7 @@ class ServerTest {
                                         + ",\"context\":{\"diagnostics\":[]}}"))
                         .stream()
                         .map(a -> map(a).get("title")))
-                .containsExactly("Collapse the binding");
+                .containsExactly("Collapse the binding", "Quote the attribute name");
     }
 
     @Test
@@ -691,6 +691,56 @@ class ServerTest {
         assertThat(toggle).containsEntry("title", "Use ''...'' quotes");
         assertThat(list(map(map(toggle.get("edit")).get("changes")).get(URI)))
                 .containsExactly(Map.of("range", range(0, 6, 0, 15), "newText", "''x\n${y}''"));
+    }
+
+    private List<Object> rewrites(int line, int character) {
+        return list(result(
+                        "textDocument/codeAction",
+                        "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":"
+                                + Json.write(range(line, character, line, character))
+                                + ",\"context\":{\"diagnostics\":[]}}"))
+                .stream()
+                .filter(a -> "refactor.rewrite".equals(map(a).get("kind")))
+                .toList();
+    }
+
+    private static List<Object> edits(Object action) {
+        return list(map(map(map(action).get("edit")).get("changes")).get(URI));
+    }
+
+    @Test
+    void quotesAnAttributeName() {
+        open("{ a.b = 1; inherit c; }\n");
+        List<Object> actions = rewrites(0, 4);
+        assertThat(actions).extracting(a -> map(a).get("title")).contains("Quote the attribute name");
+        Object quote = actions.stream()
+                .filter(a -> map(a).get("title").equals("Quote the attribute name"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(edits(quote)).containsExactly(Map.of("range", range(0, 4, 0, 5), "newText", "\"b\""));
+        assertThat(edits(rewrites(0, 19).getFirst()))
+                .containsExactly(Map.of("range", range(0, 19, 0, 20), "newText", "\"c\""));
+    }
+
+    @Test
+    void unquotesAnAttributeNameThatIsAnIdentifier() {
+        open("{ \"a-b'\" = x.\"c\"; inherit \"d\"; }\n");
+        assertThat(rewrites(0, 3)).extracting(a -> map(a).get("title")).containsExactly("Unquote the attribute name");
+        assertThat(edits(rewrites(0, 3).getFirst()))
+                .containsExactly(Map.of("range", range(0, 2, 0, 8), "newText", "a-b'"));
+        assertThat(edits(rewrites(0, 14).getFirst()))
+                .containsExactly(Map.of("range", range(0, 13, 0, 16), "newText", "c"));
+        assertThat(edits(rewrites(0, 27).getFirst()))
+                .containsExactly(Map.of("range", range(0, 26, 0, 29), "newText", "d"));
+    }
+
+    @Test
+    void keepsTheQuotesOfAnAttributeNameThatIsNoIdentifier() {
+        open("{ \"1a\" = 1; \"if\" = 2; \"a b\" = 3; \"a${b}\" = 4; }\n");
+        assertThat(rewrites(0, 3)).isEmpty();
+        assertThat(rewrites(0, 13)).isEmpty();
+        assertThat(rewrites(0, 23)).isEmpty();
+        assertThat(rewrites(0, 34)).isEmpty();
     }
 
     @Test

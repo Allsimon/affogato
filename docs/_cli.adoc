@@ -66,8 +66,9 @@ the same parser as the other commands. It answers with:
   `default.nix` of a directory, as `import` and `callPackage ./foo { }` read it;
 * code actions for the linter's fixes and suppression comments,
   `source.fixAll` for all the fixes, and rewrites: of a binding, `a.b = x;` into
-  `a = { b = x; };` and back, and of a string, in the other quoting when that
-  keeps its value;
+  `a = { b = x; };` and back, of a string, in the other quoting when that
+  keeps its value, and of an attribute name, `a` into `"a"` and back when the
+  name is an identifier and no keyword;
 * `affogato/injections`, a request of its own, which takes a `textDocument` and
   lists the strings written in another language: the range between their
   quotes, and a `kind` of `shell`, `named` (the `value` a comment names, such as

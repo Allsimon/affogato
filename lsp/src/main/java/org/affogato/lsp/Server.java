@@ -64,6 +64,8 @@ public final class Server {
     private static final List<String> KEYWORDS =
             List.of("assert", "else", "if", "in", "inherit", "let", "or", "rec", "then", "with");
 
+    private static final Pattern IDENTIFIER = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_'-]*");
+
     private static final Set<String> CONSTANTS = Set.of("true", "false", "null");
 
     private static final Pattern URL = Pattern.compile("https?://[^\\s\\\\]+");
@@ -1135,9 +1137,28 @@ public final class Server {
         rewrite(actions, uri, lines, "Expand the binding", Bindings.expand(document.text(), start));
         rewrite(actions, uri, lines, "Collapse the binding", Bindings.collapse(document.text(), start));
         Node string = document.tree().at(start);
-        while (string != null && string.kind != NodeKind.STRING && string.kind != NodeKind.IND_STRING)
-            string = string.parent();
-        if (string != null) {
+        while (string != null
+                && string.kind != NodeKind.STRING
+                && string.kind != NodeKind.IND_STRING
+                && string.kind != NodeKind.ATTR_NAME) string = string.parent();
+        if (string != null && isAttributeName(string)) {
+            String name = document.tree().text(string);
+            String content = name.length() < 2 ? "" : name.substring(1, name.length() - 1);
+            if (string.kind == NodeKind.ATTR_NAME)
+                rewrite(
+                        actions,
+                        uri,
+                        lines,
+                        "Quote the attribute name",
+                        new Bindings.Rewrite(string.start(), string.end(), "\"" + name + "\""));
+            else if (IDENTIFIER.matcher(content).matches() && !KEYWORDS.contains(content))
+                rewrite(
+                        actions,
+                        uri,
+                        lines,
+                        "Unquote the attribute name",
+                        new Bindings.Rewrite(string.start(), string.end(), content));
+        } else if (string != null) {
             String toggled = Quotes.toggle(document.tree().text(string));
             if (toggled != null)
                 rewrite(
@@ -1173,6 +1194,12 @@ public final class Server {
                     List.of(Map.of("range", lines.range(0, 0), "newText", Suppressions.ignoreFile(d.rule()) + "\n"))));
         }
         return actions;
+    }
+
+    private static boolean isAttributeName(Node node) {
+        Node parent = node.parent();
+        return node.kind == NodeKind.ATTR_NAME
+                || parent != null && (parent.kind == NodeKind.ATTR_PATH || parent.kind == NodeKind.INHERIT);
     }
 
     private static void rewrite(List<Object> actions, String uri, Lines lines, String title, Bindings.Rewrite rewrite) {
