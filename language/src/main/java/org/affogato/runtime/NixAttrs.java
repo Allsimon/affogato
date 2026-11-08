@@ -128,6 +128,33 @@ public final class NixAttrs {
         return null;
     }
 
+    /**
+     * For each of the sorted {@code keys} whose {@code values} slot is empty, stores what {@link #getRaw} and
+     * {@link #position} would return; one galloping pass per leaf instead of a search per key.
+     */
+    public void getRawSorted(String[] keys, Object[] values, SourceSection[] positions) {
+        if (leaves == null) {
+            flatGetRawSorted(keys, values, positions);
+            return;
+        }
+        for (int l = leaves.length - 1; l >= 0; l--) leaves[l].flatGetRawSorted(keys, values, positions);
+    }
+
+    private void flatGetRawSorted(String[] ks, Object[] vs, SourceSection[] ps) {
+        int from = 0;
+        for (int j = 0; j < ks.length && from < keys.length; j++) {
+            if (vs[j] != null) continue;
+            int at = gallop(ks[j], from);
+            if (at < 0) {
+                from = -(at + 1);
+                continue;
+            }
+            vs[j] = values[at];
+            ps[j] = positions != null ? positions[at] : null;
+            from = at + 1;
+        }
+    }
+
     private Object flatGetRaw(String key) {
         int i = indexOf(key, 0, keys.length - 1);
         return i >= 0 ? values[i] : null;

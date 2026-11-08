@@ -68,16 +68,16 @@ final class AttrSets {
             NixAttrs y = Types.attrs(a[1]);
             if (x.size() < y.minSize()) {
                 String[] xk = x.keys();
-                String[] k = new String[xk.length];
                 Object[] v = new Object[xk.length];
                 var p = new SourceSection[xk.length];
+                y.getRawSorted(xk, v, p);
+                String[] k = new String[xk.length];
                 int n = 0;
-                for (String key : xk) {
-                    Object value = y.getRaw(key);
-                    if (value == null) continue;
-                    k[n] = key;
-                    v[n] = value;
-                    p[n++] = y.position(key);
+                for (int i = 0; i < xk.length; i++) {
+                    if (v[i] == null) continue;
+                    k[n] = xk[i];
+                    v[n] = v[i];
+                    p[n++] = p[i];
                 }
                 return new NixAttrs(Arrays.copyOf(k, n), Arrays.copyOf(v, n), Arrays.copyOf(p, n));
             }

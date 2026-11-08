@@ -88,6 +88,17 @@ class InterpreterTest {
     }
 
     @Test
+    void intersectAttrsTakesTheLastOfAUnion() throws Exception {
+        String y = "builtins.listToAttrs (map (n: { name = n; value = 1; })"
+                + " [ \"a\" \"b\" \"c\" \"d\" \"e\" \"f\" \"g\" \"h\" \"i\" \"j\" ]) // { b = 2; k = 3; }";
+        assertThat(eval(
+                        Interpreter.Output.JSON,
+                        "builtins.intersectAttrs { b = 0; c = 0; k = 0; z = 0; } (" + y + ")",
+                        0))
+                .isEqualTo("{\"b\":2,\"c\":1,\"k\":3}");
+    }
+
+    @Test
     void stopsAtTheTimeout() {
         long start = System.nanoTime();
         assertThatThrownBy(() -> eval(
