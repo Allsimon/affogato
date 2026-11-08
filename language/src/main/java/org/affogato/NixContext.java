@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.affogato.builtins.Builtins;
 import org.affogato.builtins.Derivations;
 import org.affogato.nodes.NixRootNode;
@@ -44,6 +46,13 @@ public final class NixContext {
 
     private final Map<String, String> copiedPaths = new HashMap<>();
 
+    /** The files read or looked for, the folders listed, and those hashed whole, which its values depend on. */
+    private final Set<String> readPaths = ConcurrentHashMap.newKeySet();
+
+    private final Set<String> listedDirs = ConcurrentHashMap.newKeySet();
+    private final Set<String> trees = ConcurrentHashMap.newKeySet();
+    private final Map<String, String> realPaths = new ConcurrentHashMap<>();
+
     NixContext(String storeDir, String system, String np) {
         this.storeDir = storeDir.isEmpty() ? System.getenv().getOrDefault("NIX_STORE_DIR", "/nix/store") : storeDir;
         this.system = system.isEmpty() ? defaultSystem() : system;
@@ -73,6 +82,56 @@ public final class NixContext {
 
     void enter() {
         CURRENT.set(this);
+    }
+
+    /** Notes that the evaluation under way read {@code path}, or looked for it. */
+    public static void read(String path) {
+        NixContext c = CURRENT.get();
+        if (c != null) c.readPaths.add(path);
+    }
+
+    /** Notes that the evaluation under way listed the folder {@code path}. */
+    public static void listed(String path) {
+        NixContext c = CURRENT.get();
+        if (c != null) c.listedDirs.add(path);
+    }
+
+    /** Notes that the evaluation under way read all of {@code path}, as to copy it to the store. */
+    public static void readTree(String path) {
+        NixContext c = CURRENT.get();
+        if (c != null) c.trees.add(path);
+    }
+
+    /**
+     * Whether a change to the file at {@code path}, an absolute normalized path, may change a value of this context,
+     * the one or the other having reached it through links.
+     */
+    public boolean dependsOn(String path) {
+        return dependsOn(path, p -> p) || dependsOn(realPath(path), this::realPathOf);
+    }
+
+    private boolean dependsOn(String path, java.util.function.UnaryOperator<String> as) {
+        for (String p : readPaths) if (as.apply(p).equals(path)) return true;
+        String dir = parentDir(path);
+        for (String p : listedDirs) if (as.apply(p).equals(dir)) return true;
+        for (String p : trees) {
+            String tree = as.apply(p);
+            if (path.equals(tree) || path.startsWith(tree.endsWith("/") ? tree : tree + "/")) return true;
+        }
+        return false;
+    }
+
+    /** Files in the store are never saved, and there are thousands. */
+    private String realPathOf(String path) {
+        return path.startsWith(storeDir + "/") ? path : realPaths.computeIfAbsent(path, NixContext::realPath);
+    }
+
+    private static String realPath(String path) {
+        try {
+            return Path.of(path).toRealPath().toString();
+        } catch (IOException | RuntimeException e) {
+            return path;
+        }
     }
 
     static void leave() {
@@ -124,6 +183,8 @@ public final class NixContext {
 
     public Object importFile(String path) {
         String file = resolveImport(path);
+        read(path);
+        read(file);
         Thunk t = imports.get(file);
         if (t == null) {
             List<Object> stamp = FileStamp.of(Path.of(file));
@@ -137,6 +198,8 @@ public final class NixContext {
 
     public Object scopedImport(NixAttrs scope, String path) {
         String file = resolveImport(path);
+        read(path);
+        read(file);
         NixRootNode target = parse(readFile(file), file, parentDir(file), scope.keys(), true, null);
         return Thunk.force(target.call(null, scope));
     }
@@ -147,6 +210,7 @@ public final class NixContext {
     }
 
     public static String readFile(String path) {
+        read(path);
         if (path.startsWith(Derivations.COREPKGS)) return readResource(path.substring(Derivations.COREPKGS.length()));
         try {
             return new String(Files.readAllBytes(Path.of(path)), StandardCharsets.ISO_8859_1);
@@ -174,6 +238,7 @@ public final class NixContext {
     public String copyPathToStore(String path) {
         String sp = copiedPaths.get(path);
         if (sp != null) return sp;
+        readTree(path);
         Path p = Path.of(path);
         if (!Files.exists(p, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             throw new NixException("path '" + path + "' does not exist");

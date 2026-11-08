@@ -81,4 +81,9 @@ public interface Evaluator {
 
     /** Drops the values, as the files they were read from may have changed. */
     void reset();
+
+    /** Drops the values that may depend on the file at {@code path}, which was saved. */
+    default void saved(String path) {
+        reset();
+    }
 }

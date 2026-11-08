@@ -371,6 +371,13 @@ public final class Lsp implements Callable<Integer> {
                     prefetch();
                 }
             }
+
+            @Override
+            public void saved(String path) {
+                synchronized (Worker.this) {
+                    if (session.reset(path)) prefetch();
+                }
+            }
         }
 
         private static Evaluator.Attribute attribute(Session.Description d) {

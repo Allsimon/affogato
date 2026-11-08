@@ -325,7 +325,9 @@ public final class Server {
                 yield null;
             }
             case "textDocument/didSave" -> {
-                if (evaluator != null) evaluator.reset();
+                String saved = path(uri(params));
+                if (evaluator != null && saved != null) evaluator.saved(saved);
+                else if (evaluator != null) evaluator.reset();
                 yield null;
             }
             case "textDocument/didClose" -> {

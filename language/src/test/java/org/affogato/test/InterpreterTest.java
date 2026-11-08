@@ -57,6 +57,47 @@ class InterpreterTest {
     }
 
     @Test
+    void resetsASessionOnlyForTheFilesItsValuesDependOn(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("a.nix");
+        Files.writeString(file, """
+            {
+              b = import ./b.nix;
+              d = builtins.readFile ./d.txt;
+              l = builtins.readDir ./l;
+              s = "${./s}";
+              x = import ./link/x.nix;
+            }
+            """);
+        Files.writeString(dir.resolve("b.nix"), "{ c = 1; }");
+        Files.writeString(dir.resolve("d.txt"), "d");
+        Files.createDirectories(dir.resolve("l"));
+        Files.createDirectories(dir.resolve("s/t"));
+        Files.writeString(dir.resolve("s/t/u"), "u");
+        Files.createDirectories(dir.resolve("real"));
+        Files.writeString(dir.resolve("real/x.nix"), "{ }");
+        Files.createSymbolicLink(dir.resolve("link"), dir.resolve("real"));
+        try (Session session = new Session("", "", "", "import " + file, dir.toString())) {
+            Runnable evaluate = () -> {
+                for (String name : List.of("b", "d", "l", "s", "x"))
+                    session.names(List.of(name)).join();
+            };
+            evaluate.run();
+            assertThat(session.reset(dir.resolve("other.nix").toString())).isFalse();
+            assertThat(session.reset(dir.resolve("l/m/n.nix").toString())).isFalse();
+            assertThat(session.names(List.of("b")).get()).containsExactly("c");
+            Files.writeString(dir.resolve("b.nix"), "{ e = 1; }");
+            assertThat(session.reset(dir.resolve("b.nix").toString())).isTrue();
+            assertThat(session.names(List.of("b")).get()).containsExactly("e");
+            for (String changed : List.of("a.nix", "d.txt", "l/m.nix", "s/t/u", "real/x.nix", "link/x.nix")) {
+                evaluate.run();
+                assertThat(session.reset(dir.resolve(changed).toString()))
+                        .as(changed)
+                        .isTrue();
+            }
+        }
+    }
+
+    @Test
     void describesTheAttributesOfASession(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("a.nix");
         Files.writeString(file, """
