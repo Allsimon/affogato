@@ -1,5 +1,6 @@
 package org.affogato;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,8 +21,9 @@ import org.affogato.runtime.Thunk;
 import org.affogato.runtime.Types;
 
 /**
- * An expression evaluated on a thread of its own and kept between queries, for a long-lived client such as the
- * language server, which resets it when files change.
+ * Expressions evaluated in one context, on a thread of its own, and kept between queries, for a long-lived client such
+ * as the language server, which resets them when files change. Sharing the context, they share what they evaluate in
+ * common, such as the flake that {@code builtins.getFlake} reads for both a configuration's packages and its options.
  */
 public final class Session implements AutoCloseable {
     private static final int MAX_QUERIES = 1024;
@@ -57,12 +59,20 @@ public final class Session implements AutoCloseable {
         }
     }
 
-    private record Query(boolean describe, List<String> path) {}
+    /**
+     * An expression to query; with {@code options}, a tree of module system options, as a NixOS configuration's
+     * {@code options}, where a path goes through the sub-options of a submodule, and takes any name for each attribute
+     * of an {@code attrsOf} one.
+     */
+    public record Root(String expression, boolean options) {}
+
+    private record Query(String root, boolean describe, List<String> path) {}
+
+    private static final String DEFAULT = "";
 
     private final String nixPath;
     private final String system;
     private final String storeDir;
-    private final boolean options;
     private final ExecutorService thread;
     private final Map<Query, CompletableFuture<?>> queries = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
@@ -70,28 +80,32 @@ public final class Session implements AutoCloseable {
             return size() > MAX_QUERIES;
         }
     };
-    private String expression;
+    private Map<String, Root> roots = Map.of();
     private String baseDir;
     private volatile NixContext ctx;
+    /** The value of each root evaluated in {@link #ctx}, null for one that failed; touched by the thread alone. */
+    private final Map<String, Object> values = new HashMap<>();
+    /** The root and kind the query under way reads, set by the thread before each. */
     private Object root;
 
-    /** Empty values take the defaults, as in {@link Interpreter.Options}. */
+    private boolean options;
+
+    /** One expression, queried by {@link #names(List)} and {@link #describe(List)}. */
     public Session(String nixPath, String system, String storeDir, String expression, String baseDir) {
         this(nixPath, system, storeDir, expression, baseDir, false);
     }
 
-    /**
-     * With {@code options}, the expression is a tree of module system options, as a NixOS configuration's
-     * {@code options}, and a path goes through the sub-options of a submodule, and takes any name for each attribute of
-     * an {@code attrsOf} one.
-     */
+    /** One expression, a tree of options when {@code options}, as in {@link Root}. */
     public Session(String nixPath, String system, String storeDir, String expression, String baseDir, boolean options) {
-        this.options = options;
+        this(nixPath, system, storeDir);
+        configure(Map.of(DEFAULT, new Root(expression, options)), baseDir);
+    }
+
+    /** No expression until {@link #configure}; empty values take the defaults, as in {@link Interpreter.Options}. */
+    public Session(String nixPath, String system, String storeDir) {
         this.nixPath = nixPath;
         this.system = system;
         this.storeDir = storeDir;
-        this.expression = expression;
-        this.baseDir = baseDir;
         thread = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(null, r, "nix-session", Interpreter.STACK_SIZE);
             t.setDaemon(true);
@@ -103,31 +117,46 @@ public final class Session implements AutoCloseable {
      * The sorted attribute names of the value at {@code path} in the expression, auto-called at each step as
      * {@code nix-instantiate} does; empty when it is no attribute set or fails to evaluate.
      */
-    @SuppressWarnings("unchecked")
     public CompletableFuture<List<String>> names(List<String> path) {
-        return (CompletableFuture<List<String>>) query(new Query(false, List.copyOf(path)), this::namesAt);
+        return names(DEFAULT, path);
+    }
+
+    /** As {@link #names(List)}, in the root of that name; empty when there is none. */
+    @SuppressWarnings("unchecked")
+    public CompletableFuture<List<String>> names(String root, List<String> path) {
+        return (CompletableFuture<List<String>>) query(new Query(root, false, List.copyOf(path)), this::namesAt);
     }
 
     /** The attribute at {@code path}, a non-empty path, not auto-called itself; all null when there is none. */
-    @SuppressWarnings("unchecked")
     public CompletableFuture<Description> describe(List<String> path) {
-        return (CompletableFuture<Description>) query(new Query(true, List.copyOf(path)), this::describeAt);
+        return describe(DEFAULT, path);
+    }
+
+    /** As {@link #describe(List)}, in the root of that name. */
+    @SuppressWarnings("unchecked")
+    public CompletableFuture<Description> describe(String root, List<String> path) {
+        return (CompletableFuture<Description>) query(new Query(root, true, List.copyOf(path)), this::describeAt);
     }
 
     private synchronized CompletableFuture<?> query(Query q, Function<List<String>, Object> f) {
         CompletableFuture<?> future = queries.get(q);
         if (future == null) {
-            future = CompletableFuture.supplyAsync(() -> evaluate(q.path(), f), thread);
+            future = CompletableFuture.supplyAsync(() -> evaluate(q.root(), q.path(), f), thread);
             queries.put(q, future);
         }
         return future;
     }
 
-    /** Evaluates {@code expression}, relative to {@code baseDir}, from now on. */
-    public synchronized void configure(String expression, String baseDir) {
-        this.expression = expression;
+    /** Evaluates these roots, by name, relative to {@code baseDir}, from now on. */
+    public synchronized void configure(Map<String, Root> roots, String baseDir) {
+        this.roots = Map.copyOf(roots);
         this.baseDir = baseDir;
         reset();
+    }
+
+    /** Evaluates {@code expression} as the one root, relative to {@code baseDir}, from now on. */
+    public void configure(String expression, String baseDir) {
+        configure(Map.of(DEFAULT, new Root(expression, false)), baseDir);
     }
 
     /** Drops every value, stopping the evaluation under way, so that the next query reads the files again. */
@@ -138,26 +167,31 @@ public final class Session implements AutoCloseable {
         thread.execute(() -> ctx = null);
     }
 
-    private Object evaluate(List<String> path, Function<List<String>, Object> f) {
-        String source;
+    private Object evaluate(String name, List<String> path, Function<List<String>, Object> f) {
+        Root r;
         String dir;
         synchronized (this) {
-            source = expression;
+            r = roots.get(name);
             dir = baseDir;
         }
+        if (r == null) return f.apply(null);
         try {
             if (ctx == null) {
-                NixContext c = new NixContext(storeDir, system, nixPath);
-                ctx = c;
-                c.enter();
-                root = null;
-                root = Interpreter.autoCall(
-                        Thunk.force(c.parse(source, NixContext.STRING_SOURCE, dir, new String[0])
-                                .call(null, null)),
-                        Map.of());
-            } else {
-                ctx.enter();
+                ctx = new NixContext(storeDir, system, nixPath);
+                values.clear();
             }
+            ctx.enter();
+            if (!values.containsKey(name)) {
+                values.put(name, null);
+                values.put(
+                        name,
+                        Interpreter.autoCall(
+                                Thunk.force(ctx.parse(r.expression(), NixContext.STRING_SOURCE, dir, new String[0])
+                                        .call(null, null)),
+                                Map.of()));
+            }
+            root = values.get(name);
+            options = r.options();
             return f.apply(path);
         } catch (NixException | StackOverflowError e) {
             return f.apply(null);

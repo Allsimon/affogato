@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.affogato.EvalException;
 import org.affogato.Interpreter;
 import org.affogato.Session;
@@ -199,6 +200,25 @@ class InterpreterTest {
                 .hasMessageContaining("input 'github:o/r' is not in the Nix store at /nix/store/");
         assertThatThrownBy(() -> eval(Interpreter.Output.EVAL, "builtins.getFlake \"github:o/r\"", 0))
                 .hasMessageContaining("only for local flakes");
+    }
+
+    @Test
+    void sharesOneContextBetweenTheRootsOfASession(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("f.nix");
+        Files.writeString(file, "{ n = { one = 1; }; }");
+        try (Session session = new Session("", "", "")) {
+            session.configure(
+                    Map.of(
+                            "a", new Session.Root("(import " + file + ").n", false),
+                            "b", new Session.Root("(import " + file + ").n", false)),
+                    dir.toString());
+            assertThat(session.names("a", List.of()).get()).containsExactly("one");
+            Files.writeString(file, "{ n = { two = 2; }; }");
+            assertThat(session.names("b", List.of()).get()).containsExactly("one");
+            session.reset();
+            assertThat(session.names("b", List.of()).get()).containsExactly("two");
+            assertThat(session.names("c", List.of()).get()).isEmpty();
+        }
     }
 
     @Test

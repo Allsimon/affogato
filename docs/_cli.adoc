@@ -75,7 +75,9 @@ nixpkgs is evaluated from, `import <nixpkgs> { }` unless `--nixpkgs` says
 otherwise, and `options`, a name for each set of options with the `expr` it is
 evaluated from, `{ nixos.expr = "(import <nixpkgs/nixos> { configuration = { };
 }).options"; }` unless `--nixos-options` says otherwise; as in nixd, a
-home-manager set is one more name. Options are evaluated when first asked for. The server evaluates it on a thread of its own as it starts, keeps
+home-manager set is one more name. Options are evaluated when first asked for,
+in the same context as nixpkgs, so that a flake both expressions read, as with
+`builtins.getFlake`, is evaluated once. The server evaluates it on a thread of its own as it starts, keeps
 the values, and evaluates it again after a file is saved; a completion that
 waits for it more than 200 ms comes back marked incomplete, so that the editor
 asks again.
