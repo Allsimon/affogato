@@ -231,8 +231,18 @@ public final class NixAttrs {
 
     private void flatten() {
         if (leaves == null) return;
-        NixAttrs acc = leaves[0];
-        for (int l = 1; l < leaves.length; l++) acc = merge(acc, leaves[l]);
+        // `//` is associative: merging the smallest adjacent pair first copies a large leaf once, not once per leaf.
+        NixAttrs[] ls = leaves.clone();
+        for (int n = ls.length; n > 1; n--) {
+            int best = 0;
+            for (int i = 1; i < n - 1; i++) {
+                if (ls[i].keys.length + ls[i + 1].keys.length < ls[best].keys.length + ls[best + 1].keys.length)
+                    best = i;
+            }
+            ls[best] = merge(ls[best], ls[best + 1]);
+            System.arraycopy(ls, best + 2, ls, best + 1, n - best - 2);
+        }
+        NixAttrs acc = ls[0];
         keys = acc.keys;
         values = acc.values;
         positions = acc.positions;
