@@ -6,6 +6,12 @@ import java.util.Map;
 /** The evaluated nixpkgs, kept outside this module so that the playground can do without the evaluator. */
 public interface Evaluator {
     /**
+     * Starts a path that {@link #names} and {@link #describeAll} look up in the arguments the modules of the option sets
+     * receive, as a flake's {@code inputs} passed as a special argument, rather than in nixpkgs.
+     */
+    String MODULE_ARGUMENTS = "<module arguments>";
+
+    /**
      * What an attribute is: its {@code builtins.typeOf}, or {@code derivation}, or {@code option} with the description
      * of its type as its {@code value}, or {@code error} with the message as its {@code value}, or null when there is
      * no such attribute; any other field may be null, and {@code line} and {@code column} count from 1.

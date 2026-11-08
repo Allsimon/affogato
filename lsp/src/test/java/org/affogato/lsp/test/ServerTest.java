@@ -1,5 +1,6 @@
 package org.affogato.lsp.test;
 
+import static org.affogato.lsp.Evaluator.MODULE_ARGUMENTS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
@@ -193,6 +194,10 @@ class ServerTest {
             asked.add(path);
             return switch (String.join(".", path)) {
                 case "slow" -> null;
+                case "stdenv.hostPlatform.system" ->
+                    new Attribute("string", "\"x86_64-linux\"", null, null, null, null, null, null, null, null, 0, 0);
+                case MODULE_ARGUMENTS + ".inputs.agenix.packages.x86_64-linux.default" ->
+                    new Attribute("derivation", null, "agenix", "0.15", null, null, null, null, null, null, 0, 0);
                 case "unstable.hello" ->
                     new Attribute("derivation", null, "hello", "2.13", null, null, null, null, null, null, 0, 0);
                 case "hello" ->
@@ -356,6 +361,41 @@ class ServerTest {
         assertThat(map(map(result("textDocument/hover", at(0, 33))).get("contents")))
                 .containsEntry("value", "`hello` 2.13");
         assertThat(result("textDocument/hover", at(0, 48))).isNull();
+    }
+
+    @Test
+    void describesTheArgumentsOfAModule() {
+        Nixpkgs nixpkgs = new Nixpkgs();
+        server = new Server(nixpkgs);
+        String selection = "inputs.agenix.packages.${pkgs.stdenv.hostPlatform.system}.default";
+        open("{ config, pkgs, inputs, ... }: { a = [ " + selection + " ]; }\n");
+        int end = 39 + selection.length();
+        assertThat(result(
+                        "textDocument/inlayHint",
+                        "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":" + Json.write(range(0, 0, 1, 0)) + "}"))
+                .isEqualTo(List.of(Map.of(
+                        "position",
+                        Map.of("line", 0L, "character", (long) end),
+                        "label",
+                        "0.15",
+                        "paddingLeft",
+                        true)));
+        assertThat(map(map(result("textDocument/hover", at(0, end - 2))).get("contents")))
+                .containsEntry("value", "`agenix` 0.15");
+        open("{ config, inputs, ... }: { a = inputs.\n");
+        assertThat(map(result("textDocument/completion", at(0, 38))))
+                .extracting(c -> list(c.get("items")).getFirst())
+                .isEqualTo(Map.of(
+                        "label",
+                        "hello",
+                        "kind",
+                        5L,
+                        "data",
+                        Map.of("path", List.of(MODULE_ARGUMENTS, "inputs", "hello"))));
+        nixpkgs.asked.clear();
+        open("{ inputs }: inputs.agenix.packages.x.default\n");
+        assertThat(result("textDocument/hover", at(0, 40))).isNull();
+        assertThat(nixpkgs.asked).isEmpty();
     }
 
     @Test

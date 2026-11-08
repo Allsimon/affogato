@@ -69,6 +69,7 @@ public final class Session implements AutoCloseable {
     private record Query(String root, boolean describe, List<String> path) {}
 
     private static final String DEFAULT = "";
+    private static final String ARGUMENTS = "args:";
 
     private final String nixPath;
     private final String system;
@@ -167,37 +168,62 @@ public final class Session implements AutoCloseable {
         thread.execute(() -> ctx = null);
     }
 
+    /**
+     * The name of the view of an options root as the arguments its modules receive: {@code _module.args} and, over
+     * them, {@code _module.specialArgs}, which the module system takes first.
+     */
+    public static String arguments(String optionsRoot) {
+        return ARGUMENTS + optionsRoot;
+    }
+
     private Object evaluate(String name, List<String> path, Function<List<String>, Object> f) {
+        boolean arguments = name.startsWith(ARGUMENTS);
+        String rootName = arguments ? name.substring(ARGUMENTS.length()) : name;
         Root r;
         String dir;
         synchronized (this) {
-            r = roots.get(name);
+            r = roots.get(rootName);
             dir = baseDir;
         }
-        if (r == null) return f.apply(null);
+        if (r == null || arguments && !r.options()) return f.apply(null);
         try {
             if (ctx == null) {
                 ctx = new NixContext(storeDir, system, nixPath);
                 values.clear();
             }
             ctx.enter();
-            if (!values.containsKey(name)) {
-                values.put(name, null);
+            if (!values.containsKey(rootName)) {
+                values.put(rootName, null);
                 values.put(
-                        name,
+                        rootName,
                         Interpreter.autoCall(
                                 Thunk.force(ctx.parse(r.expression(), NixContext.STRING_SOURCE, dir, new String[0])
                                         .call(null, null)),
                                 Map.of()));
             }
+            if (arguments && !values.containsKey(name)) {
+                values.put(name, null);
+                values.put(name, moduleArguments(values.get(rootName)));
+            }
             root = values.get(name);
-            options = r.options();
+            options = r.options() && !arguments;
             return f.apply(path);
         } catch (NixException | StackOverflowError e) {
             return f.apply(null);
         } finally {
             NixContext.leave();
         }
+    }
+
+    private static NixAttrs moduleArguments(Object options) {
+        if (!(Thunk.force(options) instanceof NixAttrs o) || !(field(o, "_module") instanceof NixAttrs module))
+            return null;
+        NixAttrs args = field(module, "args") instanceof NixAttrs a && field(a, "value") instanceof NixAttrs v
+                ? v
+                : NixAttrs.EMPTY;
+        return field(module, "specialArgs") instanceof NixAttrs a && field(a, "value") instanceof NixAttrs v
+                ? args.update(v)
+                : args;
     }
 
     /** The attribute set at {@code path}, or null. */
