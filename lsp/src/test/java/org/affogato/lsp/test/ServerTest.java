@@ -158,6 +158,17 @@ class ServerTest {
     }
 
     @Test
+    void goesToTheAttributeASelectionNames() {
+        open("let x = { a.b = 1; \"c\" = { d = 2; }; }; y = x; in [ y.a.b x.\"c\".d (x ? c) y.e ]\n");
+        assertThat(map(result("textDocument/definition", at(0, 56)))).containsEntry("range", range(0, 12, 0, 13));
+        assertThat(map(result("textDocument/definition", at(0, 54)))).containsEntry("range", range(0, 10, 0, 11));
+        assertThat(map(result("textDocument/definition", at(0, 64)))).containsEntry("range", range(0, 27, 0, 28));
+        assertThat(map(result("textDocument/definition", at(0, 61)))).containsEntry("range", range(0, 19, 0, 22));
+        assertThat(map(result("textDocument/definition", at(0, 71)))).containsEntry("range", range(0, 19, 0, 22));
+        assertThat(result("textDocument/definition", at(0, 76))).isNull();
+    }
+
+    @Test
     void completesTheAttributesOfALocalSet() {
         open("let x = { a = 1; b.c = 2; \"d\" = 3; ${e} = 4; inherit f; }; in x.\n");
         assertThat(labels(0, 64)).containsExactly("a", "b", "d", "f");

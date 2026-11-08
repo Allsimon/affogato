@@ -33,6 +33,8 @@ the same parser as the other commands. It answers with:
   bindings a range touches, the whole file when it touches none;
 * go to definition, find references, document highlight, and rename, which
   refuses up front a name that is not defined in the file, such as a builtin;
+  go to definition also from a selection, as `a` in `x.a` or `x ? a`, to where
+  the set literal bound to `x` in the file binds it;
 * completion of the names in scope, the builtins, with `builtin` as their
   detail, and the keywords, with snippets such as `let … in` for an editor that
   takes them, of the attributes of `builtins` after `builtins.`, of those of

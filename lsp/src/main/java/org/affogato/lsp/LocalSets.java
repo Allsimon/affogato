@@ -130,7 +130,7 @@ final class LocalSets {
     }
 
     /** The name an attribute path segment gives, unless it is computed. */
-    private String name(Node segment) {
+    String name(Node segment) {
         if (segment.kind == NodeKind.ATTR_NAME) return tree.text(segment);
         if (segment.kind != NodeKind.STRING) return null;
         String text = tree.text(segment);

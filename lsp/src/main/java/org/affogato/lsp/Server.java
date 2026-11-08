@@ -443,7 +443,36 @@ public final class Server {
             return Map.of("uri", file(target), "range", Map.of("start", start, "end", start));
         }
         Node definition = definitionAt(document, offset(document, params));
-        return definition == null ? null : location(uri(params), document, nameToken(definition));
+        if (definition != null) return location(uri(params), document, nameToken(definition));
+        Node attribute = selectedAttribute(document, offset(document, params));
+        return attribute == null ? null : location(uri(params), document, attribute);
+    }
+
+    /** Where a local set literal binds the attribute a selection names at {@code offset}, as {@code a} in {@code x.a}. */
+    private static Node selectedAttribute(Document document, int offset) {
+        SyntaxTree tree = document.tree();
+        Node segment = tree.at(offset);
+        while (segment != null && segment.kind != NodeKind.ATTR_NAME && segment.kind != NodeKind.STRING)
+            segment = segment.parent();
+        Node path = segment == null ? null : segment.parent();
+        Node select = path == null ? null : path.parent();
+        if (select == null
+                || path.kind != NodeKind.ATTR_PATH
+                || select.kind != NodeKind.SELECT && select.kind != NodeKind.HAS_ATTR) return null;
+        Node expr = select.children().getFirst();
+        if (expr.kind != NodeKind.VAR) return null;
+        LocalSets sets = new LocalSets(tree);
+        List<String> names = new ArrayList<>();
+        for (Node child : path.children()) {
+            if (child == segment) break;
+            if (child.kind == null) continue;
+            String name = sets.name(child);
+            if (name == null) return null;
+            names.add(name);
+        }
+        Map<String, Node> attributes = sets.attributes(Scopes.resolve(tree.view(), tree.text(expr), expr), names);
+        String name = sets.name(segment);
+        return attributes == null || name == null ? null : attributes.get(name);
     }
 
     private Object references(Map<?, ?> params) {
