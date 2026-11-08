@@ -87,6 +87,8 @@ class InterpreterTest {
                             "Greets\n\nMore.",
                             "https://h",
                             null,
+                            null,
+                            null,
                             "/p/hello.nix",
                             3,
                             1));
@@ -99,6 +101,8 @@ class InterpreterTest {
                             null,
                             null,
                             "Adds one.\n\n# Example\n  inc 1",
+                            null,
+                            null,
                             file.toString(),
                             14,
                             9));
@@ -108,6 +112,63 @@ class InterpreterTest {
                     .containsExactly("error", 16);
             assertThat(session.describe(List.of("bad")).get().value()).contains("renamed");
             assertThat(session.describe(List.of("none")).get()).isEqualTo(Session.Description.NONE);
+        }
+    }
+
+    @Test
+    void describesTheOptionsOfAModuleSystem(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("options.nix");
+        Files.writeString(file, """
+            let
+              option = type: attrs: { _type = "option"; inherit type; } // attrs;
+            in
+            {
+              services.web = {
+                enable = option { name = "bool"; description = "boolean"; } {
+                  description = "Whether to serve.";
+                  default = false;
+                  declarationPositions = [ { file = "/m.nix"; line = 3; column = 5; } ];
+                };
+                hosts = option {
+                  name = "attrsOf";
+                  description = "attribute set of submodule";
+                  getSubOptions = prefix: {
+                    _module = { };
+                    root = option { name = "str"; description = "string"; } {
+                      description = "Root.";
+                      defaultText = { _type = "literalExpression"; text = "\\"/var\\""; };
+                    };
+                  };
+                } { description = "Hosts."; };
+              };
+            }
+            """);
+        try (Session session = new Session("", "", "", "import " + file, dir.toString(), true)) {
+            assertThat(session.names(List.of()).get()).containsExactly("services");
+            assertThat(session.names(List.of("services", "web")).get()).containsExactly("enable", "hosts");
+            assertThat(session.names(List.of("services", "web", "hosts")).get()).isEmpty();
+            assertThat(session.names(List.of("services", "web", "hosts", "a.org"))
+                            .get())
+                    .containsExactly("root");
+            assertThat(session.describe(List.of("services", "web", "enable")).get())
+                    .isEqualTo(new Session.Description(
+                            "option",
+                            "boolean",
+                            null,
+                            null,
+                            "Whether to serve.",
+                            null,
+                            null,
+                            "false",
+                            null,
+                            "/m.nix",
+                            3,
+                            5));
+            assertThat(session.describe(List.of("services", "web", "hosts", "a.org", "root"))
+                            .get())
+                    .extracting(Session.Description::value, Session.Description::defaultValue)
+                    .containsExactly("string", "\"/var\"");
+            assertThat(session.describe(List.of("services", "web")).get()).isEqualTo(Session.Description.NONE);
         }
     }
 

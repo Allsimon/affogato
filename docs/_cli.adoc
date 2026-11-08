@@ -43,6 +43,13 @@ the same parser as the other commands. It answers with:
   description or doc comment, of a completion item as the editor resolves it;
 * inlay hints with the version of each package selected from nixpkgs, those
   evaluated within 200 ms of the request, the others when the editor asks again;
+* in a module, a function of `config`, `lib`, `pkgs` or `modulesPath`: the
+  completion of option names as a binding's name is typed, and on such a name a
+  hover with the option's type, description, default and example, and go to its
+  declaration; a set bound to an option path, also through `mkIf`, `mkMerge`
+  and the like, continues that path, `config.` is skipped, and each attribute
+  of an `attrsOf` submodule takes a name of its own, as in
+  `virtualHosts."example.org".root`;
 * the same completion, hover, definition and hints for the names a `with` of
   nixpkgs brings into scope, as `hello` in `with pkgs; [ hello ]`: a name bound
   in the file or a builtin is not one, and the innermost `with` that has the
@@ -64,7 +71,10 @@ The `affogato` section of the `workspace/didChangeConfiguration` settings, or
 the `initializationOptions`, may set the `width`, `strict`, and the `rules` to
 lint with, a list of ids, all when empty, and `nixpkgs.expr`, the expression
 nixpkgs is evaluated from, `import <nixpkgs> { }` unless `--nixpkgs` says
-otherwise. The server evaluates it on a thread of its own as it starts, keeps
+otherwise, and `options`, a name for each set of options with the `expr` it is
+evaluated from, `{ nixos.expr = "(import <nixpkgs/nixos> { configuration = { };
+}).options"; }` unless `--nixos-options` says otherwise; as in nixd, a
+home-manager set is one more name. Options are evaluated when first asked for. The server evaluates it on a thread of its own as it starts, keeps
 the values, and evaluates it again after a file is saved; a completion that
 waits for it more than 200 ms comes back marked incomplete, so that the editor
 asks again.

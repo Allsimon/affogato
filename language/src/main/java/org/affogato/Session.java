@@ -7,10 +7,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
+import org.affogato.runtime.Apply;
 import org.affogato.runtime.NixAttrs;
 import org.affogato.runtime.NixException;
 import org.affogato.runtime.NixLambda;
 import org.affogato.runtime.NixList;
+import org.affogato.runtime.NixNull;
 import org.affogato.runtime.NixString;
 import org.affogato.runtime.Printer;
 import org.affogato.runtime.SourceSection;
@@ -25,9 +27,10 @@ public final class Session implements AutoCloseable {
     private static final int MAX_QUERIES = 1024;
 
     /**
-     * What an attribute is: its {@code builtins.typeOf}, or {@code derivation} with {@code meta.longDescription} after
-     * the description, or {@code error} with the message as its {@code value}; any other field may be null, and
-     * {@code line} and {@code column} count from 1.
+     * What an attribute is: its {@code builtins.typeOf}; or {@code derivation}, with {@code meta.longDescription}
+     * after the description; or {@code option}, with the description of its type as its {@code value}; or
+     * {@code error}, with the message as its {@code value}. Any other field may be null, and {@code line} and
+     * {@code column} count from 1.
      */
     public record Description(
             String type,
@@ -37,10 +40,21 @@ public final class Session implements AutoCloseable {
             String description,
             String homepage,
             String doc,
+            String defaultValue,
+            String example,
             String file,
             int line,
             int column) {
-        public static final Description NONE = new Description(null, null, null, null, null, null, null, null, 0, 0);
+        public static final Description NONE = of(null, null);
+
+        static Description of(String type, String value) {
+            return new Description(type, value, null, null, null, null, null, null, null, null, 0, 0);
+        }
+
+        Description at(String file, int line, int column) {
+            return new Description(
+                    type, value, name, version, description, homepage, doc, defaultValue, example, file, line, column);
+        }
     }
 
     private record Query(boolean describe, List<String> path) {}
@@ -48,6 +62,7 @@ public final class Session implements AutoCloseable {
     private final String nixPath;
     private final String system;
     private final String storeDir;
+    private final boolean options;
     private final ExecutorService thread;
     private final Map<Query, CompletableFuture<?>> queries = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
@@ -62,6 +77,16 @@ public final class Session implements AutoCloseable {
 
     /** Empty values take the defaults, as in {@link Interpreter.Options}. */
     public Session(String nixPath, String system, String storeDir, String expression, String baseDir) {
+        this(nixPath, system, storeDir, expression, baseDir, false);
+    }
+
+    /**
+     * With {@code options}, the expression is a tree of module system options, as a NixOS configuration's
+     * {@code options}, and a path goes through the sub-options of a submodule, and takes any name for each attribute of
+     * an {@code attrsOf} one.
+     */
+    public Session(String nixPath, String system, String storeDir, String expression, String baseDir, boolean options) {
+        this.options = options;
         this.nixPath = nixPath;
         this.system = system;
         this.storeDir = storeDir;
@@ -153,12 +178,98 @@ public final class Session implements AutoCloseable {
     }
 
     private Object namesAt(List<String> path) {
-        NixAttrs a = path == null ? null : set(path);
-        return a == null ? List.of() : List.of(a.keys());
+        if (path == null) return List.of();
+        if (!options) {
+            NixAttrs a = set(path);
+            return a == null ? List.of() : List.of(a.keys());
+        }
+        NixAttrs a = optionAt(path);
+        if (a != null && isOption(a)) a = isNamed(a) ? null : subOptions(a);
+        return a == null
+                ? List.of()
+                : List.of(a.keys()).stream().filter(n -> !n.startsWith("_")).toList();
+    }
+
+    /** The option or group of options at {@code path}, or null. */
+    private NixAttrs optionAt(List<String> path) {
+        if (root == null || !(Thunk.force(root) instanceof NixAttrs a)) return null;
+        for (String key : path) {
+            if (isOption(a)) {
+                boolean named = isNamed(a);
+                a = subOptions(a);
+                if (a == null) return null;
+                if (named) continue;
+            }
+            if (!(field(a, key) instanceof NixAttrs next)) return null;
+            a = next;
+        }
+        return a;
+    }
+
+    private static boolean isOption(NixAttrs a) {
+        return field(a, "_type") instanceof NixString t && t.value.equals("option");
+    }
+
+    /** Whether the option is an {@code attrsOf}, whose attributes each take a name of their own. */
+    private static boolean isNamed(NixAttrs option) {
+        return field(option, "type") instanceof NixAttrs type
+                && field(type, "name") instanceof NixString n
+                && (n.value.equals("attrsOf") || n.value.equals("lazyAttrsOf"));
+    }
+
+    private static NixAttrs subOptions(NixAttrs option) {
+        if (!(field(option, "type") instanceof NixAttrs type) || field(type, "getSubOptions") == null) return null;
+        try {
+            return Thunk.force(Apply.apply(type.get("getSubOptions"), NixList.EMPTY)) instanceof NixAttrs a
+                            && !a.isEmpty()
+                    ? a
+                    : null;
+        } catch (NixException e) {
+            return null;
+        }
+    }
+
+    private Object describeOption(List<String> path) {
+        NixAttrs a = optionAt(path);
+        if (a == null || !isOption(a)) return Description.NONE;
+        String type = field(a, "type") instanceof NixAttrs t ? string(field(t, "description")) : null;
+        Description d = new Description(
+                "option",
+                type,
+                null,
+                null,
+                text(field(a, "description")),
+                null,
+                null,
+                text(field(a, a.has("defaultText") ? "defaultText" : "default")),
+                text(field(a, "example")),
+                null,
+                0,
+                0);
+        if (field(a, "declarationPositions") instanceof NixList l
+                && l.size() > 0
+                && Thunk.force(l.get(0)) instanceof NixAttrs p
+                && string(field(p, "file")) != null
+                && field(p, "line") instanceof Long line
+                && field(p, "column") instanceof Long column)
+            return d.at(string(field(p, "file")), (int) (long) line, (int) (long) column);
+        return d;
+    }
+
+    /** A string, the text of a {@code literalExpression} or {@code mdDoc}, a scalar, or an empty set or list. */
+    private static String text(Object v) {
+        if (v instanceof NixString s) return s.value;
+        if (v instanceof NixAttrs a && field(a, "text") instanceof NixString t) return t.value;
+        if (v instanceof Long || v instanceof Double || v instanceof Boolean || v == NixNull.INSTANCE)
+            return Printer.print(v);
+        if (v instanceof NixAttrs a && a.isEmpty()) return "{ }";
+        if (v instanceof NixList l && l.size() == 0) return "[ ]";
+        return null;
     }
 
     private Object describeAt(List<String> path) {
         if (path == null || path.isEmpty()) return Description.NONE;
+        if (options) return describeOption(path);
         NixAttrs parent = set(path.subList(0, path.size() - 1));
         String key = path.getLast();
         if (parent == null || !parent.has(key)) return Description.NONE;
@@ -167,7 +278,7 @@ public final class Session implements AutoCloseable {
         try {
             v = Thunk.force(parent.get(key));
         } catch (NixException e) {
-            return position(new Description("error", e.getMessage(), null, null, null, null, null, null, 0, 0), at);
+            return position(Description.of("error", e.getMessage()), at);
         }
         if (v instanceof NixAttrs a && a.isDerivation()) {
             NixAttrs meta = field(a, "meta") instanceof NixAttrs m ? m : NixAttrs.EMPTY;
@@ -182,22 +293,14 @@ public final class Session implements AutoCloseable {
                     string(homepage),
                     null,
                     null,
+                    null,
+                    null,
                     0,
                     0);
             String position = string(field(meta, "position"));
             int colon = position == null ? -1 : position.lastIndexOf(':');
             if (colon > 0 && position.substring(colon + 1).chars().allMatch(Character::isDigit))
-                return new Description(
-                        d.type(),
-                        null,
-                        d.name(),
-                        d.version(),
-                        d.description(),
-                        d.homepage(),
-                        null,
-                        position.substring(0, colon),
-                        Integer.parseInt(position.substring(colon + 1)),
-                        1);
+                return d.at(position.substring(0, colon), Integer.parseInt(position.substring(colon + 1)), 1);
             return position(d, at);
         }
         String value = v instanceof Long || v instanceof Double || v instanceof Boolean || v instanceof NixString
@@ -207,23 +310,13 @@ public final class Session implements AutoCloseable {
         String doc = defined == null ? null : doc(defined);
         if (doc == null && at != null && at != defined) doc = doc(at);
         return position(
-                new Description(Types.typeOf(v), value, null, null, null, null, doc, null, 0, 0),
+                new Description(Types.typeOf(v), value, null, null, null, null, doc, null, null, null, 0, 0),
                 defined == null ? at : defined);
     }
 
     private static Description position(Description d, SourceSection at) {
         if (at == null || at.getSource().getName().equals(NixContext.STRING_SOURCE)) return d;
-        return new Description(
-                d.type(),
-                d.value(),
-                d.name(),
-                d.version(),
-                d.description(),
-                d.homepage(),
-                d.doc(),
-                at.getSource().getName(),
-                at.getStartLine(),
-                at.getStartColumn());
+        return d.at(at.getSource().getName(), at.getStartLine(), at.getStartColumn());
     }
 
     private static Object field(NixAttrs a, String key) {

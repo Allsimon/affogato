@@ -2,7 +2,6 @@ package org.affogato.builtins;
 
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import org.affogato.NixContext;
 import org.affogato.runtime.*;
 import org.affogato.store.Hashes;
@@ -41,11 +41,13 @@ public final class Derivations {
     private record Closure(Set<String> outputs, Set<String> inputSrcs, Set<String> inputDrvs) {}
 
     /** Derivations produced so far, by .drv path; stands in for reading them back from the store. */
-    private static final Map<String, Closure> DRVS = new HashMap<>();
+    private static final Map<String, Closure> DRVS = new ConcurrentHashMap<>();
 
-    private static final Map<String, Map<String, byte[]>> HASH_MODULO = new HashMap<>();
+    /** Written before {@link #DRVS}, so that a thread seeing a derivation there sees its hash. */
+    private static final Map<String, Map<String, byte[]>> HASH_MODULO = new ConcurrentHashMap<>();
 
-    private static final AtermWriter ATERM = new AtermWriter(Hashes.digest("sha256"));
+    private static final ThreadLocal<AtermWriter> ATERM =
+            ThreadLocal.withInitial(() -> new AtermWriter(Hashes.digest("sha256")));
 
     /**
      * drvPaths by masked hash, store and input derivations: the full ATerm differs from the masked one only by the
@@ -351,9 +353,10 @@ public final class Derivations {
     }
 
     private static byte[] atermHash(Drv drv, boolean mask, TreeMap<String, TreeSet<String>> actualInputs) {
-        ATERM.reset();
-        unparse(ATERM, drv, mask, actualInputs);
-        return ATERM.digest();
+        AtermWriter w = ATERM.get();
+        w.reset();
+        unparse(w, drv, mask, actualInputs);
+        return w.digest();
     }
 
     static byte[] parseHash(String s, String algo) {

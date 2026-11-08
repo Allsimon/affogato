@@ -187,12 +187,57 @@ class ServerTest {
             return switch (String.join(".", path)) {
                 case "hello" ->
                     new Attribute(
-                            "derivation", null, "hello", "2.12", "Greets", "https://h", null, "/p/hello.nix", 3, 1);
+                            "derivation",
+                            null,
+                            "hello",
+                            "2.12",
+                            "Greets",
+                            "https://h",
+                            null,
+                            null,
+                            null,
+                            "/p/hello.nix",
+                            3,
+                            1);
                 case "lib.inc" ->
-                    new Attribute("lambda", null, null, null, null, null, "Adds one.", "/p/lib.nix", 5, 9);
-                case "lib" -> new Attribute("set", null, null, null, null, null, null, null, 0, 0);
-                default -> new Attribute(null, null, null, null, null, null, null, null, 0, 0);
+                    new Attribute("lambda", null, null, null, null, null, "Adds one.", null, null, "/p/lib.nix", 5, 9);
+                case "lib" -> new Attribute("set", null, null, null, null, null, null, null, null, null, 0, 0);
+                default -> new Attribute(null, null, null, null, null, null, null, null, null, null, 0, 0);
             };
+        }
+
+        final List<List<String>> options = new ArrayList<>();
+        Map<String, String> optionSets;
+
+        @Override
+        public List<String> optionNames(List<String> path) {
+            options.add(path);
+            return path.equals(List.of("services", "web")) ? List.of("enable", "hosts") : List.of();
+        }
+
+        @Override
+        public Attribute describeOption(List<String> path) {
+            options.add(path);
+            return path.equals(List.of("services", "web", "enable"))
+                    ? new Attribute(
+                            "option",
+                            "boolean",
+                            null,
+                            null,
+                            "Whether to serve.",
+                            null,
+                            null,
+                            "false",
+                            null,
+                            "/m.nix",
+                            3,
+                            5)
+                    : new Attribute(null, null, null, null, null, null, null, null, null, null, 0, 0);
+        }
+
+        @Override
+        public void configureOptions(Map<String, String> expressions) {
+            optionSets = expressions;
         }
 
         @Override
@@ -300,6 +345,57 @@ class ServerTest {
                         Map.of("label", "help", "kind", 6L),
                         Map.of("label", "hello", "kind", 5L, "data", Map.of("path", List.of("hello"))),
                         Map.of("label", "help2man", "kind", 5L, "data", Map.of("path", List.of("help2man"))));
+    }
+
+    @Test
+    void completesTheOptionsOfAModule() {
+        Nixpkgs nixpkgs = new Nixpkgs();
+        server = new Server(nixpkgs);
+        open("{ config, lib, ... }: { services.web.en\n");
+        Map<String, Object> completion = map(result("textDocument/completion", at(0, 39)));
+        assertThat(completion)
+                .containsEntry("isIncomplete", false)
+                .containsEntry(
+                        "items",
+                        List.of(Map.of(
+                                "label",
+                                "enable",
+                                "kind",
+                                10L,
+                                "data",
+                                Map.of("path", List.of("services", "web", "enable"), "option", true))));
+        assertThat(map(result(
+                        "completionItem/resolve",
+                        Json.write(list(completion.get("items")).getFirst()))))
+                .containsEntry("detail", "boolean");
+        open("{ lib, ... }: { services = lib.mkIf true { web.e }; }\n");
+        result("textDocument/completion", at(0, 48));
+        open("{ a, b }: { services.web.e\n");
+        assertThat(result("textDocument/completion", at(0, 26))).isInstanceOf(List.class);
+        open("{ lib, ... }: let x = { services.web.e\n");
+        assertThat(result("textDocument/completion", at(0, 38))).isInstanceOf(List.class);
+        assertThat(nixpkgs.options)
+                .containsExactly(
+                        List.of("services", "web"), List.of("services", "web", "enable"), List.of("services", "web"));
+    }
+
+    @Test
+    void describesTheOptionsOfAModule() {
+        server = new Server(new Nixpkgs());
+        open("{ config, ... }: { config.services.\"web\".enable = true; }\n");
+        assertThat(map(map(result("textDocument/hover", at(0, 42))).get("contents")))
+                .containsEntry("value", "`services.web.enable` boolean\n\nWhether to serve.\n\n*Default:* `false`");
+        assertThat(result("textDocument/definition", at(0, 42)))
+                .isEqualTo(Map.of("uri", "file:///m.nix", "range", range(2, 4, 2, 4)));
+        assertThat(result("textDocument/hover", at(0, 22))).isNull();
+    }
+
+    @Test
+    void configuresTheOptionSets() {
+        Nixpkgs nixpkgs = new Nixpkgs();
+        server = new Server(nixpkgs);
+        result("initialize", "{\"initializationOptions\":{\"options\":{\"nixos\":{\"expr\":\"o\"},\"x\":1}}}");
+        assertThat(nixpkgs.optionSets).isEqualTo(Map.of("nixos", "o"));
     }
 
     @Test

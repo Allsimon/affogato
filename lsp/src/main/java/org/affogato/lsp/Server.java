@@ -252,8 +252,9 @@ public final class Server {
     }
 
     /**
-     * Takes {@code {"width": ..., "strict": ..., "rules": [...], "nixpkgs": {"expr": ...}}}, each optional, the rules
-     * ids of those to lint with, all when absent or empty; the indent is the formatting request's {@code tabSize}.
+     * Takes {@code {"width": ..., "strict": ..., "rules": [...], "nixpkgs": {"expr": ...}, "options": {name: {"expr":
+     * ...}}}}, each optional, the rules ids of those to lint with, all when absent or empty; the indent is the
+     * formatting request's {@code tabSize}.
      */
     private void configure(Object settings) {
         if (!(settings instanceof Map<?, ?> s)) return;
@@ -265,6 +266,13 @@ public final class Server {
         }
         if (evaluator != null && s.get("nixpkgs") instanceof Map<?, ?> n && n.get("expr") instanceof String e)
             evaluator.configure(e);
+        if (evaluator != null && s.get("options") instanceof Map<?, ?> sets) {
+            Map<String, String> expressions = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> set : sets.entrySet())
+                if (set.getValue() instanceof Map<?, ?> o && o.get("expr") instanceof String e)
+                    expressions.put((String) set.getKey(), e);
+            evaluator.configureOptions(expressions);
+        }
     }
 
     private void open(String uri, String text, List<Map<String, Object>> out) {
@@ -379,6 +387,19 @@ public final class Server {
             local.putIfAbsent(name, definition);
             scope.add(Map.of("label", name, "kind", 6L));
         }
+        List<String> option = evaluator == null ? null : typedOption(document, offset);
+        if (option != null) {
+            List<String> parent = option.subList(0, option.size() - 1);
+            Map<String, Object> found = attributes(evaluator.optionNames(parent), parent, option.getLast());
+            for (Object item : (List<?>) found.get("items")) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> i = new LinkedHashMap<>((Map<String, Object>) item);
+                i.put("kind", 10L);
+                i.put("data", Map.of("path", ((Map<?, ?>) i.get("data")).get("path"), "option", true));
+                items.add(i);
+            }
+            return Map.of("isIncomplete", found.get("isIncomplete"), "items", items);
+        }
         List<String> selection = selection(document.text(), offset);
         if (evaluator != null && selection != null) {
             String root = selection.getFirst();
@@ -428,10 +449,11 @@ public final class Server {
         if (evaluator == null
                 || !(item.get("data") instanceof Map<?, ?> data)
                 || !(data.get("path") instanceof List<?> path)) return resolved;
+        List<String> names = path.stream().map(String.class::cast).toList();
         Evaluator.Attribute a =
-                evaluator.describe(path.stream().map(String.class::cast).toList());
+                Boolean.TRUE.equals(data.get("option")) ? evaluator.describeOption(names) : evaluator.describe(names);
         if (a == null || a.type() == null) return resolved;
-        resolved.put("detail", a.version() != null ? a.version() : a.type());
+        resolved.put("detail", a.version() != null ? a.version() : a.type().equals("option") ? a.value() : a.type());
         String documentation = a.description() != null ? a.description() : a.doc();
         if (documentation != null) resolved.put("documentation", Map.of("kind", "markdown", "value", documentation));
         return resolved;
@@ -439,12 +461,33 @@ public final class Server {
 
     private Object hover(Map<?, ?> params) {
         Document document = document(params);
-        Selected selected = selected(document, offset(document, params));
-        if (selected == null) return null;
-        Evaluator.Attribute a = evaluator.describe(selected.path());
+        int offset = offset(document, params);
+        Selected selected = selected(document, offset);
+        Evaluator.Attribute a;
+        if (selected != null) {
+            a = evaluator.describe(selected.path());
+        } else {
+            selected = boundOption(document, offset);
+            if (selected == null) return null;
+            a = evaluator.describeOption(selected.path());
+        }
         if (a == null || a.type() == null) return null;
         StringBuilder text = new StringBuilder();
-        if (a.type().equals("derivation")) {
+        if (a.type().equals("option")) {
+            text.append("`");
+            for (String name : selected.path()) {
+                if (text.length() > 1) text.append('.');
+                boolean plain = !name.isEmpty()
+                        && isNameStart(name.charAt(0))
+                        && name.chars().allMatch(c -> isNameChar((char) c));
+                text.append(plain ? name : Json.write(name));
+            }
+            text.append("`");
+            if (a.value() != null) text.append(" ").append(a.value());
+            if (a.description() != null) text.append("\n\n").append(a.description());
+            if (a.defaultValue() != null) text.append("\n\n*Default:* ").append(code(a.defaultValue()));
+            if (a.example() != null) text.append("\n\n*Example:* ").append(code(a.example()));
+        } else if (a.type().equals("derivation")) {
             text.append("`")
                     .append(a.name() != null ? a.name() : selected.path().getLast())
                     .append("`");
@@ -465,15 +508,148 @@ public final class Server {
                 document.lines().range(selected.name().start(), selected.name().end()));
     }
 
-    /** Where the nixpkgs attribute at the position is defined, or null. */
+    private static String code(String text) {
+        return text.contains("\n") ? "\n```nix\n" + text.strip() + "\n```" : "`" + text + "`";
+    }
+
+    /** Where the nixpkgs attribute or the option at the position is defined, or null. */
     private Object attributeLocation(Map<?, ?> params) {
         Document document = document(params);
-        Selected selected = selected(document, offset(document, params));
-        if (selected == null) return null;
-        Evaluator.Attribute a = evaluator.describe(selected.path());
+        int offset = offset(document, params);
+        Selected selected = selected(document, offset);
+        Evaluator.Attribute a;
+        if (selected != null) {
+            a = evaluator.describe(selected.path());
+        } else {
+            selected = boundOption(document, offset);
+            if (selected == null) return null;
+            a = evaluator.describeOption(selected.path());
+        }
         if (a == null || a.file() == null || !a.file().startsWith("/")) return null;
         Map<String, Object> at = Map.of("line", (long) a.line() - 1, "character", (long) Math.max(a.column() - 1, 0));
         return Map.of("uri", file(a.file()), "range", Map.of("start", at, "end", at));
+    }
+
+    /** The binding name at {@code offset} in a module, and the path of the option it sets, or null. */
+    private Selected boundOption(Document document, int offset) {
+        if (evaluator == null) return null;
+        SyntaxTree tree = document.tree();
+        Node name = tree.at(offset).parent();
+        if (name == null || name.kind != NodeKind.ATTR_NAME) return null;
+        Node attrPath = name.parent();
+        if (attrPath == null || attrPath.kind != NodeKind.ATTR_PATH) return null;
+        Node binding = attrPath.parent();
+        if (binding == null || binding.kind != NodeKind.BINDING) return null;
+        List<String> path = optionPrefix(tree, binding.parent());
+        if (path == null) return null;
+        for (Node child : attrPath.children()) {
+            if (child.token != null) continue;
+            String text = attrName(tree, child);
+            if (text == null) return null;
+            path.add(text);
+            if (child == name) return new Selected(name, options(path));
+        }
+        return null;
+    }
+
+    /** The option path being typed at {@code offset} as a binding name in a module, its last name partial, or null. */
+    private List<String> typedOption(Document document, int offset) {
+        String text = document.text();
+        List<String> typed = new ArrayList<>();
+        int end = offset;
+        while (true) {
+            int start = end;
+            while (start > 0 && isNameChar(text.charAt(start - 1))) start--;
+            if (start < end && !isNameStart(text.charAt(start))) return null;
+            typed.addFirst(text.substring(start, end));
+            if (start == 0 || text.charAt(start - 1) != '.') {
+                end = start;
+                break;
+            }
+            end = start - 1;
+        }
+        int before = end;
+        while (before > 0 && Character.isWhitespace(text.charAt(before - 1))) before--;
+        if (before == 0 || text.charAt(before - 1) != '{' && text.charAt(before - 1) != ';') return null;
+        Node set = document.tree().at(before - 1);
+        while (set != null && set.kind != NodeKind.ATTR_SET) {
+            if (set.kind == NodeKind.LET) return null;
+            set = set.parent();
+        }
+        List<String> path = optionPrefix(document.tree(), set);
+        if (path == null) return null;
+        path.addAll(typed);
+        path = options(path);
+        return path == null || path.isEmpty() ? null : path;
+    }
+
+    /**
+     * The option path that the bindings of {@code set} start from, when it is the body of a module, a function of
+     * {@code config}, {@code lib}, {@code pkgs} or {@code modulesPath}, or a set bound in one, possibly through
+     * parentheses, lists, function arguments as of {@code mkIf} or {@code mkMerge}, and {@code let}; else null.
+     */
+    private static List<String> optionPrefix(SyntaxTree tree, Node set) {
+        if (set == null || set.kind != NodeKind.ATTR_SET || tree.text(set).startsWith("rec")) return null;
+        List<String> path = new ArrayList<>();
+        Node node = set;
+        while (true) {
+            Node parent = node.parent();
+            if (parent == null || parent.kind == null) return null;
+            List<Node> parts =
+                    parent.children().stream().filter(c -> c.token == null).toList();
+            switch (parent.kind) {
+                case BINDING -> {
+                    if (parts.getLast() != node || parts.getFirst().kind != NodeKind.ATTR_PATH) return null;
+                    List<String> names = new ArrayList<>();
+                    for (Node child : parts.getFirst().children()) {
+                        if (child.token != null) continue;
+                        String text = attrName(tree, child);
+                        if (text == null) return null;
+                        names.add(text);
+                    }
+                    path.addAll(0, names);
+                    node = parent.parent();
+                    if (node == null
+                            || node.kind != NodeKind.ATTR_SET
+                            || tree.text(node).startsWith("rec")) return null;
+                }
+                case PAREN, LIST -> node = parent;
+                case APPLY, LET -> {
+                    if (parts.getFirst() == node && parent.kind == NodeKind.APPLY
+                            || parent.kind == NodeKind.LET && parts.getLast() != node) return null;
+                    node = parent;
+                }
+                case LAMBDA -> {
+                    if (parts.getLast() != node || parent.parent() == null || parent.parent().kind != null) return null;
+                    for (Node formal : Scopes.definitions(tree.view(), parent))
+                        if (Set.of("config", "lib", "pkgs", "modulesPath").contains(Scopes.name(tree.view(), formal)))
+                            return path;
+                    return null;
+                }
+                default -> {
+                    return null;
+                }
+            }
+        }
+    }
+
+    /** The name of an attribute path element, a name or a string without interpolation nor escapes, or null. */
+    private static String attrName(SyntaxTree tree, Node element) {
+        if (element.kind == NodeKind.ATTR_NAME) return tree.text(element);
+        if (element.kind != NodeKind.STRING) return null;
+        List<Node> parts = element.children();
+        if (parts.size() == 2) return "";
+        if (parts.size() != 3 || parts.get(1).token != Lexeme.Kind.STR_TEXT) return null;
+        String text = tree.text(parts.get(1));
+        return text.indexOf('\\') < 0 ? text : null;
+    }
+
+    /** {@code path} without a leading {@code config}, or null where it declares or imports rather than sets. */
+    private static List<String> options(List<String> path) {
+        if (!path.isEmpty() && path.getFirst().equals("config")) path = new ArrayList<>(path.subList(1, path.size()));
+        if (!path.isEmpty()
+                && Set.of("options", "imports", "disabledModules", "_module").contains(path.getFirst())) return null;
+        return path;
     }
 
     /** A name in a selection from nixpkgs, and the path from nixpkgs to it. */
@@ -570,8 +746,9 @@ public final class Server {
         if (attrPath == null) return null;
         for (Node child : attrPath.children()) {
             if (child.token != null) continue;
-            if (child.kind != NodeKind.ATTR_NAME) return null;
-            path.add(tree.text(child));
+            String text = attrName(tree, child);
+            if (text == null) return null;
+            path.add(text);
         }
         return path;
     }

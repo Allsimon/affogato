@@ -1,13 +1,14 @@
 package org.affogato.lsp;
 
 import java.util.List;
+import java.util.Map;
 
 /** The evaluated nixpkgs, kept outside this module so that the playground can do without the evaluator. */
 public interface Evaluator {
     /**
-     * What an attribute is: its {@code builtins.typeOf}, or {@code derivation}, or {@code error} with the message as
-     * its {@code value}, or null when there is no such attribute; any other field may be null, and {@code line} and
-     * {@code column} count from 1.
+     * What an attribute is: its {@code builtins.typeOf}, or {@code derivation}, or {@code option} with the description
+     * of its type as its {@code value}, or {@code error} with the message as its {@code value}, or null when there is
+     * no such attribute; any other field may be null, and {@code line} and {@code column} count from 1.
      */
     record Attribute(
             String type,
@@ -17,6 +18,8 @@ public interface Evaluator {
             String description,
             String homepage,
             String doc,
+            String defaultValue,
+            String example,
             String file,
             int line,
             int column) {}
@@ -31,6 +34,15 @@ public interface Evaluator {
 
     /** The attribute at each path, null for those not evaluated within the time a request may wait for all. */
     List<Attribute> describeAll(List<List<String>> paths);
+
+    /** The names at {@code path} in the options of every option set, or null as for {@link #names}. */
+    List<String> optionNames(List<String> path);
+
+    /** The option at {@code path} in the first option set that has it, or null as for {@link #names}. */
+    Attribute describeOption(List<String> path);
+
+    /** Takes the option sets from now on, each a name and the expression of its options. */
+    void configureOptions(Map<String, String> expressions);
 
     /** Evaluates {@code expression} as nixpkgs from now on. */
     void configure(String expression);
