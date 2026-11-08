@@ -373,6 +373,13 @@ class ServerTest {
             return project;
         }
 
+        Progress progress;
+
+        @Override
+        public void progress(Progress progress) {
+            this.progress = progress;
+        }
+
         @Override
         public void configure(String expression) {
             this.expression = expression;
@@ -596,6 +603,56 @@ class ServerTest {
         server = new Server(nixpkgs);
         result("initialize", "{\"initializationOptions\":{\"options\":{\"nixos\":{\"expr\":\"o\"},\"x\":1}}}");
         assertThat(nixpkgs.optionSets).isEqualTo(Map.of("nixos", "o"));
+    }
+
+    @Test
+    void showsTheEvaluationsUnderWayToAClientThatTakesProgress() {
+        Nixpkgs nixpkgs = new Nixpkgs();
+        List<Map<String, Object>> sent = new ArrayList<>();
+        server = new Server(nixpkgs, sent::add);
+        result("initialize", "{\"capabilities\":{}}");
+        server.handle(Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"initialized\",\"params\":{}}"));
+        assertThat(nixpkgs.progress).isNull();
+
+        result("initialize", "{\"capabilities\":{\"window\":{\"workDoneProgress\":true}}}");
+        assertThat(nixpkgs.progress).isNull();
+        server.handle(Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"initialized\",\"params\":{}}"));
+        Runnable end = nixpkgs.progress.begin("Evaluating nixpkgs");
+        String token = "affogato-progress-1";
+        assertThat(sent)
+                .containsExactly(
+                        Map.of(
+                                "jsonrpc",
+                                "2.0",
+                                "id",
+                                token,
+                                "method",
+                                "window/workDoneProgress/create",
+                                "params",
+                                Map.of("token", token)),
+                        Map.of(
+                                "jsonrpc",
+                                "2.0",
+                                "method",
+                                "$/progress",
+                                "params",
+                                Map.of(
+                                        "token",
+                                        token,
+                                        "value",
+                                        Map.of("kind", "begin", "title", "Evaluating nixpkgs"))));
+        sent.clear();
+        end.run();
+        assertThat(sent)
+                .containsExactly(Map.of(
+                        "jsonrpc",
+                        "2.0",
+                        "method",
+                        "$/progress",
+                        "params",
+                        Map.of("token", token, "value", Map.of("kind", "end"))));
+        assertThat(server.handle(Json.parse("{\"jsonrpc\":\"2.0\",\"id\":\"" + token + "\",\"result\":null}")))
+                .isEmpty();
     }
 
     @Test

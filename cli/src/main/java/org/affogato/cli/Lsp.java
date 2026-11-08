@@ -6,9 +6,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -85,8 +87,69 @@ public final class Lsp implements Callable<Integer> {
         }
 
         private void prefetch() {
-            session.names(NIXPKGS, List.of());
-            session.names(NIXPKGS, List.of("lib"));
+            prefetched = List.of(names(NIXPKGS, List.of()), names(NIXPKGS, List.of("lib")));
+        }
+
+        private List<CompletableFuture<List<String>>> prefetched = List.of();
+        private volatile Evaluator.Progress progress;
+        /** The futures under way for each title shown, and the end of each. */
+        private final Map<String, Set<Future<?>>> working = new HashMap<>();
+
+        private final Map<String, Runnable> ends = new HashMap<>();
+
+        private CompletableFuture<List<String>> names(String root, List<String> path) {
+            return track("Evaluating " + title(root), session.names(root, path), true);
+        }
+
+        private CompletableFuture<Session.Description> describe(String root, List<String> path) {
+            return track("Evaluating " + title(root), session.describe(root, path), true);
+        }
+
+        private static String title(String root) {
+            String name = root.startsWith(Session.arguments(""))
+                    ? root.substring(Session.arguments("").length())
+                    : root;
+            if (name.startsWith(OPTIONS)) return "the " + name.substring(OPTIONS.length()) + " options";
+            if (!name.startsWith(PROJECT)) return name;
+            String project = name.substring(PROJECT.length(), name.lastIndexOf('/'));
+            return "the " + name.substring(name.lastIndexOf('/') + 1) + " options of "
+                    + project.substring(project.lastIndexOf('/') + 1);
+        }
+
+        /** Shows {@code title} while {@code future} runs, once it has run longer than a request waits when {@code late}. */
+        private <T> CompletableFuture<T> track(String title, CompletableFuture<T> future, boolean late) {
+            if (progress == null || future.isDone()) return future;
+            if (!late) begin(title, future);
+            else
+                CompletableFuture.delayedExecutor(WAIT_MILLIS, TimeUnit.MILLISECONDS)
+                        .execute(() -> begin(title, future));
+            return future;
+        }
+
+        private void begin(String title, CompletableFuture<?> future) {
+            Evaluator.Progress p = progress;
+            if (p == null || future.isDone()) return;
+            Set<Future<?>> under;
+            synchronized (working) {
+                under = working.computeIfAbsent(title, t -> new HashSet<>());
+                if (!under.add(future)) return;
+                if (under.size() == 1) ends.put(title, p.begin(title));
+            }
+            future.whenComplete((v, e) -> {
+                Runnable end = null;
+                synchronized (working) {
+                    if (under.remove(future) && under.isEmpty()) {
+                        working.remove(title);
+                        end = ends.remove(title);
+                    }
+                }
+                if (end != null) end.run();
+            });
+        }
+
+        synchronized void progress(Evaluator.Progress progress) {
+            this.progress = progress;
+            for (CompletableFuture<?> f : prefetched) track("Evaluating nixpkgs", f, false);
         }
 
         /** What {@code devenv lsp --print-config} gave for a project, while its files are as they were then. */
@@ -101,7 +164,8 @@ public final class Lsp implements Callable<Integer> {
             Devenv known = devenv.get(root);
             if (known != null && known.yaml() == yaml && known.lock() == lock)
                 return known.options().getNow(null);
-            CompletableFuture<String> options = CompletableFuture.supplyAsync(() -> printConfig(root));
+            CompletableFuture<String> options = track(
+                    "Running devenv lsp --print-config", CompletableFuture.supplyAsync(() -> printConfig(root)), true);
             devenv.put(root, new Devenv(yaml, lock, options));
             return get(options, null, TimeUnit.MILLISECONDS.toNanos(DEVENV_MILLIS));
         }
@@ -190,20 +254,22 @@ public final class Lsp implements Callable<Integer> {
                 synchronized (Worker.this) {
                     if (!isArgument(path))
                         return get(
-                                nixpkgs(path, session::names), List.of(), TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS));
+                                nixpkgs(path, Worker.this::names),
+                                List.of(),
+                                TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS));
                     List<Future<List<String>>> futures = new ArrayList<>();
                     for (String root : optionRoots())
-                        futures.add(session.names(Session.arguments(root), path.subList(1, path.size())));
+                        futures.add(Worker.this.names(Session.arguments(root), path.subList(1, path.size())));
                     return union(futures);
                 }
             }
 
             /** The descriptions to look the path up in, in order: nixpkgs, or the arguments of each option set. */
             private List<CompletableFuture<Session.Description>> lookups(List<String> path) {
-                if (!isArgument(path)) return List.of(nixpkgs(path, session::describe));
+                if (!isArgument(path)) return List.of(nixpkgs(path, Worker.this::describe));
                 List<CompletableFuture<Session.Description>> lookups = new ArrayList<>();
                 for (String root : optionRoots())
-                    lookups.add(session.describe(Session.arguments(root), path.subList(1, path.size())));
+                    lookups.add(Worker.this.describe(Session.arguments(root), path.subList(1, path.size())));
                 return lookups;
             }
 
@@ -240,7 +306,7 @@ public final class Lsp implements Callable<Integer> {
             public List<String> optionNames(List<String> path) {
                 synchronized (Worker.this) {
                     List<Future<List<String>>> futures = new ArrayList<>();
-                    for (String root : optionRoots()) futures.add(session.names(root, path));
+                    for (String root : optionRoots()) futures.add(Worker.this.names(root, path));
                     return union(futures);
                 }
             }
@@ -249,7 +315,7 @@ public final class Lsp implements Callable<Integer> {
             public Attribute describeOption(List<String> path) {
                 synchronized (Worker.this) {
                     List<Future<Session.Description>> futures = new ArrayList<>();
-                    for (String root : optionRoots()) futures.add(session.describe(root, path));
+                    for (String root : optionRoots()) futures.add(Worker.this.describe(root, path));
                     long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
                     for (Future<Session.Description> f : futures) {
                         Session.Description d = get(f, Session.Description.NONE, deadline - System.nanoTime());
@@ -266,6 +332,11 @@ public final class Lsp implements Callable<Integer> {
                     optionExpressions = Collections.unmodifiableMap(new LinkedHashMap<>(expressions));
                     configureSession();
                 }
+            }
+
+            @Override
+            public void progress(Evaluator.Progress progress) {
+                Worker.this.progress(progress);
             }
 
             @Override

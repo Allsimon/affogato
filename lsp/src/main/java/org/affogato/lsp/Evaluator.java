@@ -68,6 +68,14 @@ public interface Evaluator {
         return null;
     }
 
+    /** Shows work under way to the user: {@link #begin} as it starts, with a title, and the returned end once done. */
+    interface Progress {
+        Runnable begin(String title);
+    }
+
+    /** Reports to {@code progress}, from now on, the evaluations that outlast a request and those started unasked. */
+    default void progress(Progress progress) {}
+
     /** Evaluates {@code expression} as nixpkgs from now on. */
     void configure(String expression);
 
