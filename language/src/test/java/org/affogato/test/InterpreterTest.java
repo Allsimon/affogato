@@ -44,6 +44,16 @@ class InterpreterTest {
     }
 
     @Test
+    void listToAttrsKeepsTheFirstOfEqualNames() throws Exception {
+        assertThat(eval(
+                        Interpreter.Output.JSON,
+                        "builtins.listToAttrs [ { name = \"b\"; value = 1; } { name = \"a\"; value = 2; }"
+                                + " { name = \"b\"; value = 3; } ]",
+                        0))
+                .isEqualTo("{\"a\":2,\"b\":1}");
+    }
+
+    @Test
     void stopsAtTheTimeout() {
         long start = System.nanoTime();
         assertThatThrownBy(() -> eval(

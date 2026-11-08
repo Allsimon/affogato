@@ -3,8 +3,9 @@ package org.affogato.builtins;
 import java.io.IOException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.function.BiPredicate;
 import java.util.stream.Stream;
 import org.affogato.NixContext;
@@ -41,15 +42,18 @@ final class Files {
         b.add("readFileType", 1, a -> new NixString(Nar.typeOf(Path.of(realPath(a[0])))));
         b.add("readDir", 1, a -> {
             Path dir = Path.of(realPath(a[0]));
-            TreeMap<String, Object> m = new TreeMap<>();
+            List<String> k = new ArrayList<>();
+            List<Object> v = new ArrayList<>();
             try (Stream<Path> s = java.nio.file.Files.list(dir)) {
                 // Nix gets the types free from d_type; a stat per pkgs/by-name entry is most of a nixpkgs eval.
-                s.forEach(p -> m.put(
-                        utf8ToBytes(p.getFileName().toString()), Thunk.eager(() -> new NixString(Nar.typeOf(p)))));
+                s.forEach(p -> {
+                    k.add(utf8ToBytes(p.getFileName().toString()));
+                    v.add(Thunk.eager(() -> new NixString(Nar.typeOf(p))));
+                });
             } catch (IOException e) {
                 throw new NixException("reading directory '" + dir + "': " + NixContext.describe(e));
             }
-            return NixAttrs.of(m);
+            return NixAttrs.ofPairs(k.toArray(new String[0]), v.toArray());
         });
         b.add("hashFile", 2, a -> {
             String algo = Types.string(a[0]).value;

@@ -49,16 +49,19 @@ final class AttrSets {
             return new NixAttrs(k, v, p);
         });
         b.add("listToAttrs", 1, a -> {
-            TreeMap<String, Object> m = new TreeMap<>();
-            for (Object x : Types.list(a[0]).items) {
-                NixAttrs e = Types.attrs(x);
+            Object[] items = Types.list(a[0]).items;
+            String[] k = new String[items.length];
+            Object[] v = new Object[items.length];
+            for (int i = 0; i < items.length; i++) {
+                NixAttrs e = Types.attrs(items[i]);
                 Object name = e.get("name");
                 if (name == null) throw new NixException("attribute 'name' missing");
                 Object value = e.getRaw("value");
                 if (value == null) throw new NixException("attribute 'value' missing");
-                m.putIfAbsent(Types.string(name).value, value);
+                k[i] = Types.string(name).value;
+                v[i] = value;
             }
-            return NixAttrs.of(m);
+            return NixAttrs.ofPairs(k, v);
         });
         b.add("intersectAttrs", 2, a -> {
             NixAttrs x = Types.attrs(a[0]);

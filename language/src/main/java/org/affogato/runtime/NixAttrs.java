@@ -43,6 +43,28 @@ public final class NixAttrs {
                 sorted.keySet().toArray(new String[0]), sorted.values().toArray(), null);
     }
 
+    private record Pair(String key, Object value) {}
+
+    /** Takes the arrays, in any order; of equal keys, the first wins. */
+    public static NixAttrs ofPairs(String[] keys, Object[] values) {
+        int n = keys.length;
+        int i = 1;
+        while (i < n && keys[i - 1].compareTo(keys[i]) < 0) i++;
+        if (i >= n) return new NixAttrs(keys, values, null);
+        Pair[] pairs = new Pair[n];
+        for (int j = 0; j < n; j++) pairs[j] = new Pair(keys[j], values[j]);
+        Arrays.sort(pairs, (x, y) -> x.key.compareTo(y.key));
+        int o = 0;
+        for (Pair p : pairs) {
+            if (o > 0 && keys[o - 1].equals(p.key)) continue;
+            keys[o] = p.key;
+            values[o++] = p.value;
+        }
+        return o == n
+                ? new NixAttrs(keys, values, null)
+                : new NixAttrs(Arrays.copyOf(keys, o), Arrays.copyOf(values, o), null);
+    }
+
     public String[] keys() {
         flatten();
         return keys;
