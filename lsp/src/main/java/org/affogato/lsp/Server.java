@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -398,7 +399,23 @@ public final class Server {
         items.addAll(scope);
         for (String name : new TreeSet<>(Linter.GLOBALS)) if (!local.containsKey(name)) items.add(builtin(name));
         for (String keyword : KEYWORDS) items.add(Map.of("label", keyword, "kind", 14L));
-        return items;
+        List<List<String>> scopes = evaluator == null
+                ? List.of()
+                : withScopes(document.tree(), document.tree().at(Math.max(offset - 1, 0)));
+        if (scopes.isEmpty()) return items;
+        int start = offset;
+        while (start > 0 && isNameChar(document.text().charAt(start - 1))) start--;
+        String prefix = document.text().substring(start, offset);
+        boolean incomplete = false;
+        Set<String> seen = new HashSet<>(local.keySet());
+        seen.addAll(Linter.GLOBALS);
+        for (List<String> path : scopes) {
+            Map<String, Object> found = attributes(evaluator.names(path), path, prefix);
+            incomplete |= (Boolean) found.get("isIncomplete");
+            for (Object item : (List<?>) found.get("items"))
+                if (seen.add((String) ((Map<?, ?>) item).get("label"))) items.add(item);
+        }
+        return Map.of("isIncomplete", incomplete, "items", items);
     }
 
     private static Map<String, Object> builtin(String name) {
@@ -462,12 +479,25 @@ public final class Server {
     /** A name in a selection from nixpkgs, and the path from nixpkgs to it. */
     private record Selected(Node name, List<String> path) {}
 
-    /** The attribute name at {@code offset} in {@code pkgs.a.b} or {@code lib.a.b}, or null elsewhere. */
+    /**
+     * The attribute name at {@code offset} in {@code pkgs.a.b} or {@code lib.a.b}, or the variable there that a
+     * {@code with} of nixpkgs brings into scope, or null elsewhere.
+     */
     private Selected selected(Document document, int offset) {
         if (evaluator == null) return null;
         SyntaxTree tree = document.tree();
         Node token = tree.at(offset);
         Node name = token.parent();
+        if (name != null && name.kind == NodeKind.VAR) {
+            List<List<String>> candidates = candidates(tree, name);
+            if (candidates.isEmpty()) return null;
+            List<Evaluator.Attribute> found = evaluator.describeAll(candidates);
+            for (int i = 0; i < found.size(); i++) {
+                if (found.get(i) == null) return null;
+                if (found.get(i).type() != null) return new Selected(name, candidates.get(i));
+            }
+            return null;
+        }
         if (name == null || name.kind != NodeKind.ATTR_NAME) return null;
         Node attrPath = name.parent();
         if (attrPath == null || attrPath.kind != NodeKind.ATTR_PATH) return null;
@@ -479,23 +509,64 @@ public final class Server {
         return new Selected(name, path.subList(0, path.size() - after));
     }
 
+    /**
+     * The paths from nixpkgs where the variable {@code var} may come from, those of the enclosing {@code with}s of
+     * nixpkgs from the innermost out, up to the first {@code with} of something else; none when it is bound otherwise.
+     */
+    private static List<List<String>> candidates(SyntaxTree tree, Node var) {
+        String name = tree.text(var);
+        if (Scopes.resolve(tree.view(), name, var) != null || Linter.GLOBALS.contains(name)) return List.of();
+        List<List<String>> candidates = new ArrayList<>();
+        for (List<String> scope : withScopes(tree, var)) {
+            List<String> path = new ArrayList<>(scope);
+            path.add(name);
+            candidates.add(path);
+        }
+        return candidates;
+    }
+
+    /** The nixpkgs paths of the {@code with}s whose body holds {@code node}, from the innermost out, up to another. */
+    private static List<List<String>> withScopes(SyntaxTree tree, Node node) {
+        List<List<String>> scopes = new ArrayList<>();
+        for (Node child = node, parent = node.parent(); parent != null; child = parent, parent = parent.parent()) {
+            if (parent.kind != NodeKind.WITH) continue;
+            List<Node> parts =
+                    parent.children().stream().filter(c -> c.token == null).toList();
+            if (parts.size() < 2 || parts.getLast() != child) continue;
+            List<String> path = nixpkgsPath(tree, parts.getFirst());
+            if (path == null) break;
+            scopes.add(path);
+        }
+        return scopes;
+    }
+
     private static Node attrPath(Node select) {
         for (Node child : select.children()) if (child.kind == NodeKind.ATTR_PATH) return child;
         return null;
     }
 
-    /** The path from nixpkgs of {@code select} when it is {@code pkgs.a.b} or {@code lib.a.b}, or null. */
-    private static List<String> nixpkgsPath(SyntaxTree tree, Node select) {
-        if (select == null || select.kind != NodeKind.SELECT) return null;
-        Node base = select.children().getFirst();
+    /**
+     * The path from nixpkgs of {@code expr} when it is {@code pkgs}, {@code lib}, or a selection from them such as
+     * {@code pkgs.a.b}, unless the file binds them otherwise than as a parameter; else null.
+     */
+    private static List<String> nixpkgsPath(SyntaxTree tree, Node expr) {
+        if (expr == null) return null;
+        if (expr.kind == NodeKind.PAREN)
+            for (Node child : expr.children()) if (child.token == null) return nixpkgsPath(tree, child);
+        if (expr.kind == NodeKind.VAR) {
+            String root = tree.text(expr);
+            if (!root.equals("pkgs") && !root.equals("lib")) return null;
+            Node definition = Scopes.resolve(tree.view(), root, expr);
+            if (definition != null && definition.kind != NodeKind.FORMAL && definition.kind != NodeKind.PARAM)
+                return null;
+            return root.equals("lib") ? new ArrayList<>(List.of("lib")) : new ArrayList<>();
+        }
+        if (expr.kind != NodeKind.SELECT) return null;
+        Node base = expr.children().getFirst();
         if (base.kind != NodeKind.VAR) return null;
-        String root = tree.text(base);
-        if (!root.equals("pkgs") && !root.equals("lib")) return null;
-        Node definition = Scopes.resolve(tree.view(), root, base);
-        if (definition != null && definition.kind != NodeKind.FORMAL && definition.kind != NodeKind.PARAM) return null;
-        List<String> path = new ArrayList<>();
-        if (root.equals("lib")) path.add("lib");
-        Node attrPath = attrPath(select);
+        List<String> path = nixpkgsPath(tree, base);
+        if (path == null) return null;
+        Node attrPath = attrPath(expr);
         if (attrPath == null) return null;
         for (Node child : attrPath.children()) {
             if (child.token != null) continue;
@@ -513,27 +584,42 @@ public final class Server {
         int start = document.lines().offset((Map<?, ?>) range.get("start"));
         int end = document.lines().offset((Map<?, ?>) range.get("end"));
         SyntaxTree tree = document.tree();
-        List<Node> selects = new ArrayList<>();
+        List<Integer> ends = new ArrayList<>();
+        List<Integer> counts = new ArrayList<>();
         List<List<String>> paths = new ArrayList<>();
         collect(tree.root(), node -> {
             if (node.end() < start || node.start() > end) return;
-            List<String> path = nixpkgsPath(tree, node);
-            if (path == null || path.isEmpty() || path.getFirst().equals("lib")) return;
-            selects.add(node);
-            paths.add(path);
+            if (node.kind == NodeKind.SELECT) {
+                List<String> path = nixpkgsPath(tree, node);
+                if (path == null || path.isEmpty() || path.getFirst().equals("lib")) return;
+                ends.add(attrPath(node).end());
+                counts.add(1);
+                paths.add(path);
+            } else if (node.kind == NodeKind.VAR && !(node.parent() != null && node.parent().kind == NodeKind.SELECT)) {
+                List<List<String>> candidates = candidates(tree, node);
+                if (candidates.isEmpty()) return;
+                ends.add(node.end());
+                counts.add(candidates.size());
+                paths.addAll(candidates);
+            }
         });
         List<Evaluator.Attribute> attributes = evaluator.describeAll(paths);
         List<Object> hints = new ArrayList<>();
-        for (int i = 0; i < selects.size(); i++) {
-            Evaluator.Attribute a = attributes.get(i);
-            if (a == null || !"derivation".equals(a.type()) || a.version() == null) continue;
+        int next = 0;
+        for (int i = 0; i < ends.size(); i++) {
+            Evaluator.Attribute found = null;
+            for (int j = next; j < next + counts.get(i); j++) {
+                Evaluator.Attribute a = attributes.get(j);
+                if (a == null) break;
+                if (a.type() != null) {
+                    found = a;
+                    break;
+                }
+            }
+            next += counts.get(i);
+            if (found == null || !"derivation".equals(found.type()) || found.version() == null) continue;
             hints.add(Map.of(
-                    "position",
-                    document.lines().position(attrPath(selects.get(i)).end()),
-                    "label",
-                    a.version(),
-                    "paddingLeft",
-                    true));
+                    "position", document.lines().position(ends.get(i)), "label", found.version(), "paddingLeft", true));
         }
         return hints;
     }

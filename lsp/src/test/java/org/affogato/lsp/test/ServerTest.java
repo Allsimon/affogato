@@ -270,6 +270,39 @@ class ServerTest {
     }
 
     @Test
+    void describesTheNamesThatAWithOfNixpkgsBrings() {
+        server = new Server(new Nixpkgs());
+        open("{ pkgs, lib }: with pkgs; [ hello (with lib; inc) map none (x: x) ]\n");
+        assertThat(map(map(result("textDocument/hover", at(0, 29))).get("contents")))
+                .containsEntry("value", "`hello` 2.12\n\nGreets\n\nhttps://h");
+        assertThat(map(map(result("textDocument/hover", at(0, 46))).get("contents")))
+                .containsEntry("value", "`lambda`\n\nAdds one.");
+        assertThat(result("textDocument/hover", at(0, 52))).isNull();
+        assertThat(result("textDocument/hover", at(0, 56))).isNull();
+        assertThat(result("textDocument/hover", at(0, 66))).isNull();
+        assertThat(result("textDocument/definition", at(0, 29)))
+                .isEqualTo(Map.of("uri", "file:///p/hello.nix", "range", range(2, 0, 2, 0)));
+        assertThat(result(
+                        "textDocument/inlayHint",
+                        "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":" + Json.write(range(0, 0, 1, 0)) + "}"))
+                .isEqualTo(List.of(Map.of(
+                        "position", Map.of("line", 0L, "character", 33L), "label", "2.12", "paddingLeft", true)));
+    }
+
+    @Test
+    void completesTheNamesThatAWithOfNixpkgsBrings() {
+        server = new Server(new Nixpkgs());
+        open("{ pkgs, help }: with pkgs; [ hel\n");
+        Map<String, Object> completion = map(result("textDocument/completion", at(0, 32)));
+        assertThat(completion).containsEntry("isIncomplete", false);
+        assertThat(list(completion.get("items")))
+                .contains(
+                        Map.of("label", "help", "kind", 6L),
+                        Map.of("label", "hello", "kind", 5L, "data", Map.of("path", List.of("hello"))),
+                        Map.of("label", "help2man", "kind", 5L, "data", Map.of("path", List.of("help2man"))));
+    }
+
+    @Test
     void resolvesTheCompletionsOfNixpkgs() {
         server = new Server(new Nixpkgs());
         open("{ pkgs, ... }: pkgs.hel\n");

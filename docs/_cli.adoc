@@ -43,6 +43,10 @@ the same parser as the other commands. It answers with:
   description or doc comment, of a completion item as the editor resolves it;
 * inlay hints with the version of each package selected from nixpkgs, those
   evaluated within 200 ms of the request, the others when the editor asks again;
+* the same completion, hover, definition and hints for the names a `with` of
+  nixpkgs brings into scope, as `hello` in `with pkgs; [ hello ]`: a name bound
+  in the file or a builtin is not one, and the innermost `with` that has the
+  name gives it, up to a `with` of something other than nixpkgs;
 * document symbols, folding ranges, selection ranges and semantic tokens;
 * links on the paths without interpolation, the URIs, and the strings that are
   an http or https URL, and go to definition on such a path, both to the
