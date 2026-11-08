@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.affogato.lsp.Evaluator;
@@ -356,6 +357,22 @@ class ServerTest {
             optionSets = expressions;
         }
 
+        final Map<String, Map<String, String>> projects = new LinkedHashMap<>();
+        Nixpkgs project;
+        String devenvOptions;
+
+        @Override
+        public String devenvOptions(String root) {
+            return devenvOptions;
+        }
+
+        @Override
+        public Evaluator project(String key, Map<String, String> options) {
+            projects.put(key, options);
+            if (project == null) project = new Nixpkgs();
+            return project;
+        }
+
         @Override
         public void configure(String expression) {
             this.expression = expression;
@@ -698,6 +715,61 @@ class ServerTest {
         assertThat(result("textDocument/definition", atIn(bUri, 28)))
                 .isEqualTo(Map.of("uri", lib, "range", range(0, 9, 0, 12)));
         assertThat(list(result("textDocument/references", atIn(bUri, 72)))).hasSize(2);
+    }
+
+    @Test
+    void takesTheOptionsOfADevenvProjectInItsModules(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("devenv.yaml"), "inputs: {}\n");
+        Files.writeString(dir.resolve("devenv.lock"), "{}");
+        Files.createDirectories(dir.resolve("nix"));
+        Files.writeString(dir.resolve("devenv.nix"), "{ pkgs, ... }: { imports = [ ./nix ]; }");
+        Files.writeString(dir.resolve("nix/default.nix"), "{ pkgs, ... }: { imports = [ ../sub.nix ]; }");
+        Nixpkgs nixpkgs = new Nixpkgs();
+        nixpkgs.devenvOptions = "(import ./.devenv/bootstrap/default.nix { }).project.options";
+        server = new Server(nixpkgs);
+        String text = "{ config, ... }: { services.web.e";
+        for (String file : List.of("sub.nix", "configuration.nix", "devenv.nix")) {
+            String uri = dir.resolve(file).toUri().toString();
+            openFile(uri, text);
+            result("textDocument/completion", atIn(uri, 33));
+        }
+        String key = "devenv:" + dir;
+        assertThat(nixpkgs.projects).isEqualTo(Map.of(key, Map.of("devenv", nixpkgs.devenvOptions)));
+        assertThat(nixpkgs.project.options).hasSize(2);
+        assertThat(nixpkgs.options).hasSize(1);
+
+        String uri = dir.resolve("devenv.nix").toUri().toString();
+        Map<String, Object> item =
+                map(list(map(result("textDocument/completion", atIn(uri, 33))).get("items"))
+                        .getFirst());
+        assertThat(map(item.get("data"))).containsEntry("uri", uri);
+        result("completionItem/resolve", Json.write(item));
+        assertThat(nixpkgs.project.options).last().isEqualTo(List.of("services", "web", "enable"));
+
+        nixpkgs.devenvOptions = null;
+        result("textDocument/completion", atIn(uri, 33));
+        assertThat(nixpkgs.projects.get(key)).isEmpty();
+    }
+
+    @Test
+    void takesAnyFileOfADevenvProjectAsAModule(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("devenv.yaml"), "inputs: {}\n");
+        Files.writeString(dir.resolve("devenv.nix"), "{ ... }: { imports = [ ./sub.nix ./ignored.nix ]; }");
+        Nixpkgs nixpkgs = new Nixpkgs();
+        nixpkgs.devenvOptions = "options";
+        server = new Server(nixpkgs);
+        Map<String, String> texts = new LinkedHashMap<>();
+        texts.put("sub.nix", "{ services.web.e");
+        texts.put("ignored.nix", "_: { services.web.e");
+        texts.put("devenv.nix", "{ ... }: { services.web.e");
+        texts.put("configuration.nix", "{ ... }: { services.web.e");
+        texts.forEach((file, text) -> {
+            String uri = dir.resolve(file).toUri().toString();
+            openFile(uri, text);
+            result("textDocument/completion", atIn(uri, text.length()));
+        });
+        assertThat(nixpkgs.project.options).hasSize(3);
+        assertThat(nixpkgs.options).isEmpty();
     }
 
     @Test

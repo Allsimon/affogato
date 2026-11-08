@@ -53,6 +53,21 @@ public interface Evaluator {
     /** Takes the option sets from now on, each a name and the expression of its options. */
     void configureOptions(Map<String, String> expressions);
 
+    /**
+     * The evaluator of a project whose modules take the option sets {@code options}, and {@code pkgs} and {@code lib}
+     * from the arguments of the first, sharing this one's evaluation; with no option set, this one's nixpkgs. The same
+     * {@code key} gives the same project.
+     */
+    Evaluator project(String key, Map<String, String> options);
+
+    /**
+     * The expression of the options of the devenv project at {@code root} as the devenv CLI gives it, or null when
+     * there is none, so far.
+     */
+    default String devenvOptions(String root) {
+        return null;
+    }
+
     /** Evaluates {@code expression} as nixpkgs from now on. */
     void configure(String expression);
 

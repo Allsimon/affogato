@@ -1,8 +1,11 @@
 package org.affogato.cli;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,8 +16,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.BiFunction;
 import org.affogato.Session;
 import org.affogato.lsp.Evaluator;
+import org.affogato.lsp.Json;
 import org.affogato.lsp.Server;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -22,6 +27,7 @@ import picocli.CommandLine.Option;
 @Command(name = "lsp", description = "Run a language server for Nix over stdin and stdout.")
 public final class Lsp implements Callable<Integer> {
     private static final long WAIT_MILLIS = 200;
+    private static final long DEVENV_MILLIS = 2000;
 
     @Option(
             names = "--nixpkgs",
@@ -38,19 +44,24 @@ public final class Lsp implements Callable<Integer> {
     @Override
     public Integer call() throws IOException {
         try (Worker worker = new Worker(nixpkgs, Map.of("nixos", nixosOptions))) {
-            Server.serve(System.in, System.out, worker);
+            Server.serve(System.in, System.out, worker.main);
         }
         return 0;
     }
 
-    private static final class Worker implements Evaluator, AutoCloseable {
+    private static final class Worker implements AutoCloseable {
         private static final String NIXPKGS = "nixpkgs";
         /** Prefixes the name of each option set, which the client chooses, to keep it apart from nixpkgs. */
         private static final String OPTIONS = "options.";
+        /** Prefixes the option sets of each project, apart from the client's. */
+        private static final String PROJECT = "project ";
 
         private final Session session = new Session("", "", "");
         private String expression;
         private Map<String, String> optionExpressions;
+        private final Map<String, Map<String, String>> projects = new LinkedHashMap<>();
+        private final Map<String, View> views = new HashMap<>();
+        final View main = new View(null);
 
         Worker(String expression, Map<String, String> optionExpressions) {
             this.expression = expression;
@@ -67,6 +78,8 @@ public final class Lsp implements Callable<Integer> {
             roots.put(NIXPKGS, new Session.Root(expression, false));
             for (Map.Entry<String, String> e : optionExpressions.entrySet())
                 roots.put(OPTIONS + e.getKey(), new Session.Root(e.getValue(), true));
+            projects.forEach((key, sets) ->
+                    sets.forEach((name, e) -> roots.put(PROJECT + key + "/" + name, new Session.Root(e, true))));
             session.configure(roots, dir());
             prefetch();
         }
@@ -76,34 +89,49 @@ public final class Lsp implements Callable<Integer> {
             session.names(NIXPKGS, List.of("lib"));
         }
 
-        @Override
-        public synchronized List<String> names(List<String> path) {
-            if (!isArgument(path))
-                return get(session.names(NIXPKGS, path), List.of(), TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS));
-            List<Future<List<String>>> futures = new ArrayList<>();
-            for (String name : optionExpressions.keySet())
-                futures.add(session.names(Session.arguments(OPTIONS + name), path.subList(1, path.size())));
-            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
-            TreeSet<String> names = new TreeSet<>();
-            for (Future<List<String>> f : futures) {
-                List<String> some = get(f, List.of(), deadline - System.nanoTime());
-                if (some == null) return null;
-                names.addAll(some);
+        /** What {@code devenv lsp --print-config} gave for a project, while its files are as they were then. */
+        private record Devenv(long yaml, long lock, CompletableFuture<String> options) {}
+
+        private final Map<String, Devenv> devenv = new HashMap<>();
+
+        /** The devenv CLI's options of the project at {@code root}, waiting for it on the first call alone. */
+        synchronized String devenvOptions(String root) {
+            long yaml = new File(root, "devenv.yaml").lastModified();
+            long lock = new File(root, "devenv.lock").lastModified();
+            Devenv known = devenv.get(root);
+            if (known != null && known.yaml() == yaml && known.lock() == lock)
+                return known.options().getNow(null);
+            CompletableFuture<String> options = CompletableFuture.supplyAsync(() -> printConfig(root));
+            devenv.put(root, new Devenv(yaml, lock, options));
+            return get(options, null, TimeUnit.MILLISECONDS.toNanos(DEVENV_MILLIS));
+        }
+
+        private static String printConfig(String root) {
+            try {
+                Process process = new ProcessBuilder("devenv", "lsp", "--print-config")
+                        .directory(new File(root))
+                        .redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")))
+                        .redirectError(ProcessBuilder.Redirect.DISCARD)
+                        .start();
+                String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                if (process.waitFor() != 0) return null;
+                return Json.parse(out) instanceof Map<?, ?> config
+                                && config.get("nixd") instanceof Map<?, ?> nixd
+                                && nixd.get("options") instanceof Map<?, ?> options
+                                && options.get("devenv") instanceof Map<?, ?> set
+                                && set.get("expr") instanceof String expr
+                        ? expr
+                        : null;
+            } catch (IOException | RuntimeException e) {
+                return null;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
             }
-            return List.copyOf(names);
         }
 
         private static boolean isArgument(List<String> path) {
-            return !path.isEmpty() && path.getFirst().equals(MODULE_ARGUMENTS);
-        }
-
-        /** The descriptions to look the path up in, in order: nixpkgs, or the arguments of each option set. */
-        private List<CompletableFuture<Session.Description>> lookups(List<String> path) {
-            if (!isArgument(path)) return List.of(session.describe(NIXPKGS, path));
-            List<CompletableFuture<Session.Description>> lookups = new ArrayList<>();
-            for (String name : optionExpressions.keySet())
-                lookups.add(session.describe(Session.arguments(OPTIONS + name), path.subList(1, path.size())));
-            return lookups;
+            return !path.isEmpty() && path.getFirst().equals(Evaluator.MODULE_ARGUMENTS);
         }
 
         /** The value, {@code failed} when its evaluation broke off, null when it takes longer than a request may wait. */
@@ -120,35 +148,8 @@ public final class Lsp implements Callable<Integer> {
             }
         }
 
-        @Override
-        public synchronized List<Attribute> describeAll(List<List<String>> paths) {
-            List<List<CompletableFuture<Session.Description>>> lookups = new ArrayList<>();
-            for (List<String> path : paths) lookups.add(lookups(path));
-            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
-            List<Attribute> attributes = new ArrayList<>();
-            for (List<CompletableFuture<Session.Description>> futures : lookups) {
-                Session.Description found = Session.Description.NONE;
-                for (Future<Session.Description> f : futures) {
-                    found = get(f, Session.Description.NONE, deadline - System.nanoTime());
-                    if (found == null || found.type() != null) break;
-                }
-                attributes.add(attribute(found));
-            }
-            return attributes;
-        }
-
-        @Override
-        public synchronized void whenDescribed(List<List<String>> paths, Runnable then) {
-            CompletableFuture.allOf(paths.stream()
-                            .flatMap(path -> lookups(path).stream())
-                            .toArray(CompletableFuture[]::new))
-                    .whenComplete((v, e) -> then.run());
-        }
-
-        @Override
-        public synchronized List<String> optionNames(List<String> path) {
-            List<Future<List<String>>> futures = new ArrayList<>();
-            for (String name : optionExpressions.keySet()) futures.add(session.names(OPTIONS + name, path));
+        /** The sorted union of the names, or null when one takes longer than a request may wait. */
+        private static List<String> union(List<Future<List<String>>> futures) {
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
             TreeSet<String> names = new TreeSet<>();
             for (Future<List<String>> f : futures) {
@@ -159,29 +160,152 @@ public final class Lsp implements Callable<Integer> {
             return List.copyOf(names);
         }
 
-        @Override
-        public synchronized Attribute describeOption(List<String> path) {
-            List<Future<Session.Description>> futures = new ArrayList<>();
-            for (String name : optionExpressions.keySet()) futures.add(session.describe(OPTIONS + name, path));
-            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
-            for (Future<Session.Description> f : futures) {
-                Session.Description d = get(f, Session.Description.NONE, deadline - System.nanoTime());
-                if (d == null || d.type() != null) return attribute(d);
+        /** The client's option sets and nixpkgs when {@code key} is null, else those of the project {@code key}. */
+        private final class View implements Evaluator {
+            private final String key;
+
+            View(String key) {
+                this.key = key;
             }
-            return attribute(Session.Description.NONE);
+
+            private List<String> optionRoots() {
+                List<String> roots = new ArrayList<>();
+                if (key == null) for (String name : optionExpressions.keySet()) roots.add(OPTIONS + name);
+                else for (String name : projects.get(key).keySet()) roots.add(PROJECT + key + "/" + name);
+                return roots;
+            }
+
+            /** Where nixpkgs is looked up: its root, or the {@code pkgs} argument of the project's modules. */
+            private <T> CompletableFuture<T> nixpkgs(
+                    List<String> path, BiFunction<String, List<String>, CompletableFuture<T>> query) {
+                List<String> roots = optionRoots();
+                if (key == null || roots.isEmpty()) return query.apply(NIXPKGS, path);
+                List<String> pkgs = new ArrayList<>(path);
+                pkgs.addFirst("pkgs");
+                return query.apply(Session.arguments(roots.getFirst()), pkgs);
+            }
+
+            @Override
+            public List<String> names(List<String> path) {
+                synchronized (Worker.this) {
+                    if (!isArgument(path))
+                        return get(
+                                nixpkgs(path, session::names), List.of(), TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS));
+                    List<Future<List<String>>> futures = new ArrayList<>();
+                    for (String root : optionRoots())
+                        futures.add(session.names(Session.arguments(root), path.subList(1, path.size())));
+                    return union(futures);
+                }
+            }
+
+            /** The descriptions to look the path up in, in order: nixpkgs, or the arguments of each option set. */
+            private List<CompletableFuture<Session.Description>> lookups(List<String> path) {
+                if (!isArgument(path)) return List.of(nixpkgs(path, session::describe));
+                List<CompletableFuture<Session.Description>> lookups = new ArrayList<>();
+                for (String root : optionRoots())
+                    lookups.add(session.describe(Session.arguments(root), path.subList(1, path.size())));
+                return lookups;
+            }
+
+            @Override
+            public List<Attribute> describeAll(List<List<String>> paths) {
+                synchronized (Worker.this) {
+                    List<List<CompletableFuture<Session.Description>>> lookups = new ArrayList<>();
+                    for (List<String> path : paths) lookups.add(lookups(path));
+                    long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
+                    List<Attribute> attributes = new ArrayList<>();
+                    for (List<CompletableFuture<Session.Description>> futures : lookups) {
+                        Session.Description found = Session.Description.NONE;
+                        for (Future<Session.Description> f : futures) {
+                            found = get(f, Session.Description.NONE, deadline - System.nanoTime());
+                            if (found == null || found.type() != null) break;
+                        }
+                        attributes.add(attribute(found));
+                    }
+                    return attributes;
+                }
+            }
+
+            @Override
+            public void whenDescribed(List<List<String>> paths, Runnable then) {
+                synchronized (Worker.this) {
+                    CompletableFuture.allOf(paths.stream()
+                                    .flatMap(path -> lookups(path).stream())
+                                    .toArray(CompletableFuture[]::new))
+                            .whenComplete((v, e) -> then.run());
+                }
+            }
+
+            @Override
+            public List<String> optionNames(List<String> path) {
+                synchronized (Worker.this) {
+                    List<Future<List<String>>> futures = new ArrayList<>();
+                    for (String root : optionRoots()) futures.add(session.names(root, path));
+                    return union(futures);
+                }
+            }
+
+            @Override
+            public Attribute describeOption(List<String> path) {
+                synchronized (Worker.this) {
+                    List<Future<Session.Description>> futures = new ArrayList<>();
+                    for (String root : optionRoots()) futures.add(session.describe(root, path));
+                    long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WAIT_MILLIS);
+                    for (Future<Session.Description> f : futures) {
+                        Session.Description d = get(f, Session.Description.NONE, deadline - System.nanoTime());
+                        if (d == null || d.type() != null) return attribute(d);
+                    }
+                    return attribute(Session.Description.NONE);
+                }
+            }
+
+            @Override
+            public void configureOptions(Map<String, String> expressions) {
+                synchronized (Worker.this) {
+                    if (expressions.equals(optionExpressions)) return;
+                    optionExpressions = Collections.unmodifiableMap(new LinkedHashMap<>(expressions));
+                    configureSession();
+                }
+            }
+
+            @Override
+            public String devenvOptions(String root) {
+                return Worker.this.devenvOptions(root);
+            }
+
+            @Override
+            public Evaluator project(String key, Map<String, String> options) {
+                synchronized (Worker.this) {
+                    if (!options.equals(projects.get(key))) {
+                        projects.put(key, Collections.unmodifiableMap(new LinkedHashMap<>(options)));
+                        configureSession();
+                    }
+                    return views.computeIfAbsent(key, View::new);
+                }
+            }
+
+            @Override
+            public void configure(String expression) {
+                synchronized (Worker.this) {
+                    if (expression.equals(Worker.this.expression)) return;
+                    Worker.this.expression = expression;
+                    configureSession();
+                }
+            }
+
+            @Override
+            public void reset() {
+                synchronized (Worker.this) {
+                    session.reset();
+                    prefetch();
+                }
+            }
         }
 
-        @Override
-        public synchronized void configureOptions(Map<String, String> expressions) {
-            if (expressions.equals(optionExpressions)) return;
-            optionExpressions = Collections.unmodifiableMap(new LinkedHashMap<>(expressions));
-            configureSession();
-        }
-
-        private static Attribute attribute(Session.Description d) {
+        private static Evaluator.Attribute attribute(Session.Description d) {
             return d == null
                     ? null
-                    : new Attribute(
+                    : new Evaluator.Attribute(
                             d.type(),
                             d.value(),
                             d.name(),
@@ -194,19 +318,6 @@ public final class Lsp implements Callable<Integer> {
                             d.file(),
                             d.line(),
                             d.column());
-        }
-
-        @Override
-        public synchronized void configure(String expression) {
-            if (expression.equals(this.expression)) return;
-            this.expression = expression;
-            configureSession();
-        }
-
-        @Override
-        public synchronized void reset() {
-            session.reset();
-            prefetch();
         }
 
         @Override
