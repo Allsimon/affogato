@@ -1,20 +1,18 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.RootCallTarget;
-import com.oracle.truffle.api.frame.VirtualFrame;
-import org.affogato.runtime.NixLambda;
+import org.affogato.runtime.*;
 
 public final class LambdaNode extends NixNode {
-    private final RootCallTarget target;
+    private final NixRootNode target;
     private final NixLambda.LambdaInfo info;
 
-    public LambdaNode(RootCallTarget target, NixLambda.LambdaInfo info) {
+    public LambdaNode(NixRootNode target, NixLambda.LambdaInfo info) {
         this.target = target;
         this.info = info;
     }
 
     @Override
-    public Object execute(VirtualFrame frame) {
-        return new NixLambda(target, frame.materialize(), info);
+    public Object execute(Object[] frame) {
+        return new NixLambda(target, frame, info);
     }
 }

@@ -1,10 +1,5 @@
 package org.affogato;
 
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.RootCallTarget;
-import com.oracle.truffle.api.TruffleLanguage.ContextReference;
-import com.oracle.truffle.api.TruffleLanguage.Env;
-import com.oracle.truffle.api.source.Source;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,26 +10,29 @@ import java.util.List;
 import java.util.Map;
 import org.affogato.builtins.Builtins;
 import org.affogato.builtins.Derivations;
+import org.affogato.nodes.NixRootNode;
 import org.affogato.parser.Ast;
 import org.affogato.parser.ParseException;
 import org.affogato.parser.Parser;
 import org.affogato.runtime.NixAttrs;
 import org.affogato.runtime.NixException;
+import org.affogato.runtime.Source;
 import org.affogato.runtime.Thunk;
 import org.affogato.store.Nar;
 import org.affogato.store.StorePaths;
 
 public final class NixContext {
-    private static final ContextReference<NixContext> REF = ContextReference.create(NixLanguage.class);
+    private static final ThreadLocal<NixContext> CURRENT = new ThreadLocal<>();
 
     /** UTF-8 bytes of {@code «string»}, the file name Nix reports for expressions given on the command line. */
     public static final String STRING_SOURCE = "\u00c2\u00abstring\u00c2\u00bb";
 
     public static final int MAX_CALL_DEPTH = 10000;
 
-    public final NixLanguage language;
     public int callDepth;
-    public final Env env;
+    /** Set from another thread to stop the evaluation at its next function call. */
+    public volatile boolean cancelled;
+
     public final String storeDir;
     public final String system;
     /** Search path entries as {@code [prefix, path]}; the prefix is empty for unprefixed entries. */
@@ -44,14 +42,9 @@ public final class NixContext {
     private final Map<String, Thunk> imports = new HashMap<>();
     private final Map<String, String> copiedPaths = new HashMap<>();
 
-    NixContext(NixLanguage language, Env env) {
-        this.language = language;
-        this.env = env;
-        String sd = env.getOptions().get(NixLanguage.StoreDir);
-        this.storeDir = sd.isEmpty() ? System.getenv().getOrDefault("NIX_STORE_DIR", "/nix/store") : sd;
-        String sys = env.getOptions().get(NixLanguage.System);
-        this.system = sys.isEmpty() ? defaultSystem() : sys;
-        String np = env.getOptions().get(NixLanguage.NixPath);
+    NixContext(String storeDir, String system, String np) {
+        this.storeDir = storeDir.isEmpty() ? System.getenv().getOrDefault("NIX_STORE_DIR", "/nix/store") : storeDir;
+        this.system = system.isEmpty() ? defaultSystem() : system;
         if (np.isEmpty()) np = System.getenv().getOrDefault("NIX_PATH", "");
         for (String entry : np.split(":")) {
             if (entry.isEmpty()) continue;
@@ -73,20 +66,27 @@ public final class NixContext {
     }
 
     public static NixContext get() {
-        return REF.get(null);
+        return CURRENT.get();
+    }
+
+    void enter() {
+        CURRENT.set(this);
+    }
+
+    static void leave() {
+        CURRENT.remove();
     }
 
     public NixAttrs builtins() {
         return (NixAttrs) globals.get("builtins");
     }
 
-    @TruffleBoundary
-    public RootCallTarget parse(String content, String fileName, String baseDir, String[] scopeNames) {
-        Source source = Source.newBuilder(NixLanguage.ID, content, fileName).build();
+    public NixRootNode parse(String content, String fileName, String baseDir, String[] scopeNames) {
+        Source source = new Source(fileName, content);
         Ast.Expr expr;
         try {
             expr = Parser.parse(content);
-            return Translator.translate(language, source, expr, fileName, baseDir, globals, scopeNames);
+            return Translator.translate(source, expr, fileName, baseDir, globals, scopeNames);
         } catch (ParseException e) {
             var sec = source.createSection(Math.min(e.offset, source.getLength()), 0);
             throw new NixException(
@@ -109,23 +109,21 @@ public final class NixContext {
         return Files.isDirectory(p) ? p + "/default.nix" : p.toString();
     }
 
-    @TruffleBoundary
     public Object importFile(String path) {
         String file = resolveImport(path);
         Thunk t = imports.get(file);
         if (t == null) {
-            RootCallTarget target = parse(readFile(file), file, parentDir(file), new String[0]);
+            NixRootNode target = parse(readFile(file), file, parentDir(file), new String[0]);
             t = new Thunk(target, null);
             imports.put(file, t);
         }
         return t.force();
     }
 
-    @TruffleBoundary
     public Object scopedImport(NixAttrs scope, String path) {
         String file = resolveImport(path);
-        RootCallTarget target = parse(readFile(file), file, parentDir(file), scope.keys());
-        return Thunk.force(target.call(new Object[] {null, scope}));
+        NixRootNode target = parse(readFile(file), file, parentDir(file), scope.keys());
+        return Thunk.force(target.call(null, scope));
     }
 
     public static String parentDir(String file) {
@@ -133,7 +131,6 @@ public final class NixContext {
         return i <= 0 ? "/" : file.substring(0, i);
     }
 
-    @TruffleBoundary
     public static String readFile(String path) {
         if (path.startsWith(Derivations.COREPKGS)) return readResource(path.substring(Derivations.COREPKGS.length()));
         try {
@@ -159,7 +156,6 @@ public final class NixContext {
     }
 
     /** Computes the store path {@code path} would be copied to, without copying it. */
-    @TruffleBoundary
     public String copyPathToStore(String path) {
         String sp = copiedPaths.get(path);
         if (sp != null) return sp;

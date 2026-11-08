@@ -1,4 +1,4 @@
-package org.affogato.launcher.test;
+package org.affogato.cli.test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -12,13 +12,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.regex.Pattern;
-import org.affogato.launcher.Main;
+import org.affogato.cli.Main;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class CommandLineTest {
     private static final String FORMATTED = "{\n  a = 1;\n  b = 2;\n}\n";
     private static final FileTime EPOCH = FileTime.fromMillis(0);
+    /** 10^8 function calls in constant memory, which take seconds. */
+    static final String NESTED_FOLDS = "let l = builtins.genList (x: x) 10000; in"
+            + " builtins.foldl' (a: i: a + builtins.foldl' (b: j: b + j) 0 l) 0 l";
 
     @TempDir
     Path dir;
@@ -231,9 +234,46 @@ class CommandLineTest {
     }
 
     @Test
-    void evalTakesEngineOptions() {
-        assertThat(run("eval", "--engine.WarnInterpreterOnly=false", "-E", "1 + 1"))
+    void evalSucceeds() throws IOException {
+        assertThat(run("eval", "-E", "1 + 1")).isZero();
+        assertThat(run("eval", "--json", "-E", "{ a = 1; }")).isZero();
+        assertThat(run(
+                        "drv-path",
+                        "--argstr",
+                        "n",
+                        "x",
+                        "-E",
+                        "{ n }: derivation { name = n; builder = \"b\"; system = \"s\"; }"))
                 .isZero();
+        assertThat(run(
+                        "eval",
+                        "--strict",
+                        file("d/default.nix", "[ 1 ]").getParent().toString()))
+                .isZero();
+        assertThat(err.toString()).isEmpty();
+    }
+
+    @Test
+    void evalReportsTheErrorAndWhereItHappened() throws IOException {
+        Path p = file("a.nix", "{ a = 1; }.b");
+
+        assertThat(run("eval", "--show-trace", p.toString())).isEqualTo(1);
+
+        assertThat(err.toString()).isEqualTo("error: attribute 'b' missing\n       at " + p + ":1:1\n");
+    }
+
+    @Test
+    void evalStopsAtTheTimeout() {
+        assertThat(run("eval", "--timeout", "100", "-E", NESTED_FOLDS)).isEqualTo(1);
+
+        assertThat(err.toString()).isEqualTo("error: evaluation timed out after 100 ms\n");
+    }
+
+    @Test
+    void evalFailsOnMissingFile() {
+        assertThat(run("eval", dir.resolve("missing.nix").toString())).isEqualTo(1);
+
+        assertThat(err.toString()).startsWith("error: ");
     }
 
     @Test

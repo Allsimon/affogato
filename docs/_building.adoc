@@ -6,11 +6,8 @@ The build uses https://jenesis.build[Jenesis], vendored in `build/jenesis`.
 ----
 nix develop
 java build/jenesis/Make.java                       # compile, test, format and render these docs
-java build/jenesis/Execute.java eval -E '1 + 1'    # run the launcher on the JVM
+java build/jenesis/Execute.java eval -E '1 + 1'    # run the command line on the JVM
 ----
-
-`cli` holds `format`, `check`, `fix` and `lsp`; `launcher` adds `eval` and
-`drv-path`, which need Truffle.
 
 == Playground
 
@@ -50,11 +47,8 @@ java build/jenesis/Make.java pin
 
 The flake provides:
 
-`affogato`:: the command line on OpenJDK 25, without Truffle. It is the
-default package.
+`affogato`:: the command line on OpenJDK 25. It is the default package.
 `affogato-native`:: the same as a static native image.
-`affogato-truffle`:: the launcher, with `eval` and `drv-path`, on OpenJDK 25.
-`affogato-truffle-native`:: the launcher as a static native image.
 `playground`:: the playground page; serve it, as workers do not load from a
 file.
 `docs`:: this documentation, rendered to HTML.

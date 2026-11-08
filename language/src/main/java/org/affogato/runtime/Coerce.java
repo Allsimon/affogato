@@ -1,6 +1,5 @@
 package org.affogato.runtime;
 
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Locale;
@@ -11,7 +10,6 @@ public final class Coerce {
     private Coerce() {}
 
     /** Port of {@code EvalState::coerceToString}. */
-    @TruffleBoundary
     public static NixString toNixString(Object v, boolean coerceMore, boolean copyToStore) {
         v = Thunk.force(v);
         if (v instanceof NixString s) return s;
@@ -55,7 +53,6 @@ public final class Coerce {
     }
 
     /** Lexical canonicalisation of an absolute path, as {@code CanonPath} does. */
-    @TruffleBoundary
     public static String canonicalize(String path) {
         Deque<String> parts = new ArrayDeque<>();
         for (String seg : path.split("/")) {

@@ -1,39 +1,16 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.CompilerDirectives.CompilationFinal;
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-import com.oracle.truffle.api.frame.MaterializedFrame;
-import com.oracle.truffle.api.frame.VirtualFrame;
-import com.oracle.truffle.api.nodes.ExplodeLoop;
-import com.oracle.truffle.api.source.SourceSection;
 import java.util.Arrays;
-import org.affogato.runtime.NixAttrs;
-import org.affogato.runtime.NixException;
-import org.affogato.runtime.NixNull;
-import org.affogato.runtime.Types;
+import org.affogato.runtime.*;
 
 public final class AttrsNode extends NixNode {
-    @CompilationFinal(dimensions = 1)
     private final String[] keys;
-
-    @Children
     private final NixNode[] values;
-
-    @CompilationFinal(dimensions = 1)
     private final SourceSection[] positions;
-
-    @Children
     private final NixNode[] dynNames;
-
-    @Children
     private final NixNode[] dynValues;
-
-    @CompilationFinal(dimensions = 1)
     private final SourceSection[] dynPositions;
-
     private final int overridesIndex;
-
-    @CompilationFinal(dimensions = 1)
     private final int[] recSlots;
 
     /**
@@ -49,58 +26,44 @@ public final class AttrsNode extends NixNode {
             SourceSection[] dynPositions,
             int overridesIndex,
             int[] recSlots) {
-        this.overridesIndex = overridesIndex;
-        this.recSlots = recSlots;
         this.keys = keys;
         this.values = values;
         this.positions = positions;
         this.dynNames = dynNames;
         this.dynValues = dynValues;
         this.dynPositions = dynPositions;
+        this.overridesIndex = overridesIndex;
+        this.recSlots = recSlots;
     }
 
     @Override
-    @ExplodeLoop
-    public Object execute(VirtualFrame frame) {
-        Object[] vals = values.length > Lazy.MAX_EXPLODED ? Lazy.all(values, frame.materialize()) : lazyValues(frame);
+    public Object execute(Object[] frame) {
+        Object[] vals = new Object[values.length];
+        for (int i = 0; i < values.length; i++) vals[i] = values[i].executeLazy(frame);
         NixAttrs attrs = new NixAttrs(keys, vals, positions);
-        if (overridesIndex >= 0) attrs = applyOverrides(frame.materialize(), attrs);
-        if (dynNames.length == 0) return attrs;
+        if (overridesIndex >= 0) attrs = applyOverrides(frame, attrs);
         for (int i = 0; i < dynNames.length; i++) {
             Object name = dynNames[i].execute(frame);
             if (name == NixNull.INSTANCE) continue;
-            attrs = addDynamic(attrs, Types.string(name).value, dynValues[i].executeLazy(frame), dynPositions[i]);
+            attrs = addDynamic(attrs, Types.string(name).value, dynValues[i].executeLazy(frame), dynPositions[i], true);
         }
         return attrs;
     }
 
-    @ExplodeLoop
-    private Object[] lazyValues(VirtualFrame frame) {
-        Object[] vals = new Object[values.length];
-        for (int i = 0; i < values.length; i++) vals[i] = values[i].executeLazy(frame);
-        return vals;
-    }
-
     /** Port of the {@code __overrides} handling in {@code ExprAttrs::eval}. */
-    @TruffleBoundary
-    private NixAttrs applyOverrides(MaterializedFrame frame, NixAttrs attrs) {
+    private NixAttrs applyOverrides(Object[] frame, NixAttrs attrs) {
         NixAttrs overrides = Types.attrs(attrs.values()[overridesIndex]);
         for (int i = 0; i < overrides.size(); i++) {
             String k = overrides.keys()[i];
             int j = Arrays.binarySearch(keys, k);
             if (j >= 0) {
                 attrs.values()[j] = overrides.values()[i];
-                frame.setObject(recSlots[j], overrides.values()[i]);
+                frame[recSlots[j]] = overrides.values()[i];
             } else {
                 attrs = addDynamic(attrs, k, overrides.values()[i], null, false);
             }
         }
         return attrs;
-    }
-
-    @TruffleBoundary
-    private NixAttrs addDynamic(NixAttrs attrs, String name, Object value, SourceSection pos) {
-        return addDynamic(attrs, name, value, pos, true);
     }
 
     private NixAttrs addDynamic(NixAttrs attrs, String name, Object value, SourceSection pos, boolean unique) {

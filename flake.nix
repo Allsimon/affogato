@@ -16,8 +16,6 @@
       packages = forAllSystems (pkgs: rec {
         affogato = pkgs.callPackage ./nix/package.nix { };
         affogato-native = affogato.native;
-        affogato-truffle = affogato.truffle;
-        affogato-truffle-native = affogato.truffle-native;
         inherit (affogato) docs playground site;
         maven-repo = affogato.mavenRepo;
         default = affogato;
@@ -27,8 +25,6 @@
         inherit (self.packages.${pkgs.stdenv.hostPlatform.system})
           affogato
           affogato-native
-          affogato-truffle
-          affogato-truffle-native
           ;
         inherit (self.packages.${pkgs.stdenv.hostPlatform.system}.affogato)
           tests

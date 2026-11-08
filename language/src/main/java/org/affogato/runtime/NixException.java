@@ -1,22 +1,25 @@
 package org.affogato.runtime;
 
-import com.oracle.truffle.api.exception.AbstractTruffleException;
-import com.oracle.truffle.api.nodes.Node;
+import org.affogato.nodes.NixNode;
 
-public final class NixException extends AbstractTruffleException {
+public final class NixException extends RuntimeException {
     /** Whether {@code builtins.tryEval} may catch this error ({@code throw} and failed assertions). */
     public final boolean catchable;
+
+    public final transient NixNode location;
 
     public NixException(String message) {
         this(message, null, false);
     }
 
-    public NixException(String message, Node location) {
+    public NixException(String message, NixNode location) {
         this(message, location, false);
     }
 
-    public NixException(String message, Node location, boolean catchable) {
-        super(message, location);
+    /** Without a stack trace: nixpkgs throws many through {@code tryEval}, at Java stack depths in the thousands. */
+    public NixException(String message, NixNode location, boolean catchable) {
+        super(message, null, false, false);
+        this.location = location;
         this.catchable = catchable;
     }
 

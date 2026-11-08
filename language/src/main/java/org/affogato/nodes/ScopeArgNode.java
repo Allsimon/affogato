@@ -1,9 +1,8 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.frame.VirtualFrame;
-import org.affogato.runtime.NixAttrs;
+import org.affogato.runtime.*;
 
-/** Reads a variable of a {@code scopedImport} scope, passed as the root's second argument. */
+/** Reads a variable of a {@code scopedImport} scope, passed as the root's argument. */
 public final class ScopeArgNode extends NixNode {
     private final String name;
 
@@ -12,7 +11,7 @@ public final class ScopeArgNode extends NixNode {
     }
 
     @Override
-    public Object execute(VirtualFrame frame) {
-        return ((NixAttrs) frame.getArguments()[1]).getRaw(name);
+    public Object execute(Object[] frame) {
+        return ((NixAttrs) frame[1]).getRaw(name);
     }
 }

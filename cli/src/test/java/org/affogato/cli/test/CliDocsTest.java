@@ -1,4 +1,4 @@
-package org.affogato.launcher.test;
+package org.affogato.cli.test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Stream;
-import org.affogato.launcher.Main;
+import org.affogato.cli.Main;
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
 import picocli.codegen.docgen.manpage.ManPageGenerator;

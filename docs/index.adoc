@@ -15,8 +15,8 @@ affogato is a suite of tools for the Nix language, written in Java:
   https://github.com/nix-community/nixd[nixd], many with an automatic fix;
 * a *syntax highlighter*, which works from the lexer alone and so copes with
   syntax errors;
-* an *evaluator* on GraalVM, as a Truffle AST interpreter, which evaluates
-  nixpkgs unmodified and computes store paths and `.drv` paths in memory,
+* an *evaluator*, a tree-walking interpreter, which evaluates nixpkgs
+  unmodified and computes store paths and `.drv` paths in memory,
   without writing anything to `/nix/store`;
 * a link:playground/index.html[*playground*]: a Monaco editor with the language
   server running in the browser, compiled to JavaScript.

@@ -1,23 +1,21 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.frame.VirtualFrame;
-import org.affogato.runtime.Thunk;
+import org.affogato.runtime.*;
 
 public final class ForceNode extends NixNode {
-    @Child
-    private NixNode value;
+    private final NixNode value;
 
     public ForceNode(NixNode value) {
         this.value = value;
     }
 
     @Override
-    public Object execute(VirtualFrame frame) {
+    public Object execute(Object[] frame) {
         return Thunk.force(value.execute(frame));
     }
 
     @Override
-    public Object executeLazy(VirtualFrame frame) {
+    public Object executeLazy(Object[] frame) {
         return value.execute(frame);
     }
 }

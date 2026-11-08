@@ -28,6 +28,7 @@ let
           ../jenesis.properties
           ../cli/src/main
           ../format/src/main
+          ../language/src/main
           ../lint/src/main
           ../lsp/src/main
           ../parser/src/main
@@ -36,13 +37,9 @@ let
         ++ paths
       );
     };
-  evaluator = [
-    ../language/src/main
-    ../launcher/src/main
-  ];
   testPaths = [
     ../language/src/test
-    ../launcher/src/test
+    ../cli/src/test
     ../format/src/test
     ../format/_versions.adoc
     ../vendir.yml
@@ -58,8 +55,7 @@ let
     ../docs
     ../jenesis.plugins.pin.properties
   ];
-  src = sources evaluator;
-  testSrc = sources (evaluator ++ testPaths);
+  testSrc = sources testPaths;
 
   deps = import ./pins.nix { inherit lib fetchurl linkFarm; } ../.;
 
@@ -95,7 +91,7 @@ let
 
   docs = stdenv.mkDerivation {
     name = "affogato-docs";
-    src = sources (evaluator ++ docPaths);
+    src = sources docPaths;
     nativeBuildInputs = [ jdk ];
     buildPhase = ''
       runHook preBuild
@@ -241,7 +237,7 @@ let
     module = "cli";
     src = sources [ ];
     meta = {
-      description = "Nix formatter and linter of affogato";
+      description = "Nix language implementation in Java: evaluator, formatter, linter and language server";
       mainProgram = "affogato";
       platforms = lib.platforms.linux;
     };
@@ -325,15 +321,6 @@ let
     chmod u+w $out
     cp -r ${playground} $out/playground
   '';
-
-  truffle = {
-    pname = "affogato-truffle";
-    module = "launcher";
-    inherit src;
-    meta = cli.meta // {
-      description = "Nix language implementation on GraalVM/Truffle";
-    };
-  };
 in
 (jvm cli).overrideAttrs {
   passthru = {
@@ -350,14 +337,6 @@ in
       cli
       // {
         pname = "affogato-native";
-        profile = "native-lite";
-      }
-    );
-    truffle = jvm truffle;
-    truffle-native = native (
-      truffle
-      // {
-        pname = "affogato-truffle-native";
         profile = "native";
       }
     );

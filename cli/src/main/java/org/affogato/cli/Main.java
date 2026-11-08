@@ -10,8 +10,8 @@ import picocli.CommandLine.ScopeType;
 
 @Command(
         name = "affogato",
-        description = "Format and lint Nix files.",
-        subcommands = {Format.class, Check.class, Fix.class, Lsp.class, Completion.class})
+        description = "A Nix language implementation in Java.",
+        subcommands = {Format.class, Check.class, Fix.class, Lsp.class, Eval.class, DrvPath.class, Completion.class})
 public final class Main {
     private static final long STACK_SIZE = 1L << 30;
 

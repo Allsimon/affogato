@@ -1,5 +1,6 @@
-package org.affogato.launcher;
+package org.affogato.cli;
 
+import org.affogato.Interpreter;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -15,7 +16,9 @@ final class Eval extends Evaluate {
     boolean raw;
 
     @Override
-    String output() {
-        return json ? "json" : raw ? "raw" : strict ? "strict" : "eval";
+    Interpreter.Output output() {
+        return json
+                ? Interpreter.Output.JSON
+                : raw ? Interpreter.Output.RAW : strict ? Interpreter.Output.STRICT : Interpreter.Output.EVAL;
     }
 }

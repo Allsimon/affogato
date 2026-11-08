@@ -1,12 +1,9 @@
 package org.affogato.runtime;
 
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
-
 public final class Apply {
     private Apply() {}
 
     /** Applies a function value to one (possibly lazy) argument and returns a forced result. */
-    @TruffleBoundary
     public static Object apply(Object fn, Object arg) {
         fn = Thunk.force(fn);
         if (fn instanceof NixLambda l) return l.target.call(l.closure, arg);

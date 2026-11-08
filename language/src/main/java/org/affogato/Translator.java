@@ -1,10 +1,5 @@
 package org.affogato;
 
-import com.oracle.truffle.api.RootCallTarget;
-import com.oracle.truffle.api.frame.FrameDescriptor;
-import com.oracle.truffle.api.frame.FrameSlotKind;
-import com.oracle.truffle.api.source.Source;
-import com.oracle.truffle.api.source.SourceSection;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -12,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.affogato.nodes.*;
+import org.affogato.nodes.NixNode;
+import org.affogato.nodes.NixRootNode;
 import org.affogato.parser.Ast.*;
 import org.affogato.parser.ParseException;
 import org.affogato.runtime.Coerce;
@@ -20,35 +17,34 @@ import org.affogato.runtime.NixLambda;
 import org.affogato.runtime.NixList;
 import org.affogato.runtime.NixPath;
 import org.affogato.runtime.NixString;
+import org.affogato.runtime.Source;
+import org.affogato.runtime.SourceSection;
 import org.affogato.runtime.Thunk;
 
 /**
- * Turns the AST into Truffle nodes, resolving variables statically.
+ * Turns the AST into nodes, resolving variables statically.
  *
  * <p>Each lambda and each thunk gets its own frame whose first argument is the enclosing frame; {@code let},
  * {@code rec} and {@code with} allocate slots in the current frame.
  */
 public final class Translator {
     private static final class Frame {
-        final FrameDescriptor.Builder builder = FrameDescriptor.newBuilder();
+        int size = NixRootNode.FIRST_SLOT;
 
         int add(String name) {
-            return builder.addSlot(FrameSlotKind.Object, name, null);
+            return size++;
         }
     }
 
     private record Scope(Scope parent, Frame frame, Map<String, Integer> vars, int withSlot) {}
 
-    private final NixLanguage language;
     private final Source source;
     private final String fileName;
     private final String baseDir;
     private final Map<String, Object> globals;
     private int hiddenCounter;
 
-    private Translator(
-            NixLanguage language, Source source, String fileName, String baseDir, Map<String, Object> globals) {
-        this.language = language;
+    private Translator(Source source, String fileName, String baseDir, Map<String, Object> globals) {
         this.source = source;
         this.fileName = fileName;
         this.baseDir = baseDir;
@@ -59,15 +55,14 @@ public final class Translator {
      * Translates a whole file. {@code scopeNames}, if any, are bound statically from the attribute set passed as
      * the root's second argument, as {@code scopedImport} requires.
      */
-    public static RootCallTarget translate(
-            NixLanguage language,
+    public static NixRootNode translate(
             Source source,
             Expr expr,
             String fileName,
             String baseDir,
             Map<String, Object> globals,
             String[] scopeNames) {
-        Translator t = new Translator(language, source, fileName, baseDir, globals);
+        Translator t = new Translator(source, fileName, baseDir, globals);
         Frame frame = new Frame();
         Map<String, Integer> vars = new HashMap<>();
         int[] slots = new int[scopeNames.length];
@@ -79,7 +74,7 @@ public final class Translator {
         }
         NixNode body = t.tr(expr, new Scope(null, frame, vars, -1), null);
         if (scopeNames.length > 0) body = new BindNode(slots, values, body);
-        return new NixRootNode(language, frame.builder.build(), body, fileName, t.section(expr.pos())).getCallTarget();
+        return new NixRootNode(frame.size, body, fileName, t.section(expr.pos()));
     }
 
     private SourceSection section(Pos pos) {
@@ -140,9 +135,7 @@ public final class Translator {
             case Not n2 -> new NotNode(tr(n2.operand(), s));
             case BinOp b ->
                 switch (b.op()) {
-                    case AND -> new LogicNode(LogicNode.Kind.AND, tr(b.left(), s), tr(b.right(), s));
-                    case OR -> new LogicNode(LogicNode.Kind.OR, tr(b.left(), s), tr(b.right(), s));
-                    case IMPL -> new LogicNode(LogicNode.Kind.IMPL, tr(b.left(), s), tr(b.right(), s));
+                    case AND, OR, IMPL -> new LogicNode(b.op(), tr(b.left(), s), tr(b.right(), s));
                     default -> new BinaryNode(b.op(), tr(b.left(), s), tr(b.right(), s));
                 };
             case CurPos c -> new ConstantNode(position(c.pos()));
@@ -190,9 +183,8 @@ public final class Translator {
         if (size >= 0 && size <= IN_PLACE_MAX) return new InPlaceThunkNode(tr(e, s, name)).at(section(e.pos()));
         Frame frame = new Frame();
         NixNode body = tr(e, new Scope(s, frame, null, -1), name);
-        NixRootNode root = new NixRootNode(
-                language, frame.builder.build(), body, name == null ? "<thunk>" : name, section(e.pos()));
-        return new ThunkNode(root.getCallTarget()).at(section(e.pos()));
+        NixRootNode root = new NixRootNode(frame.size, body, name == null ? "<thunk>" : name, section(e.pos()));
+        return new ThunkNode(root).at(section(e.pos()));
     }
 
     /**
@@ -351,10 +343,9 @@ public final class Translator {
         boolean ellipsis = l.formals() != null && l.formals().ellipsis();
         LambdaBodyNode node = new LambdaBodyNode(name, argSlot, formals, formalSlots, defaults, ellipsis, body);
         node.at(section(l.pos()));
-        NixRootNode root = new NixRootNode(
-                language, frame.builder.build(), node, name == null ? "<lambda>" : name, section(l.pos()));
+        NixRootNode root = new NixRootNode(frame.size, node, name == null ? "<lambda>" : name, section(l.pos()));
         return new LambdaNode(
-                root.getCallTarget(),
+                root,
                 new NixLambda.LambdaInfo(
                         name, l.arg(), formals, hasDefault, formalPositions, ellipsis, section(l.pos())));
     }
@@ -416,7 +407,7 @@ public final class Translator {
         TreeMap<String, AttrDef> sorted = new TreeMap<>(a.attrs);
         String[] keys = sorted.keySet().toArray(new String[0]);
         NixNode[] values = new NixNode[keys.length];
-        com.oracle.truffle.api.source.SourceSection[] positions = new SourceSection[keys.length];
+        SourceSection[] positions = new SourceSection[keys.length];
         List<Integer> slots = new ArrayList<>();
         List<NixNode> pre = new ArrayList<>();
         Scope inner;

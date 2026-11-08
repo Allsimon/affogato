@@ -1,5 +1,8 @@
 /**
- * Command line of affogato without the evaluator: formats and lints Nix files.
+ * Command line of affogato.
+ *
+ * <p>Evaluates Nix expressions and computes derivation paths like nix-instantiate, without writing to the store, and
+ * formats and lints Nix files.
  *
  * @jenesis.release 25
  * @jenesis.bom pin-affogato.properties
@@ -15,6 +18,7 @@
  */
 module org.affogato.cli {
     requires info.picocli;
+    requires org.affogato;
     requires org.affogato.format;
     requires org.affogato.lint;
     requires org.affogato.lsp;

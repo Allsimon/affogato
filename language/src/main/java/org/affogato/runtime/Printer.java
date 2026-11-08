@@ -1,6 +1,5 @@
 package org.affogato.runtime;
 
-import com.oracle.truffle.api.CompilerDirectives.TruffleBoundary;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.Collections;
@@ -19,7 +18,6 @@ public final class Printer {
 
     private Printer() {}
 
-    @TruffleBoundary
     public static String print(Object v) {
         Printer p = new Printer();
         p.value(v);
@@ -27,7 +25,6 @@ public final class Printer {
     }
 
     /** Forces a value completely, as {@code builtins.deepSeq} does. */
-    @TruffleBoundary
     public static void forceDeep(Object v) {
         forceDeep(v, Collections.newSetFromMap(new IdentityHashMap<>()));
     }

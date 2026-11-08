@@ -1,8 +1,6 @@
 package org.affogato.nodes;
 
-import com.oracle.truffle.api.frame.Frame;
-import com.oracle.truffle.api.frame.VirtualFrame;
-import org.affogato.runtime.Thunk;
+import org.affogato.runtime.*;
 
 public final class ReadVarNode extends NixNode {
     private final int depth;
@@ -14,18 +12,18 @@ public final class ReadVarNode extends NixNode {
     }
 
     @Override
-    public Object execute(VirtualFrame frame) {
-        Frame f = Frames.up(frame, depth);
-        Object v = f.getObject(slot);
+    public Object execute(Object[] frame) {
+        Object[] f = Frames.up(frame, depth);
+        Object v = f[slot];
         if (v instanceof Thunk t) {
             v = t.force();
-            f.setObject(slot, v);
+            f[slot] = v;
         }
         return v;
     }
 
     @Override
-    public Object executeLazy(VirtualFrame frame) {
-        return Frames.up(frame, depth).getObject(slot);
+    public Object executeLazy(Object[] frame) {
+        return Frames.up(frame, depth)[slot];
     }
 }

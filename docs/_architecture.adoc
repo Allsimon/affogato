@@ -14,15 +14,16 @@ errors and going on where `Parser` stops.
 NAR hashing, Nix base32 and store-path computation.
 
 `language/`::
-The Truffle language:
+The evaluator, a tree-walking interpreter:
 +
-* `Translator`: static scope resolution into Truffle nodes.
+* `Interpreter`: the entry point, which evaluates a file or an expression.
+* `Translator`: static scope resolution into nodes.
 * `nodes/` and `runtime/`: the evaluator and its values.
 * `builtins/`: the builtins.
 * `corepkgs/`: Nix's `derivation.nix` and `fetchurl.nix`, vendored from NixOS/nix.
 
-`launcher/`::
-The command line, built on the polyglot API, plus its native-image build.
+`cli/`::
+The command line, plus its native-image build.
 
 `format/`::
 The formatter.
