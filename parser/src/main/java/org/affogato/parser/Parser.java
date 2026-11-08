@@ -53,6 +53,15 @@ public final class Parser {
         return new ParseException("syntax error, unexpected " + what, cur.start());
     }
 
+    /** {@link List#copyOf} without its array copy for the one and two element lists most nodes have. */
+    private static <T> List<T> small(List<T> l) {
+        return switch (l.size()) {
+            case 1 -> List.of(l.getFirst());
+            case 2 -> List.of(l.get(0), l.get(1));
+            default -> List.copyOf(l);
+        };
+    }
+
     private Pos from(int start) {
         return new Pos(start, prev != null ? prev.end() : start);
     }
@@ -75,14 +84,14 @@ public final class Parser {
         int start = cur.start();
         switch (cur.type()) {
             case ID -> {
-                TokenType next = peek(1);
-                if (next == COLON) {
+                char next = lexer.peekChar();
+                if (next == ':') {
                     Token arg = advance();
                     Token colon = advance();
                     Node body = parseExpr();
                     return new Lambda(from(start), arg, null, null, colon, body);
                 }
-                if (next == AT) {
+                if (next == '@') {
                     Token arg = advance();
                     Token at = advance();
                     return parseFormalsLambda(start, arg, at);
@@ -106,7 +115,7 @@ public final class Parser {
                 return new With(from(start), kw, scope, semi, body);
             }
             case LET -> {
-                if (peek(1) != LBRACE) {
+                if (lexer.peekChar() != '{') {
                     Token kw = advance();
                     List<Binding> binds = parseBinds(IN);
                     Token in = expect(IN);
@@ -156,7 +165,7 @@ public final class Parser {
         if (arg == null && (at = accept(AT)) != null) arg = expect(ID);
         Token colon = expect(COLON);
         Node body = parseExpr();
-        return new Lambda(from(start), arg, at, new Formals(open, List.copyOf(formals), ellipsis, close), colon, body);
+        return new Lambda(from(start), arg, at, new Formals(open, small(formals), ellipsis, close), colon, body);
     }
 
     private Node parseIf() {
@@ -240,9 +249,12 @@ public final class Parser {
         int start = cur.start();
         Node fn = parseSelect();
         if (!startsSimple()) return fn;
+        Node arg = parseSelect();
+        if (!startsSimple()) return new Call(from(start), fn, List.of(arg));
         List<Node> args = new ArrayList<>();
+        args.add(arg);
         while (startsSimple()) args.add(parseSelect());
-        return new Call(from(start), fn, List.copyOf(args));
+        return new Call(from(start), fn, small(args));
     }
 
     private Node parseSelect() {
@@ -250,12 +262,18 @@ public final class Parser {
         Node e = parseSimple();
         Token dot = accept(DOT);
         if (dot != null) {
-            List<Sel> path = new ArrayList<>();
-            path.add(new Sel(dot, parseAttr()));
-            while ((dot = accept(DOT)) != null) path.add(new Sel(dot, parseAttr()));
+            Sel first = new Sel(dot, parseAttr());
+            List<Sel> path;
+            if (at(DOT)) {
+                path = new ArrayList<>();
+                path.add(first);
+                while ((dot = accept(DOT)) != null) path.add(new Sel(dot, parseAttr()));
+            } else {
+                path = List.of(first);
+            }
             Token or = accept(OR_KW);
             Node fallback = or != null ? parseSelect() : null;
-            return new Select(from(start), e, List.copyOf(path), or, fallback);
+            return new Select(from(start), e, small(path), or, fallback);
         }
         if (at(OR_KW)) {
             Token or = advance();
@@ -315,7 +333,7 @@ public final class Parser {
                 List<Node> items = new ArrayList<>();
                 while (!at(RBRACK)) items.add(parseSelect());
                 Token close = advance();
-                return new ListExpr(from(start), t, List.copyOf(items), close);
+                return new ListExpr(from(start), t, small(items), close);
             }
             default -> throw unexpected();
         }
@@ -338,7 +356,7 @@ public final class Parser {
         Token close = new Token(STR_OPEN, "\"", lexer.pos - 1, lexer.pos, false);
         cur = lexer.next();
         prev = new Token(STR_OPEN, "\"", start, cur.start(), false);
-        return new Str(from(start), open, List.copyOf(parts), close);
+        return new Str(from(start), open, small(parts), close);
     }
 
     /** Called right after {@code ${}; leaves the lexer right after the closing brace. */
@@ -366,7 +384,7 @@ public final class Parser {
         Token close = new Token(IND_STR_OPEN, "''", lexer.pos - 2, lexer.pos, false);
         cur = lexer.next();
         prev = new Token(IND_STR_OPEN, "''", start, cur.start(), false);
-        return new Str(from(start), open, List.copyOf(parts), close);
+        return new Str(from(start), open, small(parts), close);
     }
 
     private Node parsePath(int start) {
@@ -393,7 +411,7 @@ public final class Parser {
         if (last.endsWith("/")) throw new ParseException("path has a trailing slash", lexer.pos);
         cur = lexer.next();
         prev = new Token(PATH, "", start, lexer.pos, false);
-        return new Path(new Pos(start, prev.end()), t, List.copyOf(parts));
+        return new Path(new Pos(start, prev.end()), t, small(parts));
     }
 
     private AttrNode parseAttr() {
@@ -417,11 +435,13 @@ public final class Parser {
     }
 
     private List<Sel> parseAttrPath() {
+        Sel first = new Sel(null, parseAttr());
+        if (!at(DOT)) return List.of(first);
         List<Sel> path = new ArrayList<>();
-        path.add(new Sel(null, parseAttr()));
+        path.add(first);
         Token dot;
         while ((dot = accept(DOT)) != null) path.add(new Sel(dot, parseAttr()));
-        return List.copyOf(path);
+        return small(path);
     }
 
     private List<Binding> parseBinds(TokenType end) {
@@ -447,7 +467,7 @@ public final class Parser {
                     }
                     names.add(name);
                 }
-                binds.add(new Inherit(inherit, from, List.copyOf(names), advance()));
+                binds.add(new Inherit(inherit, from, small(names), advance()));
             } else {
                 List<Sel> path = parseAttrPath();
                 Token assign = expect(ASSIGN);
@@ -456,7 +476,7 @@ public final class Parser {
                 binds.add(new Assign(from(start), path, assign, value, semi));
             }
         }
-        return List.copyOf(binds);
+        return small(binds);
     }
 
     /** Whether an attribute name lowers to a constant {@link Ast.StrLit}. */

@@ -1,8 +1,5 @@
 package org.affogato.parser;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /** Mirrors the longest-match rules of Nix's flex lexer (src/libexpr/lexer.l). */
 public final class Lexer {
 
@@ -14,52 +11,136 @@ public final class Lexer {
 
     public record Part(PartKind kind, String text, boolean hasIndentation) {}
 
-    private final String src;
+    /** A copy of the source: cold, an array read is one bytecode where {@code String.charAt} is three calls. */
+    private final char[] buf;
+
     private final int len;
-    private final Map<String, String> shared = new HashMap<>();
+    private String[] shared;
+    /** Where each shared text first appears in {@code buf}, or -1. */
+    private int[] sharedAt;
+
+    private int sharedCount;
     int pos;
     /** Lets a path end with a slash, for {@link Tokenizer}, which leaves errors to the parser. */
     boolean lenient;
 
     public Lexer(String src) {
-        this.src = src;
-        this.len = src.length();
+        this.buf = src.toCharArray();
+        this.len = buf.length;
+        int size = Math.max(64, Integer.highestOneBit(len / 16) << 1);
+        this.shared = new String[size];
+        this.sharedAt = new int[size];
     }
 
     public int pos() {
         return pos;
     }
 
+    /** The first character of the next token, without consuming it; {@code '\0'} at the end or before an error. */
+    char peekChar() {
+        int saved = pos;
+        try {
+            skipTrivia();
+            return at(pos);
+        } catch (ParseException e) {
+            return '\0';
+        } finally {
+            pos = saved;
+        }
+    }
+
     private char at(int i) {
-        return i < len ? src.charAt(i) : '\0';
+        return i < len ? buf[i] : '\0';
     }
 
     /** One instance per distinct text, so that repeated names and strings share it. */
     private String share(String s) {
-        String old = shared.putIfAbsent(s, s);
-        return old != null ? old : s;
+        int h = s.hashCode();
+        int mask = shared.length - 1;
+        for (int i = mix(h) & mask; ; i = (i + 1) & mask) {
+            String old = shared[i];
+            if (old == null) return add(i, s, -1);
+            if (old.hashCode() == h && old.equals(s)) return old;
+        }
     }
 
-    private boolean startsWith(String s, int i) {
-        return src.startsWith(s, i);
+    /** {@link #share} of {@code buf[start, end)}, allocating only text not seen before. */
+    private String share(int start, int end) {
+        int h = 0;
+        for (int i = start; i < end; i++) h = 31 * h + buf[i];
+        int n = end - start;
+        int mask = shared.length - 1;
+        for (int i = mix(h) & mask; ; i = (i + 1) & mask) {
+            String old = shared[i];
+            if (old == null) return add(i, new String(buf, start, n), start);
+            if (old.hashCode() == h && old.length() == n && same(old, sharedAt[i], start, n)) return old;
+        }
+    }
+
+    private boolean same(String old, int at, int start, int n) {
+        if (at < 0) return old.contentEquals(java.nio.CharBuffer.wrap(buf, start, n));
+        for (int k = 0; k < n; k++) if (buf[at + k] != buf[start + k]) return false;
+        return true;
+    }
+
+    private static int mix(int h) {
+        return h ^ (h >>> 16);
+    }
+
+    private String add(int slot, String s, int at) {
+        shared[slot] = s;
+        sharedAt[slot] = at;
+        if (++sharedCount * 2 > shared.length) {
+            String[] old = shared;
+            int[] oldAt = sharedAt;
+            shared = new String[old.length * 2];
+            sharedAt = new int[old.length * 2];
+            int mask = shared.length - 1;
+            for (int j = 0; j < old.length; j++) {
+                if (old[j] == null) continue;
+                int i = mix(old[j].hashCode()) & mask;
+                while (shared[i] != null) i = (i + 1) & mask;
+                shared[i] = old[j];
+                sharedAt[i] = oldAt[j];
+            }
+        }
+        return s;
+    }
+
+    private boolean startsWith(char a, char b, int i) {
+        return at(i) == a && at(i + 1) == b;
+    }
+
+    private boolean startsWith(char a, char b, char c, int i) {
+        return at(i) == a && at(i + 1) == b && at(i + 2) == c;
+    }
+
+    private static final int PATH = 1, ID_START = 2, ID = 4, URI = 8;
+    private static final byte[] CLASS = new byte[128];
+
+    static {
+        for (char c = 0; c < 128; c++) {
+            boolean letter = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z';
+            boolean digit = c >= '0' && c <= '9';
+            int k = 0;
+            if (letter || digit || c == '.' || c == '_' || c == '-' || c == '+') k |= PATH;
+            if (letter || c == '_') k |= ID_START;
+            if (letter || c == '_' || digit || c == '\'' || c == '-') k |= ID;
+            if (letter || digit || "%/?:@&=+$,-_.!~*'".indexOf(c) >= 0) k |= URI;
+            CLASS[c] = (byte) k;
+        }
     }
 
     static boolean isPathChar(char c) {
-        return c >= 'a' && c <= 'z'
-                || c >= 'A' && c <= 'Z'
-                || c >= '0' && c <= '9'
-                || c == '.'
-                || c == '_'
-                || c == '-'
-                || c == '+';
+        return c < 128 && (CLASS[c] & PATH) != 0;
     }
 
     private static boolean isIdStart(char c) {
-        return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_';
+        return c < 128 && (CLASS[c] & ID_START) != 0;
     }
 
     private static boolean isIdChar(char c) {
-        return isIdStart(c) || c >= '0' && c <= '9' || c == '\'' || c == '-';
+        return c < 128 && (CLASS[c] & ID) != 0;
     }
 
     private static boolean isDigit(char c) {
@@ -68,14 +149,15 @@ public final class Lexer {
 
     private void skipTrivia() {
         while (pos < len) {
-            char c = src.charAt(pos);
+            char c = buf[pos];
             if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
                 pos++;
             } else if (c == '#') {
-                while (pos < len && src.charAt(pos) != '\n' && src.charAt(pos) != '\r') pos++;
+                while (pos < len && buf[pos] != '\n' && buf[pos] != '\r') pos++;
             } else if (c == '/' && at(pos + 1) == '*') {
-                int end = src.indexOf("*/", pos + 2);
-                if (end < 0) throw new ParseException("unterminated comment", pos);
+                int end = pos + 2;
+                while (end < len && !(buf[end] == '*' && at(end + 1) == '/')) end++;
+                if (end >= len) throw new ParseException("unterminated comment", pos);
                 pos = end + 2;
             } else {
                 return;
@@ -127,7 +209,7 @@ public final class Lexer {
         while (isDigit(at(i)) || isLetter(at(i)) || at(i) == '+' || at(i) == '-' || at(i) == '.') i++;
         if (at(i++) != ':') return 0;
         int start = i;
-        while (at(i) != '\0' && (isDigit(at(i)) || isLetter(at(i)) || "%/?:@&=+$,-_.!~*'".indexOf(at(i)) >= 0)) i++;
+        while (at(i) < 128 && (CLASS[at(i)] & URI) != 0) i++;
         return i > start ? i - p : 0;
     }
 
@@ -149,7 +231,7 @@ public final class Lexer {
         while (isPathChar(at(j))) j++;
         int k = matchSegments(j);
         if (k > j) return at(k) == '/' ? k + 1 - p : k - p;
-        if (at(j) == '/' && startsWith("${", j + 1)) return j + 1 - p;
+        if (at(j) == '/' && startsWith('$', '{', j + 1)) return j + 1 - p;
         return 0;
     }
 
@@ -157,7 +239,7 @@ public final class Lexer {
         if (at(p) != '~' || at(p + 1) != '/') return 0;
         int k = matchSegments(p + 1);
         if (k > p + 1) return at(k) == '/' ? k + 1 - p : k - p;
-        return startsWith("${", p + 2) ? 2 : 0;
+        return startsWith('$', '{', p + 2) ? 2 : 0;
     }
 
     private int matchSearchPath(int p) {
@@ -172,7 +254,7 @@ public final class Lexer {
         skipTrivia();
         int start = pos;
         if (pos >= len) return new Token(TokenType.EOF, "", start, start, false);
-        char c = src.charAt(pos);
+        char c = buf[pos];
 
         TokenType best = null;
         int bestLen = 0;
@@ -210,21 +292,21 @@ public final class Lexer {
         }
         if (best != null) {
             pos += bestLen;
-            String text = share(src.substring(start, pos));
+            String text = share(start, pos);
             if (best == TokenType.ID) {
                 TokenType kw = keyword(text);
                 if (kw != null) best = kw;
             }
             boolean interp = false;
             if (best == TokenType.PATH || best == TokenType.HPATH) {
-                interp = startsWith("${", pos);
+                interp = startsWith('$', '{', pos);
                 if (!interp && !lenient && text.endsWith("/"))
                     throw new ParseException("path '" + text + "' has a trailing slash", start);
             }
             return new Token(best, text, start, pos, interp);
         }
 
-        if (startsWith("''", pos)) {
+        if (startsWith('\'', '\'', pos)) {
             pos += 2;
             int j = pos;
             while (at(j) == ' ') j++;
@@ -328,26 +410,39 @@ public final class Lexer {
     }
 
     private Token tok(TokenType type, int start) {
-        return new Token(type, src.substring(start, pos), start, pos, false);
+        return new Token(type, new String(buf, start, pos - start), start, pos, false);
     }
 
     /** Reads the next piece of a {@code "..."} string, right after its opening quote or an interpolation. */
     public Part stringPart() {
-        StringBuilder sb = new StringBuilder();
+        int start = pos;
+        StringBuilder sb = null;
         while (true) {
+            int run = pos;
+            while (pos < len) {
+                char c = buf[pos];
+                if (c == '"' || c == '\\' || c == '\r') break;
+                if (c == '$') {
+                    char d = at(pos + 1);
+                    if (d == '{') break;
+                    pos += d == '$' ? 2 : 1;
+                } else {
+                    pos++;
+                }
+            }
+            if (sb != null) sb.append(buf, run, pos - run);
             if (pos >= len) throw new ParseException("unterminated string", pos);
-            char c = src.charAt(pos);
-            if (c == '"' || c == '$' && at(pos + 1) == '{') {
-                if (!sb.isEmpty()) return new Part(PartKind.LIT, share(sb.toString()), true);
+            char c = buf[pos];
+            if (c == '"' || c == '$') {
+                if (sb != null) return new Part(PartKind.LIT, share(sb.toString()), true);
+                if (pos > start) return new Part(PartKind.LIT, share(start, pos), true);
                 pos += c == '"' ? 1 : 2;
                 return new Part(c == '"' ? PartKind.END : PartKind.INTERP, null, false);
             }
-            if (c == '$' && at(pos + 1) == '$') {
-                sb.append("$$");
-                pos += 2;
-            } else if (c == '\\') {
+            if (sb == null) sb = new StringBuilder().append(buf, start, pos - start);
+            if (c == '\\') {
                 if (pos + 1 >= len) throw new ParseException("unterminated string", pos);
-                char e = src.charAt(pos + 1);
+                char e = buf[pos + 1];
                 pos += 2;
                 switch (e) {
                     case 'n' -> sb.append('\n');
@@ -359,13 +454,10 @@ public final class Lexer {
                     }
                     default -> sb.append(e);
                 }
-            } else if (c == '\r') {
+            } else {
                 sb.append('\n');
                 pos++;
                 if (at(pos) == '\n') pos++;
-            } else {
-                sb.append(c);
-                pos++;
             }
         }
     }
@@ -374,7 +466,7 @@ public final class Lexer {
     public Part indStringPart() {
         int start = pos;
         while (pos < len) {
-            char c = src.charAt(pos);
+            char c = buf[pos];
             char d = at(pos + 1);
             if (c == '$' && d != '{' && d != '\'' && pos + 1 < len) {
                 pos += 2;
@@ -386,19 +478,19 @@ public final class Lexer {
                 break;
             }
         }
-        if (pos > start) return new Part(PartKind.LIT, src.substring(start, pos), true);
+        if (pos > start) return new Part(PartKind.LIT, new String(buf, start, pos - start), true);
         if (pos >= len) throw new ParseException("unterminated indented string", pos);
-        if (startsWith("'''", pos)) {
+        if (startsWith('\'', '\'', '\'', pos)) {
             pos += 3;
             return new Part(PartKind.LIT, "''", false);
         }
-        if (startsWith("''$", pos)) {
+        if (startsWith('\'', '\'', '$', pos)) {
             pos += 3;
             return new Part(PartKind.LIT, "$", false);
         }
-        if (startsWith("''\\", pos)) {
+        if (startsWith('\'', '\'', '\\', pos)) {
             if (pos + 3 >= len) throw new ParseException("unterminated indented string", pos);
-            char e = src.charAt(pos + 3);
+            char e = buf[pos + 3];
             pos += 4;
             String s = switch (e) {
                 case 'n' -> "\n";
@@ -408,27 +500,27 @@ public final class Lexer {
             };
             return new Part(PartKind.LIT, s, false);
         }
-        if (startsWith("${", pos)) {
+        if (startsWith('$', '{', pos)) {
             pos += 2;
             return new Part(PartKind.INTERP, null, false);
         }
-        if (startsWith("''", pos)) {
+        if (startsWith('\'', '\'', pos)) {
             pos += 2;
             return new Part(PartKind.END, null, false);
         }
         pos++;
-        return new Part(PartKind.LIT, src.substring(pos - 1, pos), false);
+        return new Part(PartKind.LIT, String.valueOf(buf[pos - 1]), false);
     }
 
     /** Reads the next piece of an interpolated path, right after an interpolation. */
     public Part pathPart() {
-        if (startsWith("${", pos)) {
+        if (startsWith('$', '{', pos)) {
             pos += 2;
             return new Part(PartKind.INTERP, null, false);
         }
         int start = pos;
         while (isPathChar(at(pos)) || at(pos) == '/') pos++;
-        if (pos > start) return new Part(PartKind.LIT, src.substring(start, pos), false);
+        if (pos > start) return new Part(PartKind.LIT, new String(buf, start, pos - start), false);
         return new Part(PartKind.END, null, false);
     }
 }
