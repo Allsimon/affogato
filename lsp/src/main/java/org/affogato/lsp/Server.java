@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,15 +66,27 @@ public final class Server {
     private static final Set<NodeKind> FOLDED =
             Set.of(NodeKind.ATTR_SET, NodeKind.LIST, NodeKind.LET, NodeKind.IND_STRING);
 
+    private static final int MAX_ITEMS = 1000;
+
     private final Map<String, Document> documents = new HashMap<>();
+    private final Evaluator evaluator;
     private int width = Formatter.DEFAULT_WIDTH;
     private boolean strict;
     private Set<Rule> rules = EnumSet.allOf(Rule.class);
     private boolean exited;
 
+    public Server() {
+        this(null);
+    }
+
+    /** Completes nixpkgs attributes from {@code evaluator}, when not null. */
+    public Server(Evaluator evaluator) {
+        this.evaluator = evaluator;
+    }
+
     /** Serves {@code in} until the client says {@code exit}. */
-    public static void serve(InputStream in, OutputStream out) throws IOException {
-        Server server = new Server();
+    public static void serve(InputStream in, OutputStream out, Evaluator evaluator) throws IOException {
+        Server server = new Server(evaluator);
         while (!server.exited) {
             String body = read(in);
             if (body == null) return;
@@ -171,6 +182,10 @@ public final class Server {
                 open(uri(params), text, out);
                 yield null;
             }
+            case "textDocument/didSave" -> {
+                if (evaluator != null) evaluator.reset();
+                yield null;
+            }
             case "textDocument/didClose" -> {
                 documents.remove(uri(params));
                 out.add(notification(
@@ -200,7 +215,7 @@ public final class Server {
 
     private static Map<String, Object> capabilities() {
         Map<String, Object> capabilities = new LinkedHashMap<>();
-        capabilities.put("textDocumentSync", 1L);
+        capabilities.put("textDocumentSync", Map.of("openClose", true, "change", 1L, "save", Map.of()));
         capabilities.put("documentFormattingProvider", true);
         capabilities.put("definitionProvider", true);
         capabilities.put("referencesProvider", true);
@@ -225,8 +240,8 @@ public final class Server {
     }
 
     /**
-     * Takes {@code {"width": ..., "strict": ..., "rules": [...]}}, each optional, the rules ids of those to lint with,
-     * all when absent or empty; the indent is the formatting request's {@code tabSize}.
+     * Takes {@code {"width": ..., "strict": ..., "rules": [...], "nixpkgs": {"expr": ...}}}, each optional, the rules
+     * ids of those to lint with, all when absent or empty; the indent is the formatting request's {@code tabSize}.
      */
     private void configure(Object settings) {
         if (!(settings instanceof Map<?, ?> s)) return;
@@ -236,6 +251,8 @@ public final class Server {
             rules = ids.isEmpty() ? EnumSet.allOf(Rule.class) : EnumSet.noneOf(Rule.class);
             for (Object id : ids) rules.add(Rule.byId((String) id));
         }
+        if (evaluator != null && s.get("nixpkgs") instanceof Map<?, ?> n && n.get("expr") instanceof String e)
+            evaluator.configure(e);
     }
 
     private void open(String uri, String text, List<Map<String, Object>> out) {
@@ -328,31 +345,82 @@ public final class Server {
         return Map.of("changes", Map.of(uri(params), edits));
     }
 
-    /** The attributes of {@code builtins} after {@code builtins.}, else the names in scope, globals and keywords. */
+    /**
+     * The attributes of {@code builtins} after {@code builtins.}, of nixpkgs after {@code pkgs.} and {@code lib.} unless
+     * bound otherwise than as a parameter, else the names in scope, globals and keywords.
+     */
     private Object completion(Map<?, ?> params) {
         Document document = document(params);
         SyntaxView<Node> view = document.tree().view();
         int offset = offset(document, params);
         List<Object> items = new ArrayList<>();
-        Set<String> local = new HashSet<>();
+        Map<String, Node> local = new HashMap<>();
         List<Object> scope = new ArrayList<>();
         for (Node definition : Scopes.visible(view, document.tree().at(offset))) {
             String name = Scopes.name(view, definition);
-            local.add(name);
+            local.putIfAbsent(name, definition);
             scope.add(Map.of("label", name, "kind", 6L));
         }
-        if (!local.contains("builtins") && afterBuiltins(document.text(), offset)) {
+        List<String> selection = selection(document.text(), offset);
+        if (evaluator != null && selection != null) {
+            String root = selection.getFirst();
+            Node definition = local.get(root);
+            if ((root.equals("pkgs") || root.equals("lib"))
+                    && (definition == null
+                            || definition.kind == NodeKind.FORMAL
+                            || definition.kind == NodeKind.PARAM)) {
+                List<String> path = new ArrayList<>(selection.subList(1, selection.size() - 1));
+                if (root.equals("lib")) path.addFirst("lib");
+                return attributes(evaluator.names(path), selection.getLast());
+            }
+        }
+        if (!local.containsKey("builtins") && afterBuiltins(document.text(), offset)) {
             for (String name : new TreeSet<>(Linter.BUILTINS)) items.add(builtin(name));
             return items;
         }
         items.addAll(scope);
-        for (String name : new TreeSet<>(Linter.GLOBALS)) if (!local.contains(name)) items.add(builtin(name));
+        for (String name : new TreeSet<>(Linter.GLOBALS)) if (!local.containsKey(name)) items.add(builtin(name));
         for (String keyword : KEYWORDS) items.add(Map.of("label", keyword, "kind", 14L));
         return items;
     }
 
     private static Map<String, Object> builtin(String name) {
         return Map.of("label", name, "kind", CONSTANTS.contains(name) ? 21L : 3L);
+    }
+
+    /** The names starting with {@code prefix}, incomplete while being evaluated or when there are too many. */
+    private static Map<String, Object> attributes(List<String> names, String prefix) {
+        List<Object> items = new ArrayList<>();
+        boolean incomplete = names == null;
+        if (names != null)
+            for (String name : names) {
+                if (!name.startsWith(prefix)) continue;
+                if (items.size() == MAX_ITEMS) {
+                    incomplete = true;
+                    break;
+                }
+                items.add(Map.of("label", name, "kind", 5L));
+            }
+        return Map.of("isIncomplete", incomplete, "items", items);
+    }
+
+    /** The names of {@code a.b.c} as the {@code c} at {@code offset} is typed, or null outside such a selection. */
+    private static List<String> selection(String text, int offset) {
+        List<String> names = new ArrayList<>();
+        int end = offset;
+        while (true) {
+            int start = end;
+            while (start > 0 && isNameChar(text.charAt(start - 1))) start--;
+            if (start == end && !names.isEmpty() || start < end && !isNameStart(text.charAt(start))) return null;
+            names.addFirst(text.substring(start, end));
+            if (start == 0 || text.charAt(start - 1) != '.') break;
+            end = start - 1;
+        }
+        return names.size() < 2 ? null : names;
+    }
+
+    private static boolean isNameStart(char c) {
+        return Character.isLetter(c) || c == '_';
     }
 
     /** Whether the name being typed at {@code offset} follows {@code builtins.}. */

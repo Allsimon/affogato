@@ -1,15 +1,76 @@
 package org.affogato.cli;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import org.affogato.Session;
+import org.affogato.lsp.Evaluator;
 import org.affogato.lsp.Server;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
 
 @Command(name = "lsp", description = "Run a language server for Nix over stdin and stdout.")
 public final class Lsp implements Callable<Integer> {
+    private static final long WAIT_MILLIS = 200;
+
+    @Option(
+            names = "--nixpkgs",
+            paramLabel = "EXPR",
+            description = "Complete pkgs and lib from this expression (default: ${DEFAULT-VALUE}).")
+    String nixpkgs = "import <nixpkgs> { }";
+
     @Override
     public Integer call() throws IOException {
-        Server.serve(System.in, System.out);
+        try (Session session = new Session("", "", "", nixpkgs, System.getProperty("user.dir"))) {
+            Server.serve(System.in, System.out, new Nixpkgs(session, nixpkgs));
+        }
         return 0;
+    }
+
+    private static final class Nixpkgs implements Evaluator {
+        private final Session session;
+        private String expression;
+
+        Nixpkgs(Session session, String expression) {
+            this.session = session;
+            this.expression = expression;
+            prefetch();
+        }
+
+        private void prefetch() {
+            session.names(List.of());
+            session.names(List.of("lib"));
+        }
+
+        @Override
+        public List<String> names(List<String> path) {
+            try {
+                return session.names(path).get(WAIT_MILLIS, TimeUnit.MILLISECONDS);
+            } catch (TimeoutException e) {
+                return null;
+            } catch (ExecutionException e) {
+                return List.of();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+
+        @Override
+        public void configure(String expression) {
+            if (expression.equals(this.expression)) return;
+            this.expression = expression;
+            session.configure(expression, System.getProperty("user.dir"));
+            prefetch();
+        }
+
+        @Override
+        public void reset() {
+            session.reset();
+            prefetch();
+        }
     }
 }

@@ -38,7 +38,7 @@ public final class Interpreter {
      */
     public record Options(String nixPath, String system, String storeDir, Output output, String attr, List<Arg> args) {}
 
-    private static final long STACK_SIZE = 1L << 30;
+    static final long STACK_SIZE = 1L << 30;
 
     private Interpreter() {}
 
@@ -155,7 +155,7 @@ public final class Interpreter {
     }
 
     /** Port of {@code EvalState::autoCallFunction}. */
-    private static Object autoCall(Object v, Map<String, Object> args) {
+    static Object autoCall(Object v, Map<String, Object> args) {
         v = Thunk.force(v);
         if (v instanceof NixAttrs a && a.has("__functor")) {
             Object f = Apply.apply(a.get("__functor"), a);

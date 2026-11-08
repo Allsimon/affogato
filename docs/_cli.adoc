@@ -32,8 +32,9 @@ the same parser as the other commands. It answers with:
 * formatting, indented by the request's `tabSize`;
 * go to definition, find references, document highlight, and rename, which
   refuses up front a name that is not defined in the file, such as a builtin;
-* completion of the names in scope, the builtins and the keywords, and of the
-  attributes of `builtins` after `builtins.`;
+* completion of the names in scope, the builtins and the keywords, of the
+  attributes of `builtins` after `builtins.`, and of those of nixpkgs after
+  `pkgs.` and `lib.`, unless the file binds them otherwise than as a parameter;
 * document symbols, folding ranges, selection ranges and semantic tokens;
 * links on the paths without interpolation, the URIs, and the strings that are
   an http or https URL;
@@ -48,7 +49,12 @@ the same parser as the other commands. It answers with:
 
 The `affogato` section of the `workspace/didChangeConfiguration` settings, or
 the `initializationOptions`, may set the `width`, `strict`, and the `rules` to
-lint with, a list of ids, all when empty.
+lint with, a list of ids, all when empty, and `nixpkgs.expr`, the expression
+nixpkgs is evaluated from, `import <nixpkgs> { }` unless `--nixpkgs` says
+otherwise. The server evaluates it on a thread of its own as it starts, keeps
+the values, and evaluates it again after a file is saved; a completion that
+waits for it more than 200 ms comes back marked incomplete, so that the editor
+asks again.
 
 An editor runs it as any server, as Neovim does with:
 

@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.List;
 import org.affogato.EvalException;
 import org.affogato.Interpreter;
+import org.affogato.Session;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -33,6 +34,25 @@ class InterpreterTest {
         assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("1");
         Files.writeString(file, "2");
         assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("2");
+    }
+
+    @Test
+    void keepsASessionsValuesUntilReset(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("a.nix");
+        Files.writeString(file, "{ }: { a = { c = 1; b = throw \"x\"; }; f = { x ? 1 }: { y = x; }; }");
+        try (Session session = new Session("", "", "", "import " + file, dir.toString())) {
+            assertThat(session.names(List.of()).get()).containsExactly("a", "f");
+            assertThat(session.names(List.of("a")).get()).containsExactly("b", "c");
+            assertThat(session.names(List.of("f")).get()).containsExactly("y");
+            assertThat(session.names(List.of("a", "b")).get()).isEmpty();
+            assertThat(session.names(List.of("z")).get()).isEmpty();
+            Files.writeString(file, "{ g = 1; }");
+            assertThat(session.names(List.of()).get()).containsExactly("a", "f");
+            session.reset();
+            assertThat(session.names(List.of()).get()).containsExactly("g");
+            session.configure("{ h = 1; }", dir.toString());
+            assertThat(session.names(List.of()).get()).containsExactly("h");
+        }
     }
 
     @Test
