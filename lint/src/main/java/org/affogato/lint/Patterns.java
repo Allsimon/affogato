@@ -259,8 +259,8 @@ final class Patterns {
         List<Edit> edits = new ArrayList<>();
         int previous = start;
         for (Assign a : as) {
-            int from = a == first ? Nodes.start(a) : leadingComments(Nodes.start(a));
-            int to = trailingComment(a.semi().end());
+            int from = a == first ? Nodes.start(a) : Text.leadingComments(src, Nodes.start(a));
+            int to = Text.trailingComment(src, a.semi().end());
             if (a != first && blankBefore(from)) sb.append('\n');
             sb.append(outer)
                     .append("  ")
@@ -305,29 +305,6 @@ final class Patterns {
     /** What precedes {@code at} on its line. */
     private String indent(int at) {
         return src.substring(src.lastIndexOf('\n', at - 1) + 1, at);
-    }
-
-    /** The start of the comment lines right above the line of {@code at}, else {@code at}. */
-    private int leadingComments(int at) {
-        int from = at;
-        int lineStart = src.lastIndexOf('\n', at - 1) + 1;
-        while (lineStart > 0) {
-            int prev = src.lastIndexOf('\n', lineStart - 2) + 1;
-            String line = src.substring(prev, lineStart - 1).strip();
-            if (!line.startsWith("#")) break;
-            from = prev + src.substring(prev).indexOf('#');
-            lineStart = prev;
-        }
-        return from;
-    }
-
-    /** The end of a {@code #} comment that follows {@code at} on its line, else {@code at}. */
-    private int trailingComment(int at) {
-        int i = at;
-        while (i < src.length() && (src.charAt(i) == ' ' || src.charAt(i) == '\t')) i++;
-        if (i == src.length() || src.charAt(i) != '#') return at;
-        int end = src.indexOf('\n', i);
-        return end < 0 ? src.length() : end;
     }
 
     /** The source between {@code start} and {@code end}, its lines indented by two more spaces. */
