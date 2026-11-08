@@ -16,11 +16,12 @@ import org.affogato.runtime.Coerce;
 import org.affogato.runtime.NixAttrs;
 import org.affogato.runtime.NixLambda;
 import org.affogato.runtime.NixList;
+import org.affogato.runtime.NixNull;
 import org.affogato.runtime.NixPath;
 import org.affogato.runtime.NixString;
+import org.affogato.runtime.PrimOp;
 import org.affogato.runtime.Source;
 import org.affogato.runtime.SourceSection;
-import org.affogato.runtime.Thunk;
 
 /**
  * Turns the AST into nodes, resolving variables statically.
@@ -278,7 +279,11 @@ public final class Translator {
             if (sc.withSlot() >= 0) withs.add(new int[] {depth, sc.withSlot()});
         }
         Object g = globals.get(name);
-        if (g != null) return g instanceof Thunk t ? new ForceNode(new ConstantNode(t)) : new ConstantNode(g);
+        if (g != null) {
+            return g instanceof PrimOp || g instanceof Boolean || g instanceof NixNull || g instanceof Long
+                    ? new ConstantNode(g)
+                    : new GlobalNode(name);
+        }
         if (withs.isEmpty())
             throw new ParseException(
                     "undefined variable '" + name + "'", v.pos().start());

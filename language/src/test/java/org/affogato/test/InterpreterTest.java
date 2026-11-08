@@ -65,6 +65,17 @@ class InterpreterTest {
     }
 
     @Test
+    void sharesTranslatedFilesAcrossContextsWithTheirOwnGlobals(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("a.nix");
+        Files.writeString(file, "[ builtins.storeDir __storeDir (builtins.isFunction derivation) ]");
+        for (String store : List.of("/a", "/b", "/a")) {
+            var options = new Interpreter.Options("", "x86_64-linux", store, Interpreter.Output.JSON, "", List.of());
+            assertThat(Interpreter.evaluate(options, null, "import " + file, 0))
+                    .isEqualTo("[\"" + store + "\",\"" + store + "\",true]");
+        }
+    }
+
+    @Test
     void stopsAtTheTimeout() {
         long start = System.nanoTime();
         assertThatThrownBy(() -> eval(

@@ -47,8 +47,7 @@ public final class Derivations {
     private static final AtermWriter ATERM = new AtermWriter(Hashes.digest("sha256"));
 
     static void register(Builtins b) {
-        NixContext ctx = b.ctx;
-        b.add("derivationStrict", 1, a -> derivationStrict(ctx, Types.attrs(a[0])));
+        b.add("derivationStrict", 1, a -> derivationStrict(NixContext.get(), Types.attrs(a[0])));
         b.add("convertHash", 1, a -> {
             NixAttrs args = Types.attrs(a[0]);
             Object hashV = args.get("hash");
@@ -67,7 +66,6 @@ public final class Derivations {
                         default -> throw new NixException("unknown hash format '" + Types.string(formatV).value + "'");
                     });
         });
-        b.values.put("derivation", new Thunk(() -> ctx.importFile(COREPKGS + "derivation.nix")));
     }
 
     private static NixException error(String drvName, String msg) {

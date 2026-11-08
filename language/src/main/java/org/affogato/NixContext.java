@@ -87,9 +87,14 @@ public final class NixContext {
 
     private NixRootNode parse(String content, String fileName, String baseDir, String[] scopeNames, boolean cached) {
         Source source = new Source(fileName, content);
-        Ast.Expr expr;
         try {
-            expr = cached ? ParseCache.parse(fileName, content) : Parser.parse(content);
+            if (cached && scopeNames.length == 0) {
+                return ParseCache.translate(
+                        fileName,
+                        content,
+                        ast -> Translator.translate(source, ast, fileName, baseDir, globals, scopeNames));
+            }
+            Ast.Expr expr = cached ? ParseCache.parse(fileName, content) : Parser.parse(content);
             return Translator.translate(source, expr, fileName, baseDir, globals, scopeNames);
         } catch (ParseException e) {
             var sec = source.createSection(Math.min(e.offset, source.getLength()), 0);

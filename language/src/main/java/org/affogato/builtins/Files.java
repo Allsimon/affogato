@@ -25,7 +25,6 @@ final class Files {
     }
 
     static void register(Builtins b) {
-        NixContext ctx = b.ctx;
         b.add("pathExists", 1, a -> {
             Object v = Thunk.force(a[0]);
             String s = realPath(v);
@@ -52,6 +51,7 @@ final class Files {
         b.add("toPath", 1, a -> new NixString(realPath(a[0])));
         b.add("storePath", 1, a -> {
             String p = realPath(a[0]);
+            NixContext ctx = NixContext.get();
             if (!p.startsWith(ctx.storeDir + "/")) throw new NixException("path '" + p + "' is not in the Nix store");
             String root = storePathRoot(ctx, p);
             return new NixString(p, Set.of(root));
@@ -61,7 +61,7 @@ final class Files {
             String out = Types.string(a[0]).value;
             return new NixString("/" + NixBase32.encode(Hashes.sha256("nix-output:" + out)));
         });
-        b.add("findFile", 2, a -> findFile(ctx, Types.list(a[0]), Types.string(a[1]).value));
+        b.add("findFile", 2, a -> findFile(NixContext.get(), Types.list(a[0]), Types.string(a[1]).value));
         b.add("toFile", 2, a -> {
             String name = Types.string(a[0]).value;
             NixString contents = Types.string(a[1]);
@@ -76,10 +76,10 @@ final class Files {
                 }
             }
             checkName(name);
-            String p = StorePaths.text(ctx.storeDir, name, contents.value, refs);
+            String p = StorePaths.text(NixContext.get().storeDir, name, contents.value, refs);
             return new NixString(p, Set.of(p));
         });
-        b.add("filterSource", 2, a -> addPath(ctx, realPath(a[1]), null, a[0], true, null));
+        b.add("filterSource", 2, a -> addPath(NixContext.get(), realPath(a[1]), null, a[0], true, null));
         b.add("path", 1, a -> {
             NixAttrs args = Types.attrs(a[0]);
             Object pathV = args.get("path");
@@ -90,7 +90,7 @@ final class Files {
             Object rec = args.get("recursive");
             Object sha = args.get("sha256");
             return addPath(
-                    ctx,
+                    NixContext.get(),
                     realPath(pathV),
                     name == null ? null : Types.string(name).value,
                     filter,

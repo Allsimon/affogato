@@ -36,12 +36,12 @@ public final class Builtins {
 
     public static final String NIX_VERSION = "2.34.9";
 
-    final NixContext ctx;
     final TreeMap<String, Object> values = new TreeMap<>();
 
-    private Builtins(NixContext ctx) {
-        this.ctx = ctx;
-    }
+    /** Context-free, so translated files can be shared across contexts; created once so that each has one identity. */
+    private static final TreeMap<String, Object> PRIMOPS = primOps();
+
+    private Builtins() {}
 
     void add(String name, int arity, PrimOp.Impl impl) {
         values.put(name, new PrimOp(name, arity, impl));
@@ -51,8 +51,8 @@ public final class Builtins {
         values.put(name, value);
     }
 
-    public static void install(NixContext ctx) {
-        Builtins b = new Builtins(ctx);
+    private static TreeMap<String, Object> primOps() {
+        Builtins b = new Builtins();
         b.core();
         b.types();
         b.arithmetic();
@@ -65,7 +65,13 @@ public final class Builtins {
         Files.register(b);
         Context.register(b);
         Derivations.register(b);
+        return b.values;
+    }
 
+    public static void install(NixContext ctx) {
+        Builtins b = new Builtins();
+        b.values.putAll(PRIMOPS);
+        b.constants(ctx);
         TreeMap<String, Object> withSelf = new TreeMap<>(b.values);
         withSelf.put("builtins", null);
         Object[] vals = new Object[withSelf.size()];
@@ -90,7 +96,7 @@ public final class Builtins {
         STDERR.println(message);
     }
 
-    private void core() {
+    private void constants(NixContext ctx) {
         constant("true", true);
         constant("false", false);
         constant("null", NixNull.INSTANCE);
@@ -107,6 +113,10 @@ public final class Builtins {
             np[i] = NixAttrs.of(m);
         }
         constant("nixPath", new NixList(np));
+        constant("derivation", new Thunk(() -> ctx.importFile(Derivations.COREPKGS + "derivation.nix")));
+    }
+
+    private void core() {
 
         add("abort", 1, a -> {
             String msg = Coerce.toNixString(a[0], false, false).value;
@@ -115,8 +125,8 @@ public final class Builtins {
         add("throw", 1, a -> {
             throw catchable(Coerce.toNixString(a[0], false, false).value);
         });
-        add("import", 1, a -> ctx.importFile(Files.realPath(a[0])));
-        add("scopedImport", 2, a -> ctx.scopedImport(Types.attrs(a[0]), Files.realPath(a[1])));
+        add("import", 1, a -> NixContext.get().importFile(Files.realPath(a[0])));
+        add("scopedImport", 2, a -> NixContext.get().scopedImport(Types.attrs(a[0]), Files.realPath(a[1])));
         add("seq", 2, a -> {
             Thunk.force(a[0]);
             return a[1];
