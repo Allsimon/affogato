@@ -9,6 +9,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import org.affogato.runtime.Apply;
 import org.affogato.runtime.NixAttrs;
 import org.affogato.runtime.NixException;
@@ -93,6 +94,8 @@ public final class Session implements AutoCloseable {
     private boolean options;
 
     private volatile BiConsumer<String, String> failures = (root, message) -> {};
+
+    private volatile Predicate<String> inputs;
 
     /** One expression, queried by {@link #names(List)} and {@link #describe(List)}. */
     public Session(String nixPath, String system, String storeDir, String expression, String baseDir) {
@@ -182,6 +185,11 @@ public final class Session implements AutoCloseable {
         return true;
     }
 
+    /** Lets {@code inputs} copy into the store the locked flake inputs missing from it, as in {@link NixContext#inputs}. */
+    public void inputs(Predicate<String> inputs) {
+        this.inputs = inputs;
+    }
+
     /**
      * Tells {@code failures} the name and the error of each root, or view of its arguments, whose evaluation fails,
      * once until the next {@link #reset}; queries of it then answer as if it were empty.
@@ -212,6 +220,7 @@ public final class Session implements AutoCloseable {
         try {
             if (ctx == null) {
                 ctx = new NixContext(storeDir, system, nixPath);
+                ctx.inputs = inputs;
                 values.clear();
             }
             ctx.enter();

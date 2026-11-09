@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import org.affogato.builtins.Builtins;
 import org.affogato.builtins.Derivations;
 import org.affogato.nodes.NixRootNode;
@@ -33,6 +34,12 @@ public final class NixContext {
     public int callDepth;
     /** Set from another thread to stop the evaluation at its next function call. */
     public volatile boolean cancelled;
+
+    /**
+     * Copies a locked flake reference missing from the store into it, as Nix's own fetch cache may hold it, and tells
+     * whether it did; null where the evaluator only reads the store.
+     */
+    public volatile Predicate<String> inputs;
 
     public final String storeDir;
     public final String system;

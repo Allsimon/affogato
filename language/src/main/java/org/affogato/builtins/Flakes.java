@@ -21,8 +21,8 @@ import org.affogato.store.Hashes;
 import org.affogato.store.StorePaths;
 
 /**
- * Flakes as far as an evaluator that neither fetches nor writes the store can take them: locked inputs already in the
- * store, and local flakes read in place.
+ * Flakes as far as an evaluator that does not fetch can take them: locked inputs in the store, or copied there by
+ * {@link NixContext#inputs}, and local flakes read in place.
  */
 final class Flakes {
     private static final DateTimeFormatter DATE =
@@ -51,6 +51,8 @@ final class Flakes {
         String path = StorePaths.fixedOutput(
                 ctx.storeDir, "source", "sha256", Hashes.base64Decode(narHash.substring(7)), true);
         TreeMap<String, Object> tree = new TreeMap<>();
+        String ref = ctx.inputs == null || Files.exists(Path.of(path)) ? null : reference(input);
+        if (ref != null) ctx.inputs.test(ref);
         if (Files.exists(Path.of(path))) {
             tree.put("outPath", new NixString(path, new TreeSet<>(Set.of(path))));
         } else if ("path".equals(string(input, "type"))
@@ -131,6 +133,31 @@ final class Flakes {
         return Thunk.force(Apply.apply(
                 Apply.apply(call, new NixString(lock), overrides),
                 ctx.builtins().get("fetchTree")));
+    }
+
+    /** The flake reference of a locked input, or null for a type it does not cover. */
+    static String reference(NixAttrs input) {
+        String type = string(input, "type");
+        String rev = string(input, "rev");
+        String url = string(input, "url");
+        if (type == null) return null;
+        return switch (type) {
+            case "github", "gitlab", "sourcehut" -> {
+                String owner = string(input, "owner");
+                String repo = string(input, "repo");
+                String host = string(input, "host");
+                yield owner == null || repo == null || rev == null
+                        ? null
+                        : type + ":" + owner + "/" + repo + "/" + rev + (host == null ? "" : "?host=" + host);
+            }
+            case "git" ->
+                url == null || rev == null
+                        ? null
+                        : (url.startsWith("git+") ? url : "git+" + url) + (url.contains("?") ? "&" : "?") + "rev="
+                                + rev;
+            case "tarball", "file" -> url == null ? null : type + "+" + url;
+            default -> null;
+        };
     }
 
     private static String describe(NixAttrs input) {

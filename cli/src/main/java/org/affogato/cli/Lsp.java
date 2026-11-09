@@ -30,6 +30,7 @@ public final class Lsp implements Callable<Integer> {
                 System.getProperty("user.dir"),
                 "",
                 SessionEvaluator::printConfig)) {
+            evaluator.inputs(SessionEvaluator::copyInput);
             Server.serve(System.in, System.out, evaluator.main());
         }
         return 0;

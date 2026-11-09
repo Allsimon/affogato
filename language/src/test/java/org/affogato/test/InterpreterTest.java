@@ -52,6 +52,18 @@ class InterpreterTest {
     }
 
     @Test
+    void asksToCopyAMissingLockedInput(@TempDir Path dir) throws Exception {
+        List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        String input = "builtins.fetchTree { type = \"github\"; owner = \"o\"; repo = \"r\"; rev = \"abc\"; "
+                + "narHash = \"sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\"; }";
+        try (Session session = new Session("", "", "", "{ src = (" + input + ").outPath; }", dir.toString())) {
+            session.inputs(ref -> asked.add(ref) && false);
+            assertThat(session.describe(List.of("src")).get().type()).isEqualTo("error");
+            assertThat(asked).containsExactly("github:o/r/abc");
+        }
+    }
+
+    @Test
     void keepsASessionsValuesUntilReset(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("a.nix");
         Files.writeString(file, "{ }: { a = { c = 1; b = throw \"x\"; }; f = { x ? 1 }: { y = x; }; }");
