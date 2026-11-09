@@ -21,28 +21,21 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 import org.affogato.format.Formatter;
 import org.affogato.lint.Diagnostic;
 import org.affogato.lint.Edit;
 import org.affogato.lint.Linter;
 import org.affogato.lint.Rule;
 import org.affogato.lint.Suppressions;
-import org.affogato.parser.Bindings;
 import org.affogato.parser.Highlighter;
 import org.affogato.parser.Injections;
-import org.affogato.parser.Lexeme;
 import org.affogato.parser.NodeKind;
-import org.affogato.parser.Quotes;
-import org.affogato.parser.Scopes;
 import org.affogato.parser.SyntaxTree;
 import org.affogato.parser.SyntaxTree.Node;
 import org.affogato.parser.SyntaxView;
-import org.affogato.parser.Tokenizer;
 
 /** A language server for Nix, speaking JSON-RPC with {@code Content-Length} framing, as the protocol has it. */
 public final class Server {
@@ -67,35 +60,16 @@ public final class Server {
             "property",
             "parameter");
 
-    private static final List<String> KEYWORDS =
-            List.of("assert", "else", "if", "in", "inherit", "let", "or", "rec", "then", "with");
-
-    private static final Pattern IDENTIFIER = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_'-]*");
-
-    private static final Map<String, String> SNIPPETS = snippets(
-            "let … in", "let\n  ${1:name} = ${2:value};\nin\n${0}",
-            "if … then … else", "if ${1:condition} then ${2} else ${0}",
-            "with …;", "with ${1:pkgs}; ${0}",
-            "inherit (…) …;", "inherit (${1:set}) ${0};",
-            "assert …;", "assert ${1:condition}; ${0}",
-            "rec { … }", "rec {\n  ${0}\n}");
-
-    private static final int GROUP_NAMES = 50;
-
     private static final int BATCH = 64;
 
     private static final int WORKSPACE_FILES = 20_000;
 
     private static final Set<String> SKIPPED = Set.of("node_modules", "result", "target");
 
-    private static final Set<String> CONSTANTS = Set.of("true", "false", "null");
-
-    private static final Pattern URL = Pattern.compile("https?://[^\\s\\\\]+");
-
     private static final Set<NodeKind> FOLDED =
             Set.of(NodeKind.ATTR_SET, NodeKind.LIST, NodeKind.LET, NodeKind.IND_STRING);
 
-    private static final int MAX_ITEMS = 1000;
+    private static final Map<String, Object> ORIGIN = Map.of("line", 0L, "character", 0L);
 
     private final Map<String, Document> documents = new HashMap<>();
     private final Evaluator evaluator;
@@ -347,9 +321,9 @@ public final class Server {
             case "textDocument/prepareRename" -> prepareRename(params);
             case "textDocument/rename" -> rename(params);
             case "textDocument/completion" -> {
-                Evaluator scoped = evaluator(uri(params));
-                Object completion = completion(params, scoped);
-                yield scoped == evaluator ? completion : withUri(completion, uri(params));
+                Analysis analysis = analysis(params);
+                Object completion = completion(analysis.completion(offset(document(params), params), snippetSupport));
+                yield analysis.evaluator() == evaluator ? completion : withUri(completion, uri(params));
             }
             case "completionItem/resolve" -> resolve(params);
             case "textDocument/hover" -> hover(params);
@@ -486,11 +460,8 @@ public final class Server {
     }
 
     private String formatted(Document document, Map<?, ?> params) {
-        int indent = params.get("options") instanceof Map<?, ?> o && o.get("tabSize") instanceof Long t
-                ? (int) (long) t
-                : Formatter.DEFAULT_INDENT;
         try {
-            return Formatter.format(document.text(), width, indent, strict);
+            return Formatter.format(document.text(), width, indent(params), strict);
         } catch (RuntimeException e) {
             return null;
         }
@@ -503,204 +474,75 @@ public final class Server {
         return List.of(Map.of("range", document.lines().range(0, document.text().length()), "newText", formatted));
     }
 
-    /**
-     * The formatting of the bindings the range touches, or of the whole file outside any: the file is formatted
-     * whole, and the bindings found again in it by the position of their first and last tokens.
-     */
+    private static int indent(Map<?, ?> params) {
+        return params.get("options") instanceof Map<?, ?> o && o.get("tabSize") instanceof Long t
+                ? (int) (long) t
+                : Formatter.DEFAULT_INDENT;
+    }
+
+    /** The formatting of the bindings the range touches, or of the whole file outside any. */
     private Object rangeFormatting(Document document, Map<?, ?> params) {
         Map<?, ?> range = (Map<?, ?>) params.get("range");
         int start = document.lines().offset((Map<?, ?>) range.get("start"));
-        int end = Math.max(start, document.lines().offset((Map<?, ?>) range.get("end")));
-        String formatted = formatted(document, params);
-        if (formatted == null) return null;
-        SyntaxTree tree = document.tree();
-        Node node = tree.at(start);
-        while (node.parent() != null && node.end() < end) node = node.parent();
-        Node binding = node;
-        while (binding != null && binding.kind != NodeKind.BINDING && binding.kind != NodeKind.INHERIT)
-            binding = binding.parent();
-        int from = 0;
-        int to = document.text().length();
-        if (binding != null) {
-            from = binding.start();
-            to = binding.end();
-        } else {
-            List<Node> touched = node.children().stream()
-                    .filter(c -> (c.kind == NodeKind.BINDING || c.kind == NodeKind.INHERIT)
-                            && c.end() > start
-                            && c.start() < end)
-                    .toList();
-            if (!touched.isEmpty()) {
-                from = touched.getFirst().start();
-                to = touched.getLast().end();
-            }
-        }
-        if (from == 0 && to == document.text().length())
-            return formatted.equals(document.text())
-                    ? List.of()
-                    : List.of(Map.of("range", document.lines().range(0, to), "newText", formatted));
-        List<Node> before = tokens(tree);
-        List<Node> after = tokens(SyntaxTree.parse(formatted));
-        if (before.size() != after.size()) return null;
-        int first = -1;
-        int last = -1;
-        for (int i = 0; i < before.size(); i++) {
-            if (before.get(i).token != after.get(i).token) return null;
-            if (before.get(i).start() == from) first = i;
-            if (before.get(i).end() == to) last = i;
-        }
-        if (first < 0 || last < 0) return null;
-        from = lineStart(document.text(), from);
-        int newFrom = lineStart(formatted, after.get(first).start());
-        if ((from == before.get(first).start()) != (newFrom == after.get(first).start())) {
-            from = before.get(first).start();
-            newFrom = after.get(first).start();
-        }
-        String text = formatted.substring(newFrom, after.get(last).end());
-        if (text.equals(document.text().substring(from, to))) return List.of();
-        return List.of(Map.of("range", document.lines().range(from, to), "newText", text));
+        int end = document.lines().offset((Map<?, ?>) range.get("end"));
+        Analysis.Rewrite rewrite = Analysis.formatRange(document.text(), start, end, width, indent(params), strict);
+        if (rewrite == null) return null;
+        if (rewrite.text().equals(document.text().substring(rewrite.start(), rewrite.end()))) return List.of();
+        return List.of(
+                Map.of("range", document.lines().range(rewrite.start(), rewrite.end()), "newText", rewrite.text()));
     }
 
-    /** {@code offset}'s line start when only blanks precede it on its line, else {@code offset}. */
-    private static int lineStart(String text, int offset) {
-        int i = offset;
-        while (i > 0 && (text.charAt(i - 1) == ' ' || text.charAt(i - 1) == '\t')) i--;
-        return i == 0 || text.charAt(i - 1) == '\n' ? i : offset;
+    private Analysis analysis(Map<?, ?> params) {
+        Document document = document(params);
+        return new Analysis(path(uri(params)), document.text(), document.tree(), evaluator, trees);
     }
 
-    private static List<Node> tokens(SyntaxTree tree) {
-        List<Node> tokens = new ArrayList<>();
-        collect(tree.root(), n -> {
-            if (n.token != null && n.end() > n.start()) tokens.add(n);
-        });
-        return tokens;
+    /** The files of the workspace, read from the editor when open. */
+    private final Analysis.Workspace trees = new Analysis.Workspace() {
+        @Override
+        public SyntaxTree tree(String path) {
+            Document document = workspaceDocument(path);
+            return document == null ? null : document.tree();
+        }
+
+        @Override
+        public Map<String, SyntaxTree> files() {
+            Map<String, SyntaxTree> files = new LinkedHashMap<>();
+            workspace().forEach((path, document) -> files.put(path, document.tree()));
+            return files;
+        }
+    };
+
+    /** The location of {@code span}, in the document at {@code uri} when it names no file. */
+    private Map<String, Object> location(String uri, Document document, Analysis.Span span) {
+        if (span.path() == null)
+            return Map.of("uri", uri, "range", document.lines().range(span.start(), span.end()));
+        Document target = span.end() == 0 ? null : workspaceDocument(span.path());
+        Map<String, Object> range = target != null
+                ? target.lines().range(span.start(), span.end())
+                : Map.of("start", ORIGIN, "end", ORIGIN);
+        return Map.of("uri", file(span.path()), "range", range);
     }
 
     private Object definition(Map<?, ?> params) {
         Document document = document(params);
-        Node path = document.tree().at(offset(document, params)).parent();
-        String target = path == null ? null : pathTarget(document.tree(), path, URI.create(uri(params)));
-        if (target != null) {
-            Map<String, Object> start = Map.of("line", 0L, "character", 0L);
-            return Map.of("uri", file(target), "range", Map.of("start", start, "end", start));
-        }
-        Node definition = definitionAt(document, offset(document, params));
-        if (definition != null) return location(uri(params), document, nameToken(definition));
-        Node attribute = selectedAttribute(document, offset(document, params));
-        if (attribute == null) attribute = withAttribute(document, offset(document, params));
-        if (attribute != null) return location(uri(params), document, attribute);
-        Imports.Attribute imported = importedAt(document, params);
-        if (imported == null || imported.file().equals(path(uri(params)))) return null;
-        Document declared = workspaceDocument(imported.file());
-        List<Node> declarations = declared == null ? List.of() : Imports.declarations(declared.tree(), imported.name());
-        return declarations.isEmpty() ? null : location(file(imported.file()), declared, declarations.getFirst());
-    }
-
-    /** Where the set literal of the innermost {@code with} that has it binds the variable at {@code offset}. */
-    private static Node withAttribute(Document document, int offset) {
-        SyntaxTree tree = document.tree();
-        Node var = tree.at(offset).parent();
-        if (var == null || var.kind != NodeKind.VAR) return null;
-        String name = tree.text(var);
-        if (Linter.GLOBALS.contains(name) || Scopes.resolve(tree.view(), name, var) != null) return null;
-        LocalSets sets = new LocalSets(tree);
-        for (Node with : LocalSets.withs(var)) {
-            Map<String, Node> names = sets.attributes(with.children().stream()
-                    .filter(c -> c.token == null)
-                    .findFirst()
-                    .orElseThrow());
-            if (names != null && names.containsKey(name)) return names.get(name);
-        }
-        return null;
-    }
-
-    /** Where a local set literal binds the attribute a selection names at {@code offset}, as {@code a} in {@code x.a}. */
-    private static Node selectedAttribute(Document document, int offset) {
-        SyntaxTree tree = document.tree();
-        Node segment = tree.at(offset);
-        while (segment != null && segment.kind != NodeKind.ATTR_NAME && segment.kind != NodeKind.STRING)
-            segment = segment.parent();
-        Node path = segment == null ? null : segment.parent();
-        Node select = path == null ? null : path.parent();
-        if (select == null
-                || path.kind != NodeKind.ATTR_PATH
-                || select.kind != NodeKind.SELECT && select.kind != NodeKind.HAS_ATTR) return null;
-        Node expr = select.children().getFirst();
-        if (expr.kind != NodeKind.VAR) return null;
-        LocalSets sets = new LocalSets(tree);
-        List<String> names = new ArrayList<>();
-        for (Node child : path.children()) {
-            if (child == segment) break;
-            if (child.kind == null) continue;
-            String name = sets.name(child);
-            if (name == null) return null;
-            names.add(name);
-        }
-        Map<String, Node> attributes = sets.attributes(Scopes.resolve(tree.view(), tree.text(expr), expr), names);
-        String name = sets.name(segment);
-        return attributes == null || name == null ? null : attributes.get(name);
+        Analysis.Span span = analysis(params).definition(offset(document, params));
+        return span == null ? null : location(uri(params), document, span);
     }
 
     private Object references(Map<?, ?> params) {
         Document document = document(params);
-        Node definition = definitionAt(document, offset(document, params));
         boolean declaration =
                 params.get("context") instanceof Map<?, ?> c && Boolean.TRUE.equals(c.get("includeDeclaration"));
         Set<Object> locations = new LinkedHashSet<>();
-        if (definition != null)
-            for (Node use : uses(document, definition, declaration))
-                locations.add(location(uri(params), document, use));
-        Imports.Attribute attribute = importedAt(document, params);
-        if (attribute != null)
-            for (Map.Entry<String, List<Node>> uses :
-                    importedUses(attribute, declaration).entrySet())
-                for (Node use : uses.getValue())
-                    locations.add(location(file(uses.getKey()), workspaceDocument(uses.getKey()), use));
+        for (Analysis.Span span : analysis(params).references(offset(document, params), declaration))
+            locations.add(location(uri(params), document, span));
         return List.copyOf(locations);
-    }
-
-    /** The attribute of a file that the name at the position declares or selects through an {@code import}. */
-    private Imports.Attribute importedAt(Document document, Map<?, ?> params) {
-        String path = path(uri(params));
-        Node token = document.tree().at(offset(document, params));
-        if (path == null || token.token != Lexeme.Kind.ID) return null;
-        return Imports.at(document.tree(), path, token);
-    }
-
-    /** Each file of the workspace with its selections of {@code attribute}, and its declarations if asked. */
-    private Map<String, List<Node>> importedUses(Imports.Attribute attribute, boolean declaration) {
-        Map<String, List<Node>> uses = new LinkedHashMap<>();
-        if (declaration) {
-            Document target = workspaceDocument(attribute.file());
-            if (target != null)
-                uses.put(attribute.file(), new ArrayList<>(Imports.declarations(target.tree(), attribute.name())));
-        }
-        for (Map.Entry<String, Document> file : workspace().entrySet()) {
-            if (!file.getValue().text().contains("import")) continue;
-            List<Node> found = Imports.uses(file.getValue().tree(), file.getKey(), attribute);
-            if (!found.isEmpty())
-                uses.computeIfAbsent(file.getKey(), k -> new ArrayList<>()).addAll(found);
-        }
-        return uses;
-    }
-
-    /** The root of the devenv project the document at {@code uri} is a module of, or null. */
-    private String devenvRoot(String uri) {
-        String path = evaluator == null ? null : path(uri);
-        return path == null
-                ? null
-                : Devenv.root(path, file -> {
-                    Document document = workspaceDocument(file);
-                    return document == null ? null : document.tree();
-                });
     }
 
     /** The evaluator for the document at {@code uri}: that of its devenv project when it is one of its modules. */
     private Evaluator evaluator(String uri) {
-        String root = devenvRoot(uri);
-        if (root == null) return evaluator;
-        String options = evaluator.devenvOptions(root);
-        return evaluator.project("devenv:" + root, options == null ? Map.of() : Map.of(Devenv.OPTIONS, options));
+        return Analysis.scoped(evaluator, path(uri), trees);
     }
 
     /** The completion items with the {@code uri} of their project's document in their {@code data}. */
@@ -789,216 +631,76 @@ public final class Server {
     /** The definition as a write, its uses as reads. */
     private Object highlights(Map<?, ?> params) {
         Document document = document(params);
-        Node definition = definitionAt(document, offset(document, params));
-        if (definition == null) return List.of();
-        Node name = nameToken(definition);
+        Analysis.Uses uses = analysis(params).uses(offset(document, params));
+        if (uses == null) return List.of();
         List<Object> highlights = new ArrayList<>();
-        for (Node use : uses(document, definition, true))
-            highlights.add(
-                    Map.of("range", document.lines().range(use.start(), use.end()), "kind", use == name ? 3L : 2L));
+        for (Node use : uses.uses())
+            highlights.add(Map.of(
+                    "range",
+                    document.lines().range(use.start(), use.end()),
+                    "kind",
+                    use == uses.definition() ? 3L : 2L));
         return highlights;
     }
 
     /** The name under the cursor, or null where there is nothing to rename, as on a builtin. */
     private Object prepareRename(Map<?, ?> params) {
         Document document = document(params);
-        int offset = offset(document, params);
-        if (definitionAt(document, offset) == null && importedAt(document, params) == null) return null;
-        Node token = document.tree().at(offset);
+        Analysis.Span span = analysis(params).renamed(offset(document, params));
+        if (span == null) return null;
         return Map.of(
                 "range",
-                document.lines().range(token.start(), token.end()),
+                document.lines().range(span.start(), span.end()),
                 "placeholder",
-                document.tree().text(token));
+                document.text().substring(span.start(), span.end()));
     }
 
     private Object rename(Map<?, ?> params) {
         Document document = document(params);
-        Node definition = definitionAt(document, offset(document, params));
-        Imports.Attribute attribute = importedAt(document, params);
-        if (definition == null && attribute == null) return null;
+        List<Analysis.Span> spans = analysis(params).renames(offset(document, params));
+        if (spans == null) return null;
         String name = (String) params.get("newName");
         Map<String, Set<Object>> changes = new LinkedHashMap<>();
-        if (definition != null)
-            for (Node use : uses(document, definition, true))
-                changes.computeIfAbsent(uri(params), k -> new LinkedHashSet<>())
-                        .add(Map.of("range", document.lines().range(use.start(), use.end()), "newText", name));
-        if (attribute != null)
-            for (Map.Entry<String, List<Node>> uses :
-                    importedUses(attribute, true).entrySet()) {
-                Document file = workspaceDocument(uses.getKey());
-                for (Node use : uses.getValue())
-                    changes.computeIfAbsent(file(uses.getKey()), k -> new LinkedHashSet<>())
-                            .add(Map.of("range", file.lines().range(use.start(), use.end()), "newText", name));
-            }
+        for (Analysis.Span span : spans) {
+            Map<String, Object> location = location(uri(params), document, span);
+            changes.computeIfAbsent((String) location.get("uri"), k -> new LinkedHashSet<>())
+                    .add(Map.of("range", location.get("range"), "newText", name));
+        }
         Map<String, Object> edits = new LinkedHashMap<>();
         changes.forEach((uri, set) -> edits.put(uri, List.copyOf(set)));
         return Map.of("changes", edits);
     }
 
-    /**
-     * The attributes of {@code builtins} after {@code builtins.}, of nixpkgs after {@code pkgs.} and {@code lib.} unless
-     * bound otherwise than as a parameter, else the names in scope, globals and keywords.
-     */
-    private Object completion(Map<?, ?> params, Evaluator evaluator) {
-        Document document = document(params);
-        SyntaxView<Node> view = document.tree().view();
-        int offset = offset(document, params);
+    /** The completions as the protocol has them: a list, or with {@code isIncomplete} when evaluated. */
+    private static Object completion(Analysis.Completions completions) {
         List<Object> items = new ArrayList<>();
-        Map<String, Node> local = new HashMap<>();
-        List<Object> scope = new ArrayList<>();
-        for (Node definition : Scopes.visible(view, document.tree().at(offset))) {
-            String name = Scopes.name(view, definition);
-            local.putIfAbsent(name, definition);
-            scope.add(Map.of("label", name, "kind", 6L));
-        }
-        if (Flakes.isFlake(uri(params))) {
-            List<Object> flake = flakeCompletion(document, offset, local);
-            if (flake != null) return flake;
-        }
-        boolean module = devenvRoot(uri(params)) != null;
-        List<String> option = evaluator == null ? null : typedOption(document, offset, module);
-        if (evaluator != null && option == null) {
-            Document closed = closed(document.text(), offset);
-            if (closed != null) option = typedOption(closed, offset, module);
-        }
-        if (option != null) {
-            List<String> parent = option.subList(0, option.size() - 1);
-            Map<String, Object> found = attributes(evaluator.optionNames(parent), parent, option.getLast());
-            for (Object item : (List<?>) found.get("items")) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> i = new LinkedHashMap<>((Map<String, Object>) item);
-                i.put("kind", 10L);
-                i.put("data", Map.of("path", ((Map<?, ?>) i.get("data")).get("path"), "option", true));
-                items.add(i);
-            }
-            return Map.of("isIncomplete", found.get("isIncomplete"), "items", items);
-        }
-        List<String> selection = selection(document.text(), offset);
-        if (selection != null) {
-            Map<String, Node> attributes = new LocalSets(document.tree())
-                    .attributes(local.get(selection.getFirst()), selection.subList(1, selection.size() - 1));
-            if (attributes != null) {
-                for (String name : attributes.keySet()) items.add(Map.of("label", name, "kind", 5L));
-                return items;
-            }
-        }
-        if (evaluator != null
-                && selection != null
-                && isModuleArgument(document.tree(), local.get(selection.getFirst()), module)) {
-            List<String> path = new ArrayList<>(selection.subList(0, selection.size() - 1));
-            path.addFirst(Evaluator.MODULE_ARGUMENTS);
-            return attributes(evaluator.names(path), path, selection.getLast());
-        }
-        if (evaluator != null && selection != null) {
-            String root = selection.getFirst();
-            Node definition = local.get(root);
-            if ((root.equals("pkgs") || root.equals("lib"))
-                    && (definition == null
-                            || definition.kind == NodeKind.FORMAL
-                            || definition.kind == NodeKind.PARAM)) {
-                List<String> path = new ArrayList<>(selection.subList(1, selection.size() - 1));
-                if (root.equals("lib")) path.addFirst("lib");
-                return attributes(evaluator.names(path), path, selection.getLast());
-            }
-        }
-        if (!local.containsKey("builtins") && afterBuiltins(document.text(), offset)) {
-            for (String name : new TreeSet<>(Linter.BUILTINS)) items.add(builtin(name));
-            return items;
-        }
-        items.addAll(scope);
-        for (String name : new TreeSet<>(Linter.GLOBALS)) if (!local.containsKey(name)) items.add(builtin(name));
-        for (String keyword : KEYWORDS) items.add(Map.of("label", keyword, "kind", 14L));
-        if (snippetSupport)
-            SNIPPETS.forEach((label, body) -> items.add(Map.of(
-                    "label",
-                    label,
-                    "kind",
-                    15L,
-                    "filterText",
-                    label.substring(0, label.indexOf(' ')),
-                    "insertText",
-                    body,
-                    "insertTextFormat",
-                    2L)));
-
-        Set<String> seen = new HashSet<>(local.keySet());
-        seen.addAll(Linter.GLOBALS);
-        LocalSets sets = new LocalSets(document.tree());
-        for (Node with : LocalSets.withs(document.tree().at(Math.max(offset - 1, 0)))) {
-            Map<String, Node> names = sets.attributes(with.children().stream()
-                    .filter(c -> c.token == null)
-                    .findFirst()
-                    .orElseThrow());
-            if (names != null)
-                for (String name : names.keySet()) if (seen.add(name)) items.add(Map.of("label", name, "kind", 6L));
-        }
-        List<List<String>> scopes = evaluator == null
-                ? List.of()
-                : withScopes(document.tree(), document.tree().at(Math.max(offset - 1, 0)));
-        if (scopes.isEmpty()) return items;
-        int start = offset;
-        while (start > 0 && isNameChar(document.text().charAt(start - 1))) start--;
-        String prefix = document.text().substring(start, offset);
-        boolean incomplete = false;
-        for (List<String> path : scopes) {
-            Map<String, Object> found = attributes(evaluator.names(path), path, prefix);
-            incomplete |= (Boolean) found.get("isIncomplete");
-            for (Object item : (List<?>) found.get("items"))
-                if (seen.add((String) ((Map<?, ?>) item).get("label"))) items.add(item);
-        }
-        return Map.of("isIncomplete", incomplete, "items", items);
+        for (Analysis.Completion c : completions.items()) items.add(item(c));
+        return completions.evaluated() ? Map.of("isIncomplete", completions.incomplete(), "items", items) : items;
     }
 
-    /**
-     * In a flake: the names its schema has for a binding typed there, and the inputs as formals of {@code outputs}
-     * or after {@code inputs.}, the name {@code outputs} binds its argument to; else null.
-     */
-    private static List<Object> flakeCompletion(Document document, int offset, Map<String, Node> local) {
-        SyntaxTree tree = document.tree();
-        Typed typed = typedBinding(document, offset);
-        List<String> names = typed == null ? null : Flakes.names(tree, typed.set(), typed.names());
-        if (names != null) {
-            List<Object> items = new ArrayList<>();
-            for (String name : names) items.add(Map.of("label", name, "kind", 10L));
-            return items;
+    private static Map<String, Object> item(Analysis.Completion c) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("label", c.label());
+        item.put(
+                "kind",
+                switch (c.kind()) {
+                    case VARIABLE -> 6L;
+                    case ATTRIBUTE -> 5L;
+                    case PROPERTY -> 10L;
+                    case BUILTIN -> 3L;
+                    case CONSTANT -> 21L;
+                    case KEYWORD -> 14L;
+                    case SNIPPET -> 15L;
+                });
+        if (c.detail() != null) item.put("detail", c.detail());
+        if (c.snippet() != null) {
+            item.put("filterText", c.label().substring(0, c.label().indexOf(' ')));
+            item.put("insertText", c.snippet());
+            item.put("insertTextFormat", 2L);
         }
-        Node outputs = Flakes.outputs(tree);
-        if (outputs == null) return null;
-        List<String> inputs = new ArrayList<>(List.of("self"));
-        inputs.addAll(Flakes.inputs(tree));
-        Node formals = tree.at(Math.max(offset - 1, 0));
-        for (int i = 0; i < 2 && formals != null && formals.kind != NodeKind.FORMALS; i++) formals = formals.parent();
-        if (formals != null && formals.kind == NodeKind.FORMALS && formals.parent() == outputs) {
-            Set<String> present = new HashSet<>();
-            for (Node formal : formals.children())
-                if (formal.kind == NodeKind.FORMAL && formal.end() < offset)
-                    present.add(Scopes.name(tree.view(), formal));
-            List<Object> items = new ArrayList<>();
-            for (String input : inputs) if (!present.contains(input)) items.add(Map.of("label", input, "kind", 6L));
-            return items;
-        }
-        List<String> selection = selection(document.text(), offset);
-        Node definition = selection == null || selection.size() != 2 ? null : local.get(selection.getFirst());
-        if (definition == null
-                || definition.kind != NodeKind.PARAM && definition.kind != NodeKind.FORMAL
-                || !selection.getFirst().equals("inputs") && definition.kind == NodeKind.FORMAL) return null;
-        Node lambda = definition.parent();
-        if (lambda != null && lambda.kind == NodeKind.FORMALS) lambda = lambda.parent();
-        if (lambda != outputs) return null;
-        List<Object> items = new ArrayList<>();
-        for (String input : inputs) items.add(Map.of("label", input, "kind", 10L));
-        return items;
-    }
-
-    private static Map<String, Object> builtin(String name) {
-        return Map.of("label", name, "kind", CONSTANTS.contains(name) ? 21L : 3L, "detail", "builtin");
-    }
-
-    private static Map<String, String> snippets(String... labelsAndBodies) {
-        Map<String, String> snippets = new LinkedHashMap<>();
-        for (int i = 0; i < labelsAndBodies.length; i += 2) snippets.put(labelsAndBodies[i], labelsAndBodies[i + 1]);
-        return snippets;
+        if (c.path() != null)
+            item.put("data", c.option() ? Map.of("path", c.path(), "option", true) : Map.of("path", c.path()));
+        return item;
     }
 
     /** The item with the version or type as its detail, and the description or doc comment as its documentation. */
@@ -1020,489 +722,33 @@ public final class Server {
 
     private Object hover(Map<?, ?> params) {
         Document document = document(params);
-        Evaluator evaluator = evaluator(uri(params));
-        boolean module = devenvRoot(uri(params)) != null;
-        int offset = offset(document, params);
-        Selected selected = selected(evaluator, module, document, offset);
-        Evaluator.Attribute a;
-        boolean option = selected == null;
-        if (selected != null) {
-            a = evaluator.describe(selected.path());
-        } else {
-            selected = boundOption(document, offset, module);
-            if (selected == null) return null;
-            a = evaluator.describeOption(selected.path());
-        }
-        StringBuilder text = new StringBuilder();
-        if (a != null && a.type() == null && option) {
-            List<String> names = evaluator.optionNames(selected.path());
-            if (names == null || names.isEmpty()) return null;
-            text.append(optionPath(selected.path())).append("\n\n");
-            for (int i = 0; i < Math.min(names.size(), GROUP_NAMES); i++)
-                text.append(i == 0 ? "" : ", ").append(optionPath(List.of(names.get(i))));
-            if (names.size() > GROUP_NAMES)
-                text.append(" and ").append(names.size() - GROUP_NAMES).append(" more");
-            return Map.of(
-                    "contents",
-                    Map.of("kind", "markdown", "value", text.toString()),
-                    "range",
-                    document.lines()
-                            .range(selected.name().start(), selected.name().end()));
-        }
-        if (a == null || a.type() == null) return null;
-        if (a.type().equals("option")) {
-            text.append(optionPath(selected.path()));
-            if (a.value() != null) text.append(" ").append(a.value());
-            if (a.description() != null) text.append("\n\n").append(a.description());
-            if (a.defaultValue() != null) text.append("\n\n*Default:* ").append(code(a.defaultValue()));
-            if (a.example() != null) text.append("\n\n*Example:* ").append(code(a.example()));
-        } else if (a.type().equals("derivation")) {
-            text.append("`")
-                    .append(a.name() != null ? a.name() : selected.path().getLast())
-                    .append("`");
-            if (a.version() != null) text.append(" ").append(a.version());
-            if (a.description() != null) text.append("\n\n").append(a.description());
-            if (a.homepage() != null) text.append("\n\n").append(a.homepage());
-        } else if (a.type().equals("error")) {
-            text.append("```\n").append(a.value()).append("\n```");
-        } else {
-            text.append("`").append(a.type()).append("`");
-            if (a.value() != null) text.append(" `").append(a.value()).append("`");
-            if (a.doc() != null) text.append("\n\n").append(a.doc());
-        }
+        Analysis.Hover hover = analysis(params).hover(offset(document, params));
+        if (hover == null) return null;
         return Map.of(
                 "contents",
-                Map.of("kind", "markdown", "value", text.toString()),
+                Map.of("kind", "markdown", "value", hover.markdown()),
                 "range",
-                document.lines().range(selected.name().start(), selected.name().end()));
-    }
-
-    private static String optionPath(List<String> path) {
-        StringBuilder text = new StringBuilder("`");
-        for (String name : path) {
-            if (text.length() > 1) text.append('.');
-            boolean plain = !name.isEmpty()
-                    && isNameStart(name.charAt(0))
-                    && name.chars().allMatch(c -> isNameChar((char) c));
-            text.append(plain ? name : Json.write(name));
-        }
-        return text.append("`").toString();
-    }
-
-    private static String code(String text) {
-        return text.contains("\n") ? "\n```nix\n" + text.strip() + "\n```" : "`" + text + "`";
+                document.lines().range(hover.start(), hover.end()));
     }
 
     /** Where the nixpkgs attribute or the option at the position is defined, or null. */
     private Object attributeLocation(Map<?, ?> params) {
-        Document document = document(params);
-        Evaluator evaluator = evaluator(uri(params));
-        boolean module = devenvRoot(uri(params)) != null;
-        int offset = offset(document, params);
-        Selected selected = selected(evaluator, module, document, offset);
-        Evaluator.Attribute a;
-        if (selected != null) {
-            a = evaluator.describe(selected.path());
-        } else {
-            selected = boundOption(document, offset, module);
-            if (selected == null) return null;
-            a = evaluator.describeOption(selected.path());
-        }
-        if (a == null || a.file() == null || !a.file().startsWith("/")) return null;
-        Map<String, Object> at = Map.of("line", (long) a.line() - 1, "character", (long) Math.max(a.column() - 1, 0));
-        return Map.of("uri", file(a.file()), "range", Map.of("start", at, "end", at));
-    }
-
-    /** The binding name at {@code offset} in a module, and the path of the option it sets, or null. */
-    private Selected boundOption(Document document, int offset, boolean module) {
-        if (evaluator == null) return null;
-        SyntaxTree tree = document.tree();
-        Node name = tree.at(offset).parent();
-        if (name == null || name.kind != NodeKind.ATTR_NAME) return null;
-        Node attrPath = name.parent();
-        if (attrPath == null || attrPath.kind != NodeKind.ATTR_PATH) return null;
-        Node binding = attrPath.parent();
-        if (binding == null || binding.kind != NodeKind.BINDING) return null;
-        List<String> path = optionPrefix(tree, binding.parent(), module);
-        if (path == null) return null;
-        for (Node child : attrPath.children()) {
-            if (child.token != null) continue;
-            String text = attrName(tree, child);
-            if (text == null) return null;
-            path.add(text);
-            if (child == name) return new Selected(name, options(path));
-        }
-        return null;
-    }
-
-    /** The names of a binding typed up to {@code offset}, and the set it is typed in. */
-    private record Typed(List<String> names, Node set) {}
-
-    private static Typed typedBinding(Document document, int offset) {
-        String text = document.text();
-        List<String> typed = new ArrayList<>();
-        int end = offset;
-        while (true) {
-            int start = end;
-            while (start > 0 && isNameChar(text.charAt(start - 1))) start--;
-            if (start < end && !isNameStart(text.charAt(start))) return null;
-            typed.addFirst(text.substring(start, end));
-            if (start == 0 || text.charAt(start - 1) != '.') {
-                end = start;
-                break;
-            }
-            end = start - 1;
-        }
-        int before = end;
-        while (before > 0 && Character.isWhitespace(text.charAt(before - 1))) before--;
-        if (before == 0 || text.charAt(before - 1) != '{' && text.charAt(before - 1) != ';') return null;
-        Node set = document.tree().at(before - 1);
-        while (set != null && set.kind != NodeKind.ATTR_SET) {
-            if (set.kind == NodeKind.LET) return null;
-            set = set.parent();
-        }
-        return set == null ? null : new Typed(typed, set);
-    }
-
-    /** The text up to {@code offset} with the brackets still open there closed, or null when none is. */
-    private static Document closed(String text, int offset) {
-        String prefix = text.substring(0, offset);
-        StringBuilder open = new StringBuilder();
-        for (Lexeme l : Tokenizer.tokenize(prefix)) {
-            switch (l.kind()) {
-                case LBRACE -> open.append('{');
-                case DOLLAR_CURLY -> open.append('$');
-                case LBRACK -> open.append('[');
-                case LPAREN -> open.append('(');
-                case RBRACE, RBRACK, RPAREN -> {
-                    if (!open.isEmpty()) open.setLength(open.length() - 1);
-                }
-                default -> {}
-            }
-        }
-        if (open.isEmpty()) return null;
-        StringBuilder closed = new StringBuilder(prefix).append(' ');
-        for (int i = open.length() - 1; i >= 0; i--) {
-            closed.append(
-                    switch (open.charAt(i)) {
-                        case '[' -> ']';
-                        case '(' -> ')';
-                        default -> '}';
-                    });
-            if (i > 0 && open.charAt(i - 1) == '{') closed.append(';');
-        }
-        return Document.of(closed.toString());
-    }
-
-    /** The option path being typed at {@code offset} as a binding name in a module, its last name partial, or null. */
-    private List<String> typedOption(Document document, int offset, boolean module) {
-        Typed typed = typedBinding(document, offset);
-        if (typed == null) return null;
-        List<String> path = optionPrefix(document.tree(), typed.set(), module);
-        if (path == null) return null;
-        path.addAll(typed.names());
-        path = options(path);
-        return path == null || path.isEmpty() ? null : path;
-    }
-
-    /**
-     * The option path that the bindings of {@code set} start from, when it is the body of a module, a function of
-     * {@code config}, {@code lib}, {@code pkgs} or {@code modulesPath}, or the file itself or its function when
-     * {@code module}, or a set bound in one, possibly through
-     * parentheses, lists, function arguments as of {@code mkIf} or {@code mkMerge}, and {@code let}; else null.
-     */
-    private static List<String> optionPrefix(SyntaxTree tree, Node set, boolean module) {
-        if (set == null || set.kind != NodeKind.ATTR_SET || tree.text(set).startsWith("rec")) return null;
-        List<String> path = new ArrayList<>();
-        Node node = set;
-        while (true) {
-            Node parent = node.parent();
-            if (parent == null || parent.kind == null) return module ? path : null;
-            List<Node> parts =
-                    parent.children().stream().filter(c -> c.token == null).toList();
-            switch (parent.kind) {
-                case BINDING -> {
-                    if (parts.getLast() != node || parts.getFirst().kind != NodeKind.ATTR_PATH) return null;
-                    List<String> names = new ArrayList<>();
-                    for (Node child : parts.getFirst().children()) {
-                        if (child.token != null) continue;
-                        String text = attrName(tree, child);
-                        if (text == null) return null;
-                        names.add(text);
-                    }
-                    path.addAll(0, names);
-                    node = parent.parent();
-                    if (node == null
-                            || node.kind != NodeKind.ATTR_SET
-                            || tree.text(node).startsWith("rec")) return null;
-                }
-                case PAREN, LIST -> node = parent;
-                case APPLY, LET -> {
-                    if (parts.getFirst() == node && parent.kind == NodeKind.APPLY
-                            || parent.kind == NodeKind.LET && parts.getLast() != node) return null;
-                    node = parent;
-                }
-                case LAMBDA -> {
-                    return parts.getLast() == node && isModule(tree, parent, module) ? path : null;
-                }
-                default -> {
-                    return null;
-                }
-            }
-        }
-    }
-
-    /** The name of an attribute path element, a name or a string without interpolation nor escapes, or null. */
-    private static String attrName(SyntaxTree tree, Node element) {
-        if (element.kind == NodeKind.ATTR_NAME) return tree.text(element);
-        if (element.kind != NodeKind.STRING) return null;
-        List<Node> parts = element.children();
-        if (parts.size() == 2) return "";
-        if (parts.size() != 3 || parts.get(1).token != Lexeme.Kind.STR_TEXT) return null;
-        String text = tree.text(parts.get(1));
-        return text.indexOf('\\') < 0 ? text : null;
-    }
-
-    /** {@code path} without a leading {@code config}, or null where it declares or imports rather than sets. */
-    private static List<String> options(List<String> path) {
-        if (!path.isEmpty() && path.getFirst().equals("config")) path = new ArrayList<>(path.subList(1, path.size()));
-        if (!path.isEmpty()
-                && Set.of("options", "imports", "disabledModules", "_module").contains(path.getFirst())) return null;
-        return path;
-    }
-
-    /** A name in a selection from nixpkgs, and the path from nixpkgs to it. */
-    private record Selected(Node name, List<String> path) {}
-
-    /**
-     * The attribute name at {@code offset} in {@code pkgs.a.b} or {@code lib.a.b}, or the variable there that a
-     * {@code with} of nixpkgs brings into scope, or null elsewhere.
-     */
-    private static Selected selected(Evaluator evaluator, boolean module, Document document, int offset) {
-        if (evaluator == null) return null;
-        SyntaxTree tree = document.tree();
-        Node token = tree.at(offset);
-        Node name = token.parent();
-        if (name != null && name.kind == NodeKind.VAR) return first(evaluator, name, candidates(tree, name));
-        if (name == null || name.kind != NodeKind.ATTR_NAME) return null;
-        Node attrPath = name.parent();
-        if (attrPath == null || attrPath.kind != NodeKind.ATTR_PATH) return null;
-        List<Node> children = attrPath.children();
-        int after = 0;
-        for (int i = children.size() - 1; children.get(i) != name; i--) if (children.get(i).token == null) after++;
-        List<List<String>> candidates = new ArrayList<>();
-        for (List<String> path : selectionCandidates(evaluator, module, tree, attrPath.parent(), new ArrayList<>()))
-            candidates.add(path.subList(0, path.size() - after));
-        return candidates.size() == 1 ? new Selected(name, candidates.getFirst()) : first(evaluator, name, candidates);
-    }
-
-    /** The first of {@code candidates} that nixpkgs has, or null when there is none or one is still evaluated. */
-    private static Selected first(Evaluator evaluator, Node name, List<List<String>> candidates) {
-        if (candidates.isEmpty()) return null;
-        List<Evaluator.Attribute> found = evaluator.describeAll(candidates);
-        for (int i = 0; i < found.size(); i++) {
-            if (found.get(i) == null) return null;
-            if (found.get(i).type() != null) return new Selected(name, candidates.get(i));
-        }
-        return null;
-    }
-
-    /**
-     * The paths from nixpkgs that {@code select} may stand for: its own when it starts from {@code pkgs} or {@code lib},
-     * else those of a variable a {@code with} of nixpkgs brings into scope, as {@code unstable.hello} under
-     * {@code with pkgs;}, followed by its attribute names.
-     */
-    private static List<List<String>> selectionCandidates(
-            Evaluator evaluator, boolean module, SyntaxTree tree, Node select, List<List<String>> pending) {
-        List<String> own = nixpkgsPath(tree, select);
-        if (own != null) return List.of(own);
-        if (select == null || select.kind != NodeKind.SELECT) return List.of();
-        Node base = select.children().getFirst();
-        Node attrPath = attrPath(select);
-        if (base.kind != NodeKind.VAR || attrPath == null) return List.of();
-        List<String> names = new ArrayList<>();
-        for (Node child : attrPath.children()) {
-            if (child.token != null) continue;
-            String text = child.kind == NodeKind.DYNAMIC_ATTR
-                    ? computedName(evaluator, module, tree, child, pending)
-                    : attrName(tree, child);
-            if (text == null) return List.of();
-            names.add(text);
-        }
-        List<List<String>> bases = isModuleArgument(tree, Scopes.resolve(tree.view(), tree.text(base), base), module)
-                ? List.of(List.of(Evaluator.MODULE_ARGUMENTS, tree.text(base)))
-                : candidates(tree, base);
-        List<List<String>> candidates = new ArrayList<>();
-        for (List<String> path : bases) {
-            List<String> full = new ArrayList<>(path);
-            full.addAll(names);
-            candidates.add(full);
-        }
-        return candidates;
-    }
-
-    /**
-     * The string a {@code ${...}} name evaluates to, when it is a selection from nixpkgs, as
-     * {@code ${pkgs.stdenv.hostPlatform.system}}, and a plain one; else null, and its paths in {@code pending} while
-     * they are evaluated.
-     */
-    private static String computedName(
-            Evaluator evaluator, boolean module, SyntaxTree tree, Node dynamic, List<List<String>> pending) {
-        Node expr = dynamic.children().stream()
-                .filter(c -> c.token == null)
-                .findFirst()
-                .orElse(null);
-        List<List<String>> candidates = selectionCandidates(evaluator, module, tree, expr, pending);
-        if (candidates.isEmpty()) return null;
-        for (Evaluator.Attribute a : evaluator.describeAll(candidates)) {
-            if (a == null) {
-                pending.addAll(candidates);
-                return null;
-            }
-            if (a.type() == null) continue;
-            String v = a.value();
-            boolean plain = "string".equals(a.type())
-                    && v != null
-                    && v.length() >= 2
-                    && v.startsWith("\"")
-                    && v.endsWith("\"")
-                    && v.indexOf('\\') < 0;
-            return plain ? v.substring(1, v.length() - 1) : null;
-        }
-        return null;
-    }
-
-    /**
-     * Whether {@code definition} is an argument of a module's function that the evaluator looks up among the arguments
-     * its modules receive: one other than {@code pkgs} and {@code lib}, taken from nixpkgs, and {@code config} and
-     * {@code options}.
-     */
-    private static boolean isModuleArgument(SyntaxTree tree, Node definition, boolean module) {
-        if (definition == null || definition.kind != NodeKind.FORMAL) return false;
-        if (Set.of("pkgs", "lib", "config", "options").contains(Scopes.name(tree.view(), definition))) return false;
-        Node lambda = definition.parent() == null ? null : definition.parent().parent();
-        return lambda != null && lambda.kind == NodeKind.LAMBDA && isModule(tree, lambda, module);
-    }
-
-    /**
-     * Whether {@code lambda} is the file, a function of {@code config}, {@code lib}, {@code pkgs} or {@code modulesPath},
-     * or of anything when {@code module}.
-     */
-    private static boolean isModule(SyntaxTree tree, Node lambda, boolean module) {
-        if (lambda.parent() == null || lambda.parent().kind != null) return false;
-        if (module) return true;
-        for (Node formal : Scopes.definitions(tree.view(), lambda))
-            if (Set.of("config", "lib", "pkgs", "modulesPath").contains(Scopes.name(tree.view(), formal))) return true;
-        return false;
-    }
-
-    /**
-     * The paths from nixpkgs where the variable {@code var} may come from, those of the enclosing {@code with}s of
-     * nixpkgs from the innermost out, up to the first {@code with} of something else; none when it is bound otherwise.
-     */
-    private static List<List<String>> candidates(SyntaxTree tree, Node var) {
-        String name = tree.text(var);
-        if (Scopes.resolve(tree.view(), name, var) != null || Linter.GLOBALS.contains(name)) return List.of();
-        List<List<String>> candidates = new ArrayList<>();
-        for (List<String> scope : withScopes(tree, var)) {
-            List<String> path = new ArrayList<>(scope);
-            path.add(name);
-            candidates.add(path);
-        }
-        return candidates;
-    }
-
-    /** The nixpkgs paths of the {@code with}s whose body holds {@code node}, from the innermost out, up to another. */
-    private static List<List<String>> withScopes(SyntaxTree tree, Node node) {
-        List<List<String>> scopes = new ArrayList<>();
-        for (Node child = node, parent = node.parent(); parent != null; child = parent, parent = parent.parent()) {
-            if (parent.kind != NodeKind.WITH) continue;
-            List<Node> parts =
-                    parent.children().stream().filter(c -> c.token == null).toList();
-            if (parts.size() < 2 || parts.getLast() != child) continue;
-            List<String> path = nixpkgsPath(tree, parts.getFirst());
-            if (path == null) break;
-            scopes.add(path);
-        }
-        return scopes;
-    }
-
-    private static Node attrPath(Node select) {
-        for (Node child : select.children()) if (child.kind == NodeKind.ATTR_PATH) return child;
-        return null;
-    }
-
-    /**
-     * The path from nixpkgs of {@code expr} when it is {@code pkgs}, {@code lib}, or a selection from them such as
-     * {@code pkgs.a.b}, unless the file binds them otherwise than as a parameter; else null.
-     */
-    private static List<String> nixpkgsPath(SyntaxTree tree, Node expr) {
-        if (expr == null) return null;
-        if (expr.kind == NodeKind.PAREN)
-            for (Node child : expr.children()) if (child.token == null) return nixpkgsPath(tree, child);
-        if (expr.kind == NodeKind.VAR) {
-            String root = tree.text(expr);
-            if (!root.equals("pkgs") && !root.equals("lib")) return null;
-            Node definition = Scopes.resolve(tree.view(), root, expr);
-            if (definition != null && definition.kind != NodeKind.FORMAL && definition.kind != NodeKind.PARAM)
-                return null;
-            return root.equals("lib") ? new ArrayList<>(List.of("lib")) : new ArrayList<>();
-        }
-        if (expr.kind != NodeKind.SELECT) return null;
-        Node base = expr.children().getFirst();
-        if (base.kind != NodeKind.VAR) return null;
-        List<String> path = nixpkgsPath(tree, base);
-        if (path == null) return null;
-        Node attrPath = attrPath(expr);
-        if (attrPath == null) return null;
-        for (Node child : attrPath.children()) {
-            if (child.token != null) continue;
-            String text = attrName(tree, child);
-            if (text == null) return null;
-            path.add(text);
-        }
-        return path;
+        Analysis.Location at = analysis(params).declaration(offset(document(params), params));
+        if (at == null) return null;
+        Map<String, Object> position = Map.of("line", (long) at.line(), "character", (long) at.column());
+        return Map.of("uri", file(at.path()), "range", Map.of("start", position, "end", position));
     }
 
     /** The version of each package selected from nixpkgs in the range, after its selection. */
     private Object inlayHints(Map<?, ?> params) {
         Document document = document(params);
-        Evaluator evaluator = evaluator(uri(params));
-        if (evaluator == null) return List.of();
-        boolean module = devenvRoot(uri(params)) != null;
+        Analysis analysis = analysis(params);
         Map<?, ?> range = (Map<?, ?>) params.get("range");
         int start = document.lines().offset((Map<?, ?>) range.get("start"));
         int end = document.lines().offset((Map<?, ?>) range.get("end"));
-        SyntaxTree tree = document.tree();
-        List<Integer> ends = new ArrayList<>();
-        List<List<String>> pending = new ArrayList<>();
-        List<Integer> counts = new ArrayList<>();
-        List<List<String>> paths = new ArrayList<>();
-        collect(tree.root(), node -> {
-            if (node.end() < start || node.start() > end) return;
-            if (node.kind == NodeKind.SELECT) {
-                List<List<String>> candidates = selectionCandidates(evaluator, module, tree, node, pending).stream()
-                        .filter(path -> !path.isEmpty() && !path.getFirst().equals("lib"))
-                        .toList();
-                if (candidates.isEmpty()) return;
-                ends.add(attrPath(node).end());
-                counts.add(candidates.size());
-                paths.addAll(candidates);
-            } else if (node.kind == NodeKind.VAR && !(node.parent() != null && node.parent().kind == NodeKind.SELECT)) {
-                List<List<String>> candidates = candidates(tree, node);
-                if (candidates.isEmpty()) return;
-                ends.add(node.end());
-                counts.add(candidates.size());
-                paths.addAll(candidates);
-            }
-        });
-        List<Evaluator.Attribute> attributes = evaluator.describeAll(paths);
-        pending.addAll(paths);
-        if ((attributes.contains(null) || pending.size() > paths.size())
-                && send != null
-                && refreshSupport
-                && refreshing.compareAndSet(false, true))
-            evaluator.whenDescribed(pending, () -> {
+        Analysis.Hints hints = analysis.inlayHints(start, end);
+        if (!hints.pending().isEmpty() && send != null && refreshSupport && refreshing.compareAndSet(false, true))
+            analysis.evaluator().whenDescribed(hints.pending(), () -> {
                 refreshing.set(false);
                 Map<String, Object> request = new LinkedHashMap<>();
                 request.put("jsonrpc", "2.0");
@@ -1510,74 +756,11 @@ public final class Server {
                 request.put("method", "workspace/inlayHint/refresh");
                 send.accept(request);
             });
-        List<Object> hints = new ArrayList<>();
-        int next = 0;
-        for (int i = 0; i < ends.size(); i++) {
-            Evaluator.Attribute found = null;
-            for (int j = next; j < next + counts.get(i); j++) {
-                Evaluator.Attribute a = attributes.get(j);
-                if (a == null) break;
-                if (a.type() != null) {
-                    found = a;
-                    break;
-                }
-            }
-            next += counts.get(i);
-            if (found == null || !"derivation".equals(found.type()) || found.version() == null) continue;
-            hints.add(Map.of(
-                    "position", document.lines().position(ends.get(i)), "label", found.version(), "paddingLeft", true));
-        }
-        return hints;
-    }
-
-    /** The names starting with {@code prefix}, incomplete while being evaluated or when there are too many. */
-    private static Map<String, Object> attributes(List<String> names, List<String> path, String prefix) {
-        List<Object> items = new ArrayList<>();
-        boolean incomplete = names == null;
-        if (names != null)
-            for (String name : names) {
-                if (!name.startsWith(prefix)) continue;
-                if (items.size() == MAX_ITEMS) {
-                    incomplete = true;
-                    break;
-                }
-                List<String> item = new ArrayList<>(path);
-                item.add(name);
-                items.add(Map.of("label", name, "kind", 5L, "data", Map.of("path", item)));
-            }
-        return Map.of("isIncomplete", incomplete, "items", items);
-    }
-
-    /** The names of {@code a.b.c} as the {@code c} at {@code offset} is typed, or null outside such a selection. */
-    private static List<String> selection(String text, int offset) {
-        List<String> names = new ArrayList<>();
-        int end = offset;
-        while (true) {
-            int start = end;
-            while (start > 0 && isNameChar(text.charAt(start - 1))) start--;
-            if (start == end && !names.isEmpty() || start < end && !isNameStart(text.charAt(start))) return null;
-            names.addFirst(text.substring(start, end));
-            if (start == 0 || text.charAt(start - 1) != '.') break;
-            end = start - 1;
-        }
-        return names.size() < 2 ? null : names;
-    }
-
-    private static boolean isNameStart(char c) {
-        return Character.isLetter(c) || c == '_';
-    }
-
-    /** Whether the name being typed at {@code offset} follows {@code builtins.}. */
-    private static boolean afterBuiltins(String text, int offset) {
-        int start = offset;
-        while (start > 0 && isNameChar(text.charAt(start - 1))) start--;
-        int at = start - "builtins.".length();
-        if (at < 0 || !text.startsWith("builtins.", at)) return false;
-        return at == 0 || !isNameChar(text.charAt(at - 1)) && text.charAt(at - 1) != '.';
-    }
-
-    private static boolean isNameChar(char c) {
-        return Character.isLetterOrDigit(c) || c == '_' || c == '\'' || c == '-';
+        List<Object> labels = new ArrayList<>();
+        for (Analysis.Hint hint : hints.hints())
+            labels.add(Map.of(
+                    "position", document.lines().position(hint.offset()), "label", hint.label(), "paddingLeft", true));
+        return labels;
     }
 
     private Object symbols(Document document) {
@@ -1644,49 +827,17 @@ public final class Server {
         return selections;
     }
 
-    /**
-     * The paths without interpolation, resolved against a {@code file:} document, the URIs, and the strings that are
-     * an http or https URL and nothing else.
-     */
+    /** The paths, URIs and URL strings of the document. */
     private Object links(Map<?, ?> params) {
         Document document = document(params);
-        SyntaxTree tree = document.tree();
-        URI base = URI.create(uri(params));
         List<Object> links = new ArrayList<>();
-        collect(tree.root(), node -> {
-            List<Node> children = node.children();
-            String target = pathTarget(tree, node, base);
-            Node range = node;
-            if (target != null) {
-                target = file(target);
-            } else if (node.kind == NodeKind.URI) {
-                target = tree.text(node);
-            } else if (node.kind == NodeKind.STRING
-                    && children.size() == 3
-                    && children.get(1).token == Lexeme.Kind.STR_TEXT
-                    && URL.matcher(tree.text(children.get(1))).matches()) {
-                range = children.get(1);
-                target = tree.text(range);
-            }
-            if (target != null)
-                links.add(Map.of("range", document.lines().range(range.start(), range.end()), "target", target));
-        });
+        for (Analysis.Link link : analysis(params).links())
+            links.add(Map.of(
+                    "range",
+                    document.lines().range(link.start(), link.end()),
+                    "target",
+                    link.file() ? file(link.target()) : link.target()));
         return links;
-    }
-
-    /**
-     * The file a path without interpolation names, resolved against a {@code file:} document, the {@code default.nix}
-     * in it when it is a directory, as {@code import} has it; else null.
-     */
-    private static String pathTarget(SyntaxTree tree, Node node, URI base) {
-        List<Node> children = node.children();
-        if (node.kind != NodeKind.PATH
-                || !"file".equals(base.getScheme())
-                || children.size() != 1
-                || children.getFirst().token != Lexeme.Kind.PATH) return null;
-        String path = base.resolve(tree.text(node)).getPath();
-        if (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
-        return new File(path).isDirectory() ? path + "/default.nix" : path;
     }
 
     /** {@code file:///path}, where {@link URI#resolve} gives {@code file:/path}, which not every client reads. */
@@ -1729,40 +880,11 @@ public final class Server {
             }
             return actions;
         }
-        rewrite(actions, uri, lines, "Expand the binding", Bindings.expand(document.text(), start));
-        rewrite(actions, uri, lines, "Collapse the binding", Bindings.collapse(document.text(), start));
-        Node string = document.tree().at(start);
-        while (string != null
-                && string.kind != NodeKind.STRING
-                && string.kind != NodeKind.IND_STRING
-                && string.kind != NodeKind.ATTR_NAME) string = string.parent();
-        if (string != null && isAttributeName(string)) {
-            String name = document.tree().text(string);
-            String content = name.length() < 2 ? "" : name.substring(1, name.length() - 1);
-            if (string.kind == NodeKind.ATTR_NAME)
-                rewrite(
-                        actions,
-                        uri,
-                        lines,
-                        "Quote the attribute name",
-                        new Bindings.Rewrite(string.start(), string.end(), "\"" + name + "\""));
-            else if (IDENTIFIER.matcher(content).matches() && !KEYWORDS.contains(content))
-                rewrite(
-                        actions,
-                        uri,
-                        lines,
-                        "Unquote the attribute name",
-                        new Bindings.Rewrite(string.start(), string.end(), content));
-        } else if (string != null) {
-            String toggled = Quotes.toggle(document.tree().text(string));
-            if (toggled != null)
-                rewrite(
-                        actions,
-                        uri,
-                        lines,
-                        string.kind == NodeKind.STRING ? "Use ''...'' quotes" : "Use \"...\" quotes",
-                        new Bindings.Rewrite(string.start(), string.end(), toggled));
-        }
+        Analysis analysis = analysis(params);
+        for (Analysis.Rewrite rewrite : analysis.bindings(start)) rewrite(actions, uri, lines, rewrite);
+        Analysis.Rewrite quotes = analysis.attributeQuotes(start);
+        if (quotes == null) quotes = analysis.stringQuotes(start);
+        if (quotes != null) rewrite(actions, uri, lines, quotes);
         for (Diagnostic d : Linter.lint(document.text(), rules)) {
             if (d.end() < start || d.start() > end) continue;
             String id = d.rule().id();
@@ -1791,16 +913,9 @@ public final class Server {
         return actions;
     }
 
-    private static boolean isAttributeName(Node node) {
-        Node parent = node.parent();
-        return node.kind == NodeKind.ATTR_NAME
-                || parent != null && (parent.kind == NodeKind.ATTR_PATH || parent.kind == NodeKind.INHERIT);
-    }
-
-    private static void rewrite(List<Object> actions, String uri, Lines lines, String title, Bindings.Rewrite rewrite) {
-        if (rewrite == null) return;
+    private static void rewrite(List<Object> actions, String uri, Lines lines, Analysis.Rewrite rewrite) {
         Map<String, Object> action = action(
-                title,
+                rewrite.title(),
                 uri,
                 List.of(Map.of("range", lines.range(rewrite.start(), rewrite.end()), "newText", rewrite.text())));
         action.put("kind", "refactor.rewrite");
@@ -1848,7 +963,7 @@ public final class Server {
     private static List<Object> injections(Document document) {
         List<Object> injections = new ArrayList<>();
         SyntaxView<Node> view = document.tree().view();
-        collect(document.tree().root(), node -> {
+        Analysis.collect(document.tree().root(), node -> {
             if (node.kind != NodeKind.STRING && node.kind != NodeKind.IND_STRING) return;
             Injections.Injection injection = Injections.of(view, node, Injections.Rules.DEFAULT);
             List<Node> children = node.children();
@@ -1863,56 +978,6 @@ public final class Server {
             injections.add(entry);
         });
         return injections;
-    }
-
-    /** The definition the name at {@code offset} refers to, or is. */
-    static Node definitionAt(Document document, int offset) {
-        SyntaxTree tree = document.tree();
-        SyntaxView<Node> view = tree.view();
-        Node token = tree.at(offset);
-        if (token.token != Lexeme.Kind.ID && token.token != Lexeme.Kind.OR_KW) return null;
-        Node name = token.parent();
-        if (name == null || name.kind == null) return null;
-        return switch (name.kind) {
-            case VAR -> Scopes.resolve(view, tree.text(token), name);
-            case PARAM, FORMAL -> name;
-            case ATTR_NAME -> {
-                Node from = Scopes.inheritedFrom(view, name);
-                if (from != null) yield Scopes.resolve(view, tree.text(token), from);
-                Node scope = name.parent() == null ? null : name.parent().parent();
-                while (scope != null && scope.kind != NodeKind.LET && scope.kind != NodeKind.ATTR_SET)
-                    scope = scope.parent();
-                yield scope != null && Scopes.definitions(view, scope).contains(name) ? name : null;
-            }
-            default -> null;
-        };
-    }
-
-    /** The name tokens of {@code definition} and of what refers to it. */
-    private static List<Node> uses(Document document, Node definition, boolean declaration) {
-        SyntaxTree tree = document.tree();
-        SyntaxView<Node> view = tree.view();
-        String name = tree.text(nameToken(definition));
-        List<Node> uses = new ArrayList<>();
-        if (declaration) uses.add(nameToken(definition));
-        collect(tree.root(), node -> {
-            Node from = node.kind == NodeKind.VAR
-                    ? node
-                    : node.kind == NodeKind.ATTR_NAME ? Scopes.inheritedFrom(view, node) : null;
-            if (from != null
-                    && tree.text(nameToken(node)).equals(name)
-                    && Scopes.resolve(view, name, from) == definition) uses.add(nameToken(node));
-        });
-        return uses;
-    }
-
-    private static void collect(Node node, java.util.function.Consumer<Node> visit) {
-        visit.accept(node);
-        for (Node child : node.children()) collect(child, visit);
-    }
-
-    private static Node nameToken(Node node) {
-        return node.children().isEmpty() ? node : node.children().getFirst();
     }
 
     private Document document(Map<?, ?> params) {

@@ -10,6 +10,7 @@
  */
 module org.affogato.lsp.test {
     requires org.affogato.lsp;
+    requires org.affogato.parser;
     requires org.junit.jupiter;
     requires org.assertj.core;
 }

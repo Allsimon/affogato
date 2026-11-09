@@ -11,7 +11,7 @@
 module org.affogato.lsp {
     requires org.affogato.format;
     requires org.affogato.lint;
-    requires org.affogato.parser;
+    requires transitive org.affogato.parser;
 
     exports org.affogato.lsp;
 }
