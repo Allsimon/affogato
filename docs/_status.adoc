@@ -27,6 +27,9 @@ Heavier attributes::
   flake's own files are read in place, not from a copy in the store, so its
   `outPath` is the directory and the paths it gives derivations differ from
   Nix's.
+  The language server has `nix flake prefetch` copy a locked input missing from
+  the store out of Nix's own fetch cache, without the network, as Nix keeps the
+  inputs it evaluates there rather than in the store.
 * Import from derivation.
 * Content-addressed and impure derivations.
 * `--xml` output.
