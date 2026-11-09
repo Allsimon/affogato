@@ -80,6 +80,11 @@ public final class SyntaxTree {
         return root;
     }
 
+    /** The text the tree was parsed from, comments and blanks around the root included. */
+    public String source() {
+        return src;
+    }
+
     public String text(Node node) {
         return src.substring(node.start, node.end);
     }

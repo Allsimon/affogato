@@ -100,6 +100,11 @@ public final class Analysis {
 
     private static final int GROUP_NAMES = 50;
 
+    /** How many options of a group {@link #groupDeclaration} looks the file of up. */
+    private static final int GROUP_DECLARATIONS = 20;
+
+    private static final Location PENDING = new Location(null, -1, -1);
+
     private static final Set<String> CONSTANTS = Set.of("true", "false", "null");
 
     private static final Pattern URL = Pattern.compile("https?://[^\\s\\\\]+");
@@ -397,9 +402,70 @@ public final class Analysis {
             selected = boundOption(evaluator, tree, offset, module);
             if (selected == null) return null;
             a = evaluator.describeOption(selected.path());
+            if (a != null && a.type() == null) {
+                Location group = groupDeclaration(evaluator, selected.path());
+                return group == PENDING ? null : group;
+            }
         }
         if (a == null || a.file() == null || !a.file().startsWith("/")) return null;
         return new Location(a.file(), a.line() - 1, Math.max(a.column() - 1, 0));
+    }
+
+    /**
+     * Where most of the options of the group at {@code path} are declared, as the module system keeps no position for a
+     * group: the first of them in the file holding more than half; {@link #PENDING} while they are evaluated, else
+     * null.
+     */
+    private Location groupDeclaration(Evaluator evaluator, List<String> path) {
+        List<String> names = evaluator.optionNames(path);
+        if (names == null) return PENDING;
+        Map<String, Integer> counts = new HashMap<>();
+        Map<String, Evaluator.Attribute> firsts = new HashMap<>();
+        int declared = 0;
+        for (String name : names.subList(0, Math.min(names.size(), GROUP_DECLARATIONS))) {
+            List<String> option = new ArrayList<>(path);
+            option.add(name);
+            Evaluator.Attribute a = evaluator.describeOption(option);
+            if (a == null) return PENDING;
+            if (a.file() == null || !a.file().startsWith("/")) continue;
+            declared++;
+            counts.merge(a.file(), 1, Integer::sum);
+            Evaluator.Attribute first = firsts.get(a.file());
+            if (first == null || a.line() < first.line()) firsts.put(a.file(), a);
+        }
+        for (Map.Entry<String, Integer> count : counts.entrySet())
+            if (count.getValue() * 2 > declared) {
+                Evaluator.Attribute first = firsts.get(count.getKey());
+                Location option = new Location(first.file(), first.line() - 1, Math.max(first.column() - 1, 0));
+                Location group = enclosingBinding(option, path.getLast());
+                return group != null ? group : option;
+            }
+        return null;
+    }
+
+    /** The name {@code name} of the innermost binding around {@code at} whose attribute path ends with it, or null. */
+    private Location enclosingBinding(Location at, String name) {
+        SyntaxTree file = workspace.tree(at.path());
+        if (file == null) return null;
+        String text = file.source();
+        int offset = 0;
+        for (int line = 0; line < at.line() && offset >= 0; line++) offset = text.indexOf('\n', offset) + 1;
+        if (offset < 0 || offset + at.column() > text.length()) return null;
+        for (Node node = file.at(offset + at.column()); node != null; node = node.parent()) {
+            if (node.kind != NodeKind.BINDING || node.children().getFirst().kind != NodeKind.ATTR_PATH) continue;
+            Node last = null;
+            for (Node part : node.children().getFirst().children()) if (part.token == null) last = part;
+            if (last == null || !name.equals(attrName(file, last))) continue;
+            int line = 0;
+            int start = 0;
+            for (int i = 0; i < last.start(); i++)
+                if (text.charAt(i) == '\n') {
+                    line++;
+                    start = i + 1;
+                }
+            return new Location(at.path(), line, last.start() - start);
+        }
+        return null;
     }
 
     /**
@@ -413,7 +479,9 @@ public final class Analysis {
         Selected selected = selected(evaluator, module, tree, offset);
         if (selected != null) return evaluator.describe(selected.path()) == null;
         Selected option = boundOption(evaluator, tree, offset, module);
-        return option != null && evaluator.describeOption(option.path()) == null;
+        if (option == null) return false;
+        Evaluator.Attribute a = evaluator.describeOption(option.path());
+        return a == null || a.type() == null && groupDeclaration(evaluator, option.path()) == PENDING;
     }
 
     private static String optionPath(List<String> path) {
