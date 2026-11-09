@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import org.affogato.Session;
 import org.affogato.lsp.Evaluator;
 import org.affogato.lsp.Json;
@@ -68,6 +69,59 @@ public final class SessionEvaluator implements AutoCloseable {
         this.optionExpressions = Collections.unmodifiableMap(new LinkedHashMap<>(optionExpressions));
         configureSession();
     }
+
+    /**
+     * Lets {@code copy} copy into the store the locked flake inputs missing from it, given their flake reference, and
+     * tell whether it did; {@link #copyInput} by the {@code nix} on the path.
+     */
+    public void inputs(Predicate<String> copy) {
+        session.inputs(ref -> {
+            Evaluator.Progress p = progress;
+            Runnable end = p == null ? () -> {} : p.begin("Copying " + ref + " into the store");
+            try {
+                return copy.test(ref);
+            } finally {
+                end.run();
+            }
+        });
+    }
+
+    /**
+     * Copies the flake reference {@code ref} into the store from Nix's fetch cache, without the network, by the
+     * {@code nix} on the path; whether it did.
+     */
+    public static boolean copyInput(String ref) {
+        ProcessBuilder builder = new ProcessBuilder(copyCommand("nix", ref))
+                .redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")))
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD);
+        builder.environment().putAll(OFFLINE);
+        try {
+            return builder.start().waitFor() == 0;
+        } catch (IOException e) {
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /** The command copying {@code ref} into the store with the {@code nix} at {@code nix}, run with {@link #OFFLINE}. */
+    public static List<String> copyCommand(String nix, String ref) {
+        return List.of(nix, "flake", "prefetch", "--offline", "--json", ref);
+    }
+
+    /**
+     * The environment that keeps {@link #copyCommand} off the network: {@code --offline} alone still downloads a
+     * revision missing from the cache, so its proxy is a closed local port.
+     */
+    public static final Map<String, String> OFFLINE = Map.of(
+            "ALL_PROXY", "http://127.0.0.1:9",
+            "all_proxy", "http://127.0.0.1:9",
+            "HTTPS_PROXY", "http://127.0.0.1:9",
+            "https_proxy", "http://127.0.0.1:9",
+            "HTTP_PROXY", "http://127.0.0.1:9",
+            "http_proxy", "http://127.0.0.1:9");
 
     /** The evaluator of the expressions given, whose {@link Evaluator#project} gives those of projects. */
     public Evaluator main() {

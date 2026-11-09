@@ -2,12 +2,15 @@ package org.affogato.lsp.test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.affogato.lsp.Analysis;
 import org.affogato.lsp.Analysis.Completion;
 import org.affogato.lsp.Analysis.Kind;
 import org.affogato.lsp.Analysis.Rewrite;
 import org.affogato.lsp.Analysis.Span;
+import org.affogato.lsp.Evaluator;
 import org.affogato.parser.SyntaxTree;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +29,68 @@ class AnalysisTest {
 
     private static Analysis analysis(String text) {
         return new Analysis("/p/default.nix", text, SyntaxTree.parse(text), null, NONE);
+    }
+
+    /** Options whose description is not evaluated yet while {@code pending}. */
+    private static final class Options implements Evaluator {
+        boolean pending = true;
+
+        @Override
+        public List<String> names(List<String> path) {
+            return List.of();
+        }
+
+        @Override
+        public List<Attribute> describeAll(List<List<String>> paths) {
+            List<Attribute> none = new ArrayList<>();
+            for (List<String> path : paths)
+                none.add(new Attribute(null, null, null, null, null, null, null, null, null, null, 0, 0));
+            return none;
+        }
+
+        @Override
+        public void whenDescribed(List<List<String>> paths, Runnable then) {}
+
+        @Override
+        public List<String> optionNames(List<String> path) {
+            return List.of();
+        }
+
+        @Override
+        public Attribute describeOption(List<String> path) {
+            return pending
+                    ? null
+                    : new Attribute("option", "boolean", null, null, null, null, null, null, null, "/o.nix", 3, 5);
+        }
+
+        @Override
+        public void configureOptions(Map<String, String> expressions) {}
+
+        @Override
+        public Evaluator project(String key, Map<String, String> options) {
+            return this;
+        }
+
+        @Override
+        public void configure(String expression) {}
+
+        @Override
+        public void reset() {}
+    }
+
+    @Test
+    void declaresAnOptionOnceEvaluated() {
+        String text = "{ config, ... }: { services.nginx.enable = true; }";
+        int offset = text.indexOf("enable");
+        Options options = new Options();
+        Analysis analysis = new Analysis(null, text, SyntaxTree.parse(text), options, NONE);
+
+        assertThat(analysis.evaluating(offset)).isTrue();
+        assertThat(analysis.declaration(offset)).isNull();
+        options.pending = false;
+        assertThat(analysis.evaluating(offset)).isFalse();
+        assertThat(analysis.declaration(offset)).isEqualTo(new Analysis.Location("/o.nix", 2, 4));
+        assertThat(analysis.evaluating(text.indexOf("{ config"))).isFalse();
     }
 
     @Test

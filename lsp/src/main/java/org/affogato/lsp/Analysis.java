@@ -402,6 +402,20 @@ public final class Analysis {
         return new Location(a.file(), a.line() - 1, Math.max(a.column() - 1, 0));
     }
 
+    /**
+     * Whether the nixpkgs attribute or the option at {@code offset} is still being evaluated, so that
+     * {@link #declaration} and {@link #hover} answer once it is.
+     */
+    public boolean evaluating(int offset) {
+        Evaluator evaluator = evaluator();
+        if (evaluator == null) return false;
+        boolean module = module();
+        Selected selected = selected(evaluator, module, tree, offset);
+        if (selected != null) return evaluator.describe(selected.path()) == null;
+        Selected option = boundOption(evaluator, tree, offset, module);
+        return option != null && evaluator.describeOption(option.path()) == null;
+    }
+
     private static String optionPath(List<String> path) {
         StringBuilder text = new StringBuilder("`");
         for (String name : path) {
