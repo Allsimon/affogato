@@ -27,6 +27,7 @@ let
           ../build.jenesis
           ../jenesis.properties
           ../cli/src/main
+          ../evaluator/src/main
           ../format/src/main
           ../language/src/main
           ../lint/src/main
@@ -107,7 +108,7 @@ let
     '';
   };
 
-  # The formatter and linter as a Maven repository, for the IntelliJ plugin (Allsimon/devenv-intellij) to build against.
+  # The formatter, linter, language server analysis and evaluator as a Maven repository, for the IntelliJ plugin (Allsimon/devenv-intellij) to build against.
   mavenRepo = stdenv.mkDerivation {
     name = "affogato-maven-repo";
     src = lib.fileset.toSource {
@@ -116,8 +117,11 @@ let
         ../build/jenesis
         ../build.jenesis
         ../jenesis.properties
+        ../evaluator/src/main
         ../format/src/main
+        ../language/src/main
         ../lint/src/main
+        ../lsp/src/main
         ../parser/src/main
         ../store/src/main
       ];
@@ -133,7 +137,7 @@ let
     installPhase = ''
       runHook preInstall
       mkdir -p $out/org/affogato
-      cp -r target/stage/maven/output/org/affogato/org.affogato.{parser,format,lint,store} $out/org/affogato
+      cp -r target/stage/maven/output/org/affogato/{org.affogato,org.affogato.parser,org.affogato.format,org.affogato.lint,org.affogato.store,org.affogato.lsp,org.affogato.evaluator} $out/org/affogato
       runHook postInstall
     '';
   };
