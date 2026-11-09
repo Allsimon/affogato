@@ -76,6 +76,14 @@ public interface Evaluator {
     /** Reports to {@code progress}, from now on, the evaluations that outlast a request and those started unasked. */
     default void progress(Progress progress) {}
 
+    /** Shows the user that an evaluation failed: what was evaluated, and the error. */
+    interface Failures {
+        void failed(String title, String message);
+    }
+
+    /** Reports to {@code failures}, from now on, the evaluations of nixpkgs or an option set that fail. */
+    default void failures(Failures failures) {}
+
     /** Evaluates {@code expression} as nixpkgs from now on. */
     void configure(String expression);
 

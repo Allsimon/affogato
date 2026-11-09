@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import org.affogato.runtime.Apply;
 import org.affogato.runtime.NixAttrs;
@@ -90,6 +91,8 @@ public final class Session implements AutoCloseable {
     private Object root;
 
     private boolean options;
+
+    private volatile BiConsumer<String, String> failures = (root, message) -> {};
 
     /** One expression, queried by {@link #names(List)} and {@link #describe(List)}. */
     public Session(String nixPath, String system, String storeDir, String expression, String baseDir) {
@@ -180,6 +183,14 @@ public final class Session implements AutoCloseable {
     }
 
     /**
+     * Tells {@code failures} the name and the error of each root, or view of its arguments, whose evaluation fails,
+     * once until the next {@link #reset}; queries of it then answer as if it were empty.
+     */
+    public void failures(BiConsumer<String, String> failures) {
+        this.failures = failures;
+    }
+
+    /**
      * The name of the view of an options root as the arguments its modules receive: {@code _module.args} and, over
      * them, {@code _module.specialArgs}, which the module system takes first.
      */
@@ -197,6 +208,7 @@ public final class Session implements AutoCloseable {
             dir = baseDir;
         }
         if (r == null || arguments && !r.options()) return f.apply(null);
+        String failing = null;
         try {
             if (ctx == null) {
                 ctx = new NixContext(storeDir, system, nixPath);
@@ -204,6 +216,7 @@ public final class Session implements AutoCloseable {
             }
             ctx.enter();
             if (!values.containsKey(rootName)) {
+                failing = rootName;
                 values.put(rootName, null);
                 values.put(
                         rootName,
@@ -213,13 +226,17 @@ public final class Session implements AutoCloseable {
                                 Map.of()));
             }
             if (arguments && !values.containsKey(name)) {
+                failing = name;
                 values.put(name, null);
                 values.put(name, moduleArguments(values.get(rootName)));
             }
+            failing = null;
             root = values.get(name);
             options = r.options() && !arguments;
             return f.apply(path);
         } catch (NixException | StackOverflowError e) {
+            if (failing != null && (ctx == null || !ctx.cancelled))
+                failures.accept(failing, e instanceof StackOverflowError ? "stack overflow" : e.getMessage());
             return f.apply(null);
         } finally {
             NixContext.leave();

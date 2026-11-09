@@ -58,6 +58,10 @@ public final class SessionEvaluator implements AutoCloseable {
             String nixPath,
             Function<String, String> printConfig) {
         this.session = new Session(nixPath, "", "");
+        session.failures((root, message) -> {
+            Evaluator.Failures f = failures;
+            if (f != null) f.failed("Evaluating " + title(root), message);
+        });
         this.directory = directory;
         this.printConfig = printConfig;
         this.expression = expression;
@@ -87,6 +91,7 @@ public final class SessionEvaluator implements AutoCloseable {
 
     private List<CompletableFuture<List<String>>> prefetched = List.of();
     private volatile Evaluator.Progress progress;
+    private volatile Evaluator.Failures failures;
     /** The futures under way for each title shown, and the end of each. */
     private final Map<String, Set<Future<?>>> working = new HashMap<>();
 
@@ -342,6 +347,11 @@ public final class SessionEvaluator implements AutoCloseable {
         @Override
         public void progress(Evaluator.Progress progress) {
             SessionEvaluator.this.progress(progress);
+        }
+
+        @Override
+        public void failures(Evaluator.Failures failures) {
+            SessionEvaluator.this.failures = failures;
         }
 
         @Override

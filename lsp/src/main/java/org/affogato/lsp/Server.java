@@ -271,6 +271,9 @@ public final class Server {
             }
             case "initialized" -> {
                 if (evaluator != null && send != null && progressSupport) evaluator.progress(this::beginProgress);
+                if (evaluator != null && send != null)
+                    evaluator.failures((title, message) -> send.accept(notification(
+                            "window/showMessage", Map.of("type", 2L, "message", title + " failed: " + message))));
                 pullConfiguration(out);
                 yield null;
             }
