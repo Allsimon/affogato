@@ -380,6 +380,13 @@ class ServerTest {
             this.progress = progress;
         }
 
+        Failures failures;
+
+        @Override
+        public void failures(Failures failures) {
+            this.failures = failures;
+        }
+
         @Override
         public void configure(String expression) {
             this.expression = expression;
@@ -610,6 +617,30 @@ class ServerTest {
         server = new Server(nixpkgs);
         result("initialize", "{\"initializationOptions\":{\"options\":{\"nixos\":{\"expr\":\"o\"},\"x\":1}}}");
         assertThat(nixpkgs.optionSets).isEqualTo(Map.of("nixos", "o"));
+    }
+
+    @Test
+    void warnsOfAFailedEvaluation() {
+        Nixpkgs nixpkgs = new Nixpkgs();
+        List<Map<String, Object>> sent = new ArrayList<>();
+        server = new Server(nixpkgs, sent::add);
+        result("initialize", "{\"capabilities\":{}}");
+        server.handle(Json.parse("{\"jsonrpc\":\"2.0\",\"method\":\"initialized\",\"params\":{}}"));
+
+        nixpkgs.failures.failed("Evaluating nixpkgs", "input 'github:NixOS/nixpkgs' is not in the Nix store");
+
+        assertThat(sent)
+                .containsExactly(Map.of(
+                        "jsonrpc",
+                        "2.0",
+                        "method",
+                        "window/showMessage",
+                        "params",
+                        Map.of(
+                                "type",
+                                2L,
+                                "message",
+                                "Evaluating nixpkgs failed: input 'github:NixOS/nixpkgs' is not in the Nix store")));
     }
 
     @Test

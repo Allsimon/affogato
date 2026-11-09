@@ -38,6 +38,20 @@ class InterpreterTest {
     }
 
     @Test
+    void reportsAFailingRootOnceUntilReset(@TempDir Path dir) throws Exception {
+        List<String> failures = new java.util.concurrent.CopyOnWriteArrayList<>();
+        try (Session session = new Session("", "", "", "throw \"broken\"", dir.toString())) {
+            session.failures((root, message) -> failures.add(message));
+            assertThat(session.names(List.of()).get()).isEmpty();
+            assertThat(session.names(List.of("a")).get()).isEmpty();
+            assertThat(failures).hasSize(1).first().asString().contains("broken");
+            session.reset();
+            assertThat(session.names(List.of()).get()).isEmpty();
+            assertThat(failures).hasSize(2);
+        }
+    }
+
+    @Test
     void keepsASessionsValuesUntilReset(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("a.nix");
         Files.writeString(file, "{ }: { a = { c = 1; b = throw \"x\"; }; f = { x ? 1 }: { y = x; }; }");
