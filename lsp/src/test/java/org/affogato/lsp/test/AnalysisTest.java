@@ -53,14 +53,24 @@ class AnalysisTest {
 
         @Override
         public List<String> optionNames(List<String> path) {
-            return List.of();
+            return path.equals(List.of("services", "nginx"))
+                    ? List.of("enable", "package", "proxy", "virtualHosts")
+                    : List.of();
         }
 
         @Override
         public Attribute describeOption(List<String> path) {
-            return pending
-                    ? null
-                    : new Attribute("option", "boolean", null, null, null, null, null, null, null, "/o.nix", 3, 5);
+            if (pending) return null;
+            return switch (String.join(".", path)) {
+                case "services.nginx.enable" -> option("/nginx.nix", 12, 5);
+                case "services.nginx.package" -> option("/nginx.nix", 9, 7);
+                case "services.nginx.proxy" -> option("/proxy.nix", 3, 3);
+                default -> new Attribute(null, null, null, null, null, null, null, null, null, null, 0, 0);
+            };
+        }
+
+        private static Attribute option(String file, int line, int column) {
+            return new Attribute("option", "boolean", null, null, null, null, null, null, null, file, line, column);
         }
 
         @Override
@@ -89,8 +99,44 @@ class AnalysisTest {
         assertThat(analysis.declaration(offset)).isNull();
         options.pending = false;
         assertThat(analysis.evaluating(offset)).isFalse();
-        assertThat(analysis.declaration(offset)).isEqualTo(new Analysis.Location("/o.nix", 2, 4));
+        assertThat(analysis.declaration(offset)).isEqualTo(new Analysis.Location("/nginx.nix", 11, 4));
         assertThat(analysis.evaluating(text.indexOf("{ config"))).isFalse();
+    }
+
+    @Test
+    void declaresAGroupWhereMostOfItsOptionsAre() {
+        String text = "{ config, ... }: { services.nginx.enable = true; }";
+        int offset = text.indexOf("nginx");
+        Options options = new Options();
+        Analysis analysis = new Analysis(null, text, SyntaxTree.parse(text), options, NONE);
+
+        assertThat(analysis.evaluating(offset)).isTrue();
+        options.pending = false;
+        assertThat(analysis.evaluating(offset)).isFalse();
+        assertThat(analysis.declaration(offset)).isEqualTo(new Analysis.Location("/nginx.nix", 8, 6));
+        assertThat(analysis.declaration(text.indexOf("services"))).isNull();
+    }
+
+    @Test
+    void declaresAGroupAtItsBindingInTheFileOfItsOptions() {
+        String nginx = "# 1\n# 2\n# 3\n# 4\n# 5\n# 6\n# 7\n{ options.services.nginx = {\n      package = 1;\n}; }\n";
+        Analysis.Workspace files = new Analysis.Workspace() {
+            @Override
+            public SyntaxTree tree(String path) {
+                return path.equals("/nginx.nix") ? SyntaxTree.parse(nginx) : null;
+            }
+
+            @Override
+            public Map<String, SyntaxTree> files() {
+                return Map.of();
+            }
+        };
+        String text = "{ config, ... }: { services.nginx.enable = true; }";
+        Options options = new Options();
+        options.pending = false;
+        Analysis analysis = new Analysis(null, text, SyntaxTree.parse(text), options, files);
+
+        assertThat(analysis.declaration(text.indexOf("nginx"))).isEqualTo(new Analysis.Location("/nginx.nix", 7, 19));
     }
 
     @Test
