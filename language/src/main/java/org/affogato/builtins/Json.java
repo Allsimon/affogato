@@ -29,10 +29,31 @@ public final class Json {
 
     /** Port of {@code printValueAsJSON}. */
     public static NixString toJson(Object v, boolean copyToStore) {
-        StringBuilder out = new StringBuilder();
+        StringBuilder out = takeBuilder();
         TreeSet<String> context = new TreeSet<>();
         write(out, context, v, copyToStore);
-        return new NixString(out.toString(), context);
+        String json = out.toString();
+        giveBuilder(out);
+        return new NixString(json, context);
+    }
+
+    private static final ThreadLocal<StringBuilder[]> BUILDER = ThreadLocal.withInitial(() -> new StringBuilder[1]);
+
+    /**
+     * An empty builder that kept the capacity of an earlier document, to give back with {@link #giveBuilder}; another
+     * one when that is taken, as by the document being written when a value it forces writes its own.
+     */
+    static StringBuilder takeBuilder() {
+        StringBuilder[] holder = BUILDER.get();
+        StringBuilder b = holder[0];
+        if (b == null) return new StringBuilder(256);
+        holder[0] = null;
+        b.setLength(0);
+        return b;
+    }
+
+    static void giveBuilder(StringBuilder b) {
+        if (b.capacity() <= 1 << 20) BUILDER.get()[0] = b;
     }
 
     /** Appends the JSON of {@code v} to {@code out}, and its string context to {@code context}. */

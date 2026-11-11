@@ -152,7 +152,7 @@ public final class Derivations {
         String outputHash = null;
         String outputHashAlgo = null;
         String outputHashMode = null;
-        StringBuilder json = structured ? new StringBuilder("{") : null;
+        StringBuilder json = structured ? Json.takeBuilder().append('{') : null;
 
         for (int i = 0; i < attrs.size(); i++) {
             String key = attrs.key(i);
@@ -200,7 +200,10 @@ public final class Derivations {
                 }
             }
         }
-        if (structured) drv.env.put("__json", json.append('}').toString());
+        if (structured) {
+            drv.env.put("__json", json.append('}').toString());
+            Json.giveBuilder(json);
+        }
         if (drv.builder == null) throw error(drvName, "required attribute 'builder' missing");
         if (drv.platform == null) throw error(drvName, "required attribute 'system' missing");
 

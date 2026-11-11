@@ -1,6 +1,7 @@
 package org.affogato.store;
 
 import java.util.Collection;
+import java.util.SortedSet;
 import java.util.TreeSet;
 
 public final class StorePaths {
@@ -13,8 +14,11 @@ public final class StorePaths {
     }
 
     private static String withRefs(String type, Collection<String> refs, boolean self) {
-        StringBuilder sb = new StringBuilder(type);
-        for (String r : new TreeSet<>(refs)) sb.append(':').append(r);
+        Collection<String> sorted = refs instanceof SortedSet<String> ? refs : new TreeSet<>(refs);
+        int length = type.length() + 5;
+        for (String r : sorted) length += r.length() + 1;
+        StringBuilder sb = new StringBuilder(length).append(type);
+        for (String r : sorted) sb.append(':').append(r);
         if (self) sb.append(":self");
         return sb.toString();
     }
