@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -32,7 +31,7 @@ final class Strings {
         b.add("concatStringsSep", 2, a -> {
             NixString sep = Types.string(a[0]);
             StringBuilder sb = new StringBuilder();
-            Set<String> ctx = sep.context;
+            String[] ctx = sep.context;
             Object[] items = Types.list(a[1]).items;
             for (int i = 0; i < items.length; i++) {
                 if (i > 0) sb.append(sep.value);
@@ -139,7 +138,7 @@ final class Strings {
         for (int i = 0; i < fromS.length; i++) fromS[i] = Types.string(from.items[i]).value;
         NixString[] toS = new NixString[to.size()];
         NixString s = Types.string(sV);
-        Set<String> ctx = s.context;
+        String[] ctx = s.context;
         StringBuilder res = new StringBuilder();
         String str = s.value;
         for (int p = 0; p <= str.length(); ) {

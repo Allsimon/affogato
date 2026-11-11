@@ -1,6 +1,7 @@
 package org.affogato.builtins;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.TreeMap;
@@ -10,7 +11,7 @@ import org.affogato.runtime.*;
 /** Port of {@code printValueAsXML} (src/libexpr/value-to-xml.cc), without locations. */
 final class Xml {
     private final StringBuilder out = new StringBuilder("<?xml version='1.0' encoding='utf-8'?>\n");
-    private final Set<String> context = new TreeSet<>();
+    private final TreeSet<String> context = new TreeSet<>();
     private final Set<String> drvsSeen = new HashSet<>();
     private int depth;
 
@@ -94,7 +95,7 @@ final class Xml {
             case Long l -> empty("int", attr("value", l.toString()));
             case Boolean b -> empty("bool", attr("value", b.toString()));
             case NixString s -> {
-                if (s.context != null) context.addAll(s.context);
+                if (s.context != null) Collections.addAll(context, s.context);
                 empty("string", attr("value", s.value));
             }
             case NixPath p -> empty("path", attr("value", p.path()));

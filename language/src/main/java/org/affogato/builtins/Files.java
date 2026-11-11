@@ -3,7 +3,6 @@ package org.affogato.builtins;
 import java.io.IOException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.util.Set;
 import java.util.function.BiPredicate;
 import org.affogato.NixContext;
 import org.affogato.runtime.*;
@@ -60,7 +59,7 @@ final class Files {
             NixContext ctx = NixContext.get();
             if (!p.startsWith(ctx.storeDir + "/")) throw new NixException("path '" + p + "' is not in the Nix store");
             String root = storePathRoot(ctx, p);
-            return new NixString(p, Set.of(root));
+            return NixString.withContext(p, root);
         });
         b.add("getEnv", 1, a -> new NixString(System.getenv().getOrDefault(Types.string(a[0]).value, "")));
         b.add("placeholder", 1, a -> {
@@ -83,7 +82,7 @@ final class Files {
             }
             checkName(name);
             String p = StorePaths.text(NixContext.get().storeDir, name, contents.value, refs);
-            return new NixString(p, Set.of(p));
+            return NixString.withContext(p, p);
         });
         b.add("filterSource", 2, a -> addPath(NixContext.get(), realPath(a[1]), null, a[0], true, null));
         b.add("path", 1, a -> {
@@ -150,7 +149,7 @@ final class Files {
         } catch (IOException e) {
             throw new NixException("cannot read '" + path + "': " + NixContext.describe(e));
         }
-        return new NixString(sp, Set.of(sp));
+        return NixString.withContext(sp, sp);
     }
 
     private static Object findFile(NixContext ctx, NixList searchPath, String path) {

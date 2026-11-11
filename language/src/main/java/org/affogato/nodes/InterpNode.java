@@ -1,6 +1,5 @@
 package org.affogato.nodes;
 
-import java.util.Set;
 import org.affogato.runtime.*;
 
 /** String interpolation, or path interpolation when the first part is a path. */
@@ -16,7 +15,7 @@ public final class InterpNode extends NixNode {
     @Override
     public Object execute(Object[] frame) {
         StringBuilder sb = new StringBuilder();
-        Set<String> ctx = null;
+        String[] ctx = null;
         for (int i = 0; i < parts.length; i++) {
             Object v = parts[i].execute(frame);
             if (isPath && i == 0) {

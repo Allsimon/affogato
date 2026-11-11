@@ -67,7 +67,7 @@ public final class Types {
     public static String stringNoContext(Object v) {
         NixString s = string(v);
         if (s.context != null) {
-            String c = s.context.iterator().next();
+            String c = s.context[0];
             int sep = c.indexOf('!', 1);
             String path = c.startsWith("=")
                     ? c.substring(1) + " (deep)"

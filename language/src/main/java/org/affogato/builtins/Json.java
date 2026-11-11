@@ -3,8 +3,9 @@ package org.affogato.builtins;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Set;
+import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import org.affogato.NixContext;
@@ -12,10 +13,10 @@ import org.affogato.runtime.*;
 
 public final class Json {
     private final StringBuilder out;
-    private final Set<String> context;
+    private final SortedSet<String> context;
     private final boolean copyToStore;
 
-    private Json(StringBuilder out, Set<String> context, boolean copyToStore) {
+    private Json(StringBuilder out, SortedSet<String> context, boolean copyToStore) {
         this.out = out;
         this.context = context;
         this.copyToStore = copyToStore;
@@ -29,13 +30,13 @@ public final class Json {
     /** Port of {@code printValueAsJSON}. */
     public static NixString toJson(Object v, boolean copyToStore) {
         StringBuilder out = new StringBuilder();
-        Set<String> context = new TreeSet<>();
+        TreeSet<String> context = new TreeSet<>();
         write(out, context, v, copyToStore);
         return new NixString(out.toString(), context);
     }
 
     /** Appends the JSON of {@code v} to {@code out}, and its string context to {@code context}. */
-    static void write(StringBuilder out, Set<String> context, Object v, boolean copyToStore) {
+    static void write(StringBuilder out, SortedSet<String> context, Object v, boolean copyToStore) {
         new Json(out, context, copyToStore).value(v);
     }
 
@@ -60,7 +61,7 @@ public final class Json {
             case Boolean b -> out.append(b);
             case NixNull n -> out.append("null");
             case NixString s -> {
-                if (s.context != null) context.addAll(s.context);
+                if (s.context != null) Collections.addAll(context, s.context);
                 string(s.value);
             }
             case NixPath p -> {
@@ -83,7 +84,7 @@ public final class Json {
             case NixAttrs a -> {
                 if (a.has("__toString")) {
                     NixString s = Coerce.toNixString(a, false, copyToStore);
-                    if (s.context != null) context.addAll(s.context);
+                    if (s.context != null) Collections.addAll(context, s.context);
                     string(s.value);
                     return;
                 }

@@ -1,6 +1,7 @@
 package org.affogato.builtins;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -22,16 +23,16 @@ final class Context {
         });
         b.add("addDrvOutputDependencies", 1, a -> {
             NixString s = Coerce.toNixString(a[0], false, false);
-            if (s.context == null || s.context.size() != 1) {
+            if (s.context == null || s.context.length != 1) {
                 throw new NixException("context of string '" + s.value + "' must have exactly one element");
             }
-            String c = s.context.iterator().next();
+            String c = s.context[0];
             if (c.startsWith("!"))
                 throw new NixException(
                         "`addDrvOutputDependencies` can only act on derivations, not on a derivation output");
             if (!c.startsWith("=") && !c.endsWith(".drv"))
                 throw new NixException("path '" + c + "' is not a derivation");
-            return new NixString(s.value, java.util.Set.of(c.startsWith("=") ? c : "=" + c));
+            return NixString.withContext(s.value, c.startsWith("=") ? c : "=" + c);
         });
         b.add("getContext", 1, a -> {
             NixString s = Types.string(a[0]);
@@ -68,7 +69,8 @@ final class Context {
         });
         b.add("appendContext", 2, a -> {
             NixString s = Types.string(a[0]);
-            TreeSet<String> ctx = s.context == null ? new TreeSet<>() : new TreeSet<>(s.context);
+            TreeSet<String> ctx = new TreeSet<>();
+            if (s.context != null) Collections.addAll(ctx, s.context);
             NixAttrs attrs = Types.attrs(a[1]);
             for (int i = 0; i < attrs.size(); i++) {
                 String path = attrs.keys()[i];

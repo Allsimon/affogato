@@ -7,9 +7,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
-import java.util.TreeSet;
 import org.affogato.NixContext;
 import org.affogato.runtime.Apply;
 import org.affogato.runtime.NixAttrs;
@@ -54,7 +52,7 @@ final class Flakes {
         String ref = ctx.inputs == null || Files.exists(Path.of(path)) ? null : reference(input);
         if (ref != null) ctx.inputs.test(ref);
         if (Files.exists(Path.of(path))) {
-            tree.put("outPath", new NixString(path, new TreeSet<>(Set.of(path))));
+            tree.put("outPath", NixString.withContext(path, path));
         } else if ("path".equals(string(input, "type"))
                 && string(input, "path") != null
                 && Files.isDirectory(Path.of(string(input, "path")))) {

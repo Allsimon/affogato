@@ -3,7 +3,6 @@ package org.affogato.runtime;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Locale;
-import java.util.Set;
 import org.affogato.NixContext;
 
 public final class Coerce {
@@ -16,7 +15,7 @@ public final class Coerce {
         if (v instanceof NixPath p) {
             if (!copyToStore) return new NixString(p.path());
             String sp = NixContext.get().copyPathToStore(p.path());
-            return new NixString(sp, Set.of(sp));
+            return NixString.withContext(sp, sp);
         }
         if (v instanceof NixAttrs a) {
             Object f = a.getRaw("__toString");
@@ -31,7 +30,7 @@ public final class Coerce {
             if (v instanceof Double d) return new NixString(cToString(d));
             if (v instanceof NixList l) {
                 StringBuilder sb = new StringBuilder();
-                Set<String> ctx = null;
+                String[] ctx = null;
                 for (int i = 0; i < l.size(); i++) {
                     Object item = l.get(i);
                     NixString s = toNixString(item, true, copyToStore);

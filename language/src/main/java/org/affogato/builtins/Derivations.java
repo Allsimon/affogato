@@ -2,6 +2,8 @@ package org.affogato.builtins;
 
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -38,7 +40,7 @@ public final class Derivations {
     }
 
     /** What a derivation's dependents need of it, kept instead of the derivation since its env can be large. */
-    private record Closure(Set<String> outputs, Set<String> inputSrcs, Set<String> inputDrvs) {}
+    private record Closure(String[] outputs, String[] inputSrcs, String[] inputDrvs) {}
 
     /** Derivations produced so far, by .drv path; stands in for reading them back from the store. */
     private static final Map<String, Closure> DRVS = new ConcurrentHashMap<>();
@@ -122,7 +124,7 @@ public final class Derivations {
             if (key.equals("args")) {
                 for (Object x : Types.list(v).items) {
                     NixString s = Coerce.toNixString(x, true, true);
-                    if (s.context != null) context.addAll(s.context);
+                    if (s.context != null) Collections.addAll(context, s.context);
                     drv.args.add(s.value);
                 }
                 continue;
@@ -144,7 +146,7 @@ public final class Derivations {
                 }
             } else {
                 NixString s = Coerce.toNixString(v, true, true);
-                if (s.context != null) context.addAll(s.context);
+                if (s.context != null) Collections.addAll(context, s.context);
                 drv.env.put(key, s.value);
                 switch (key) {
                     case "builder" -> drv.builder = s.value;
@@ -232,20 +234,27 @@ public final class Derivations {
         }
         if (!DRVS.containsKey(drvPath)) {
             HASH_MODULO.put(drvPath, hashModulo(drv, false));
-            DRVS.put(drvPath, new Closure(drv.outputs.keySet(), drv.inputSrcs, drv.inputDrvs.keySet()));
+            DRVS.put(
+                    drvPath,
+                    new Closure(
+                            strings(drv.outputs.keySet()), strings(drv.inputSrcs), strings(drv.inputDrvs.keySet())));
         }
 
         TreeMap<String, Object> result = new TreeMap<>();
-        result.put("drvPath", new NixString(drvPath, Set.of("=" + drvPath)));
+        result.put("drvPath", NixString.withContext(drvPath, "=" + drvPath));
         for (var o : drv.outputs.entrySet()) {
-            result.put(o.getKey(), new NixString(o.getValue().path(), Set.of("!" + o.getKey() + "!" + drvPath)));
+            result.put(o.getKey(), NixString.withContext(o.getValue().path(), "!" + o.getKey() + "!" + drvPath));
         }
         return NixAttrs.of(result);
     }
 
+    private static String[] strings(Collection<String> c) {
+        return c.toArray(new String[0]);
+    }
+
     private static String stringOf(Object v, Set<String> context) {
         NixString s = Types.string(v);
-        if (s.context != null) context.addAll(s.context);
+        if (s.context != null) Collections.addAll(context, s.context);
         return s.value;
     }
 
@@ -264,8 +273,8 @@ public final class Derivations {
         Closure dep = DRVS.get(drvPath);
         if (dep == null) throw new NixException("derivation '" + drvPath + "' is not known to affogato");
         drv.inputSrcs.add(drvPath);
-        drv.inputDrvs.computeIfAbsent(drvPath, k -> new TreeSet<>()).addAll(dep.outputs());
-        drv.inputSrcs.addAll(dep.inputSrcs());
+        Collections.addAll(drv.inputDrvs.computeIfAbsent(drvPath, k -> new TreeSet<>()), dep.outputs());
+        Collections.addAll(drv.inputSrcs, dep.inputSrcs());
         for (String d : dep.inputDrvs()) addDeepClosure(d, drv);
     }
 
