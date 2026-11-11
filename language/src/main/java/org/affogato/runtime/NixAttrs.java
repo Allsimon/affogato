@@ -20,10 +20,8 @@ public final class NixAttrs {
     /** Sorted by byte order, which is what {@code attrNames} and iteration expose; null while a union. */
     private Name[] keys;
 
+    /** While a union, a {@code NixAttrs[]}: the flat operands of the {@code //}, lowest priority first. */
     private Object[] values;
-
-    /** The flat operands of a {@code //}, lowest priority first; null once flat. */
-    private NixAttrs[] leaves;
 
     public NixAttrs(Name[] keys, Object[] values) {
         this.keys = keys;
@@ -31,7 +29,12 @@ public final class NixAttrs {
     }
 
     private NixAttrs(NixAttrs[] leaves) {
-        this.leaves = leaves;
+        this.values = leaves;
+    }
+
+    /** Null once flat. */
+    private NixAttrs[] leaves() {
+        return this.keys == null ? (NixAttrs[]) this.values : null;
     }
 
     public static NixAttrs of(Map<String, Object> map) {
@@ -90,6 +93,7 @@ public final class NixAttrs {
 
     /** A lower bound of {@link #size()} that does not merge a union. */
     public int minSize() {
+        NixAttrs[] leaves = leaves();
         if (leaves == null) return keys.length;
         int n = 0;
         for (NixAttrs l : leaves) n = Math.max(n, l.keys.length);
@@ -97,7 +101,7 @@ public final class NixAttrs {
     }
 
     public boolean isEmpty() {
-        return leaves == null && keys.length == 0;
+        return keys != null && keys.length == 0;
     }
 
     /** Same contract as {@link Arrays#binarySearch(Object[], Object)}. */
@@ -150,6 +154,7 @@ public final class NixAttrs {
     }
 
     private Object getRaw(String name, long prefix, boolean exact) {
+        NixAttrs[] leaves = leaves();
         if (leaves == null) return flatGetRaw(name, prefix, exact);
         for (int l = leaves.length - 1; l >= 0; l--) {
             Object v = leaves[l].flatGetRaw(name, prefix, exact);
@@ -163,6 +168,7 @@ public final class NixAttrs {
      * return, and in {@code found} this set's own key; one galloping pass per leaf instead of a search per key.
      */
     public void getRawSorted(Name[] keys, Object[] values, Name[] found) {
+        NixAttrs[] leaves = leaves();
         if (leaves == null) {
             flatGetRawSorted(keys, values, found);
             return;
@@ -200,6 +206,7 @@ public final class NixAttrs {
     }
 
     private Object get(String name, long prefix, boolean exact) {
+        NixAttrs[] leaves = leaves();
         if (leaves == null) return flatGet(name, prefix, exact);
         for (int l = leaves.length - 1; l >= 0; l--) {
             Object v = leaves[l].flatGet(name, prefix, exact);
@@ -234,6 +241,7 @@ public final class NixAttrs {
     public SourceSection position(String key) {
         long prefix = Name.prefix(key);
         boolean exact = Name.exact(key);
+        NixAttrs[] leaves = leaves();
         if (leaves == null) return flatPosition(key, prefix, exact);
         for (int l = leaves.length - 1; l >= 0; l--) {
             if (leaves[l].flatGetRaw(key, prefix, exact) != null) return leaves[l].flatPosition(key, prefix, exact);
@@ -253,9 +261,11 @@ public final class NixAttrs {
     public NixAttrs update(NixAttrs right) {
         if (right.isEmpty()) return this;
         if (isEmpty()) return right;
+        NixAttrs[] leaves = leaves();
+        NixAttrs[] rightLeaves = right.leaves();
         if (leaves == null && keys.length < MIN_UNION_SIZE) return merge(this, right.flat());
         NixAttrs[] l = leaves != null ? leaves : new NixAttrs[] {this};
-        NixAttrs[] r = right.leaves != null ? right.leaves : new NixAttrs[] {right};
+        NixAttrs[] r = rightLeaves != null ? rightLeaves : new NixAttrs[] {right};
         NixAttrs[] all = Arrays.copyOf(l, l.length + r.length);
         System.arraycopy(r, 0, all, l.length, r.length);
         int n = all.length > MAX_LEAVES ? compact(all, MAX_LEAVES) : all.length;
@@ -286,13 +296,12 @@ public final class NixAttrs {
     }
 
     private void flatten() {
-        if (leaves == null) return;
-        NixAttrs[] ls = leaves.clone();
+        if (keys != null) return;
+        NixAttrs[] ls = leaves().clone();
         compact(ls, 1);
         NixAttrs acc = ls[0];
         keys = acc.keys;
         values = acc.values;
-        leaves = null;
     }
 
     /** Merges two flat sets, {@code right} winning. */
