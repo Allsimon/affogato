@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.stream.Stream;
+import org.affogato.runtime.Name;
 import org.affogato.runtime.NixAttrs;
 import org.affogato.runtime.NixString;
 import org.affogato.runtime.Thunk;
@@ -28,7 +29,7 @@ final class DirCache {
      */
     private static final long SETTLED_MILLIS = 1000;
 
-    private record Listing(Object inode, FileTime mtime, String[] names, Object[] types) {}
+    private record Listing(Object inode, FileTime mtime, Name[] names, Object[] types) {}
 
     private static final LinkedHashMap<Path, Listing> LISTINGS = new LinkedHashMap<>(1024, 0.75f, true);
     private static int entries;
@@ -41,19 +42,20 @@ final class DirCache {
         synchronized (LISTINGS) {
             Listing l = LISTINGS.get(dir);
             if (l != null && l.mtime.equals(a.lastModifiedTime()) && l.inode.equals(a.fileKey())) {
-                return new NixAttrs(l.names, l.types.clone(), null);
+                return new NixAttrs(l.names, l.types.clone());
             }
         }
-        List<String> k = new ArrayList<>();
+        List<Name> k = new ArrayList<>();
         List<Object> v = new ArrayList<>();
         try (Stream<Path> s = Files.list(dir)) {
             // Nix gets the types free from d_type; a stat per pkgs/by-name entry is most of a nixpkgs eval.
             s.forEach(p -> {
-                k.add(org.affogato.builtins.Files.utf8ToBytes(p.getFileName().toString()));
+                k.add(new Name(
+                        org.affogato.builtins.Files.utf8ToBytes(p.getFileName().toString())));
                 v.add(Thunk.eager(() -> new NixString(Nar.typeOf(p))));
             });
         }
-        NixAttrs attrs = NixAttrs.ofPairs(k.toArray(new String[0]), v.toArray());
+        NixAttrs attrs = NixAttrs.ofPairs(k.toArray(new Name[0]), v.toArray());
         if (a.fileKey() != null && a.lastModifiedTime().toMillis() < now - SETTLED_MILLIS) {
             synchronized (LISTINGS) {
                 Listing old = LISTINGS.put(

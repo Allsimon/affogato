@@ -73,7 +73,7 @@ final class Context {
             if (s.context != null) Collections.addAll(ctx, s.context);
             NixAttrs attrs = Types.attrs(a[1]);
             for (int i = 0; i < attrs.size(); i++) {
-                String path = attrs.keys()[i];
+                String path = attrs.key(i);
                 NixAttrs info = Types.attrs(attrs.values()[i]);
                 Object p = info.get("path");
                 if (p != null && Types.bool(p)) ctx.add(path);

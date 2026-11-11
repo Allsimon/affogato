@@ -17,6 +17,7 @@ import org.affogato.nodes.NixRootNode;
 import org.affogato.parser.Ast;
 import org.affogato.parser.ParseException;
 import org.affogato.parser.Parser;
+import org.affogato.runtime.Name;
 import org.affogato.runtime.NixAttrs;
 import org.affogato.runtime.NixException;
 import org.affogato.runtime.Source;
@@ -52,6 +53,7 @@ public final class NixContext {
     public final Map<String, Thunk> flakes = new HashMap<>();
 
     private final Map<String, String> copiedPaths = new HashMap<>();
+    private final Map<String, Name> names = new HashMap<>();
 
     /** The files read or looked for, the folders listed, and those hashed whole, which its values depend on. */
     private final Set<String> readPaths = ConcurrentHashMap.newKeySet();
@@ -145,6 +147,13 @@ public final class NixContext {
         CURRENT.remove();
     }
 
+    /** The one {@link Name} of this context for {@code name} without a definition. */
+    public Name name(String name) {
+        Name n = names.get(name);
+        if (n == null) names.put(name, n = new Name(name));
+        return n;
+    }
+
     public NixAttrs builtins() {
         return (NixAttrs) globals.get("builtins");
     }
@@ -207,7 +216,7 @@ public final class NixContext {
         String file = resolveImport(path);
         read(path);
         read(file);
-        NixRootNode target = parse(readFile(file), file, parentDir(file), scope.keys(), true, null);
+        NixRootNode target = parse(readFile(file), file, parentDir(file), scope.names(), true, null);
         return Thunk.force(target.call(null, scope));
     }
 

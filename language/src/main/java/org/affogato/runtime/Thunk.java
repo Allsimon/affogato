@@ -103,8 +103,8 @@ public final class Thunk {
                 case NixNode body -> body.execute((Object[]) e);
                 case Supplier<?> supplier -> supplier.get();
                 case MapAttrs m -> {
-                    String key = (String) e;
-                    yield Apply.apply(Apply.apply(m.fn, new NixString(key)), m.attrs.getRaw(key));
+                    Name key = (Name) e;
+                    yield Apply.apply(Apply.apply(m.fn, new NixString(key.name)), m.attrs.getRaw(key));
                 }
                 default -> Apply.apply(code, e);
             };

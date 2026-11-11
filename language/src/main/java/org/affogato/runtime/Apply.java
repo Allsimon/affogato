@@ -18,7 +18,7 @@ public final class Apply {
             return new PrimOp.Partial(pa.op(), args);
         }
         if (fn instanceof NixAttrs a) {
-            Object functor = a.getRaw("__functor");
+            Object functor = a.getRaw(Name.FUNCTOR);
             if (functor != null) return apply(apply(functor, a), arg);
         }
         throw new NixException("attempt to call something which is not a function but " + Types.describe(fn));

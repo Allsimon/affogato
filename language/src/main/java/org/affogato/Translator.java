@@ -13,6 +13,7 @@ import org.affogato.nodes.NixRootNode;
 import org.affogato.parser.Ast.*;
 import org.affogato.parser.ParseException;
 import org.affogato.runtime.Coerce;
+import org.affogato.runtime.Name;
 import org.affogato.runtime.NixAttrs;
 import org.affogato.runtime.NixLambda;
 import org.affogato.runtime.NixList;
@@ -45,6 +46,7 @@ public final class Translator {
     private final String baseDir;
     private final Map<String, Object> globals;
     private int hiddenCounter;
+    private final Map<String, Name> names = new HashMap<>();
 
     private Translator(Source source, String fileName, String baseDir, Map<String, Object> globals) {
         this.source = source;
@@ -81,6 +83,10 @@ public final class Translator {
 
     private int start(Pos pos) {
         return Math.min(pos.start(), source.getLength());
+    }
+
+    private Name name(String name) {
+        return names.computeIfAbsent(name, Name::new);
     }
 
     private SourceSection section(Pos pos) {
@@ -297,7 +303,7 @@ public final class Translator {
             depths[i] = withs.get(i)[0];
             slots[i] = withs.get(i)[1];
         }
-        return new WithVarNode(name, depths, slots);
+        return new WithVarNode(name(name), depths, slots);
     }
 
     private AttrKey[] keys(List<AttrName> path, Scope s, Pos pos) {
@@ -305,7 +311,7 @@ public final class Translator {
         for (int i = 0; i < keys.length; i++) {
             AttrName a = path.get(i);
             keys[i] = new AttrKey(
-                    a.name() == null ? null : noNul(a.name(), pos.start()),
+                    a.name() == null ? null : name(noNul(a.name(), pos.start())),
                     a.dynamic() == null ? null : tr(a.dynamic(), s));
         }
         return keys;
@@ -348,19 +354,30 @@ public final class Translator {
         String[] formals = null;
         int[] formalSlots = null;
         boolean[] hasDefault = null;
-        SourceSection[] formalPositions = null;
+        Name[] formalNames = null;
+        Name[] sortedNames = null;
+        Object[] sortedDefaults = null;
         List<Formal> fl = l.formals() == null ? List.of() : l.formals().list();
         if (l.formals() != null) {
             formals = new String[fl.size()];
             formalSlots = new int[fl.size()];
             hasDefault = new boolean[fl.size()];
-            formalPositions = new SourceSection[fl.size()];
+            formalNames = new Name[fl.size()];
+            TreeMap<String, Integer> order = new TreeMap<>();
             for (int i = 0; i < formals.length; i++) {
                 formals[i] = fl.get(i).name();
-                formalPositions[i] = section(fl.get(i).pos());
+                formalNames[i] = new Name(formals[i], source, start(fl.get(i).pos()));
                 formalSlots[i] = frame.add(formals[i]);
                 hasDefault[i] = fl.get(i).fallback() != null;
                 vars.put(formals[i], formalSlots[i]);
+                order.put(formals[i], i);
+            }
+            sortedNames = new Name[order.size()];
+            sortedDefaults = new Object[order.size()];
+            int o = 0;
+            for (int i : order.values()) {
+                sortedNames[o] = formalNames[i];
+                sortedDefaults[o++] = hasDefault[i];
             }
         }
         Scope ls = new Scope(s, frame, vars, -1);
@@ -371,13 +388,13 @@ public final class Translator {
         }
         NixNode body = tr(l.body(), ls);
         boolean ellipsis = l.formals() != null && l.formals().ellipsis();
-        LambdaBodyNode node = new LambdaBodyNode(name, argSlot, formals, formalSlots, defaults, ellipsis, body);
+        LambdaBodyNode node = new LambdaBodyNode(name, argSlot, formalNames, formalSlots, defaults, ellipsis, body);
         node.at(source, start(l.pos()));
         NixRootNode root = new NixRootNode(frame.size, node, name == null ? "<lambda>" : name, section(l.pos()));
         return new LambdaNode(
                 root,
                 new NixLambda.LambdaInfo(
-                        name, l.arg(), formals, hasDefault, formalPositions, ellipsis, section(l.pos())));
+                        name, l.arg(), formals, hasDefault, sortedNames, sortedDefaults, ellipsis, section(l.pos())));
     }
 
     /** Assigns hidden variables to the {@code inherit (from)} sources of a binding group. */
@@ -439,7 +456,7 @@ public final class Translator {
         AttrDef[] defs = new AttrDef[keys.length];
         for (int i = 0; i < keys.length; i++) defs[i] = a.attrs.get(keys[i]);
         NixNode[] values = new NixNode[keys.length];
-        SourceSection[] positions = new SourceSection[keys.length];
+        Name[] names = new Name[keys.length];
         List<Integer> slots = new ArrayList<>();
         List<NixNode> pre = new ArrayList<>();
         Scope inner;
@@ -476,8 +493,7 @@ public final class Translator {
             }
         }
         for (int i = 0; i < keys.length; i++) {
-            positions[i] = section(defs[i].pos());
-            noNul(keys[i], defs[i].pos().start());
+            names[i] = new Name(noNul(keys[i], defs[i].pos().start()), source, start(defs[i].pos()));
         }
         int nd = a.dynamic.size();
         NixNode[] dynNames = new NixNode[nd];
@@ -489,8 +505,7 @@ public final class Translator {
             dynValues[i] = lazy(d.value(), inner, null);
             dynPositions[i] = section(d.pos());
         }
-        NixNode node =
-                new AttrsNode(keys, values, positions, dynNames, dynValues, dynPositions, overridesIndex, recSlots);
+        NixNode node = new AttrsNode(names, values, dynNames, dynValues, dynPositions, overridesIndex, recSlots);
         return slots.isEmpty()
                 ? node
                 : new BindNode(ints(slots), pre.toArray(new NixNode[0]), node.at(source, start(a.pos())));

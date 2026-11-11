@@ -1,12 +1,10 @@
 package org.affogato.nodes;
 
-import java.util.Arrays;
 import org.affogato.runtime.*;
 
 public final class AttrsNode extends NixNode {
-    private final String[] keys;
+    private final Name[] keys;
     private final NixNode[] values;
-    private final SourceSection[] positions;
     private final NixNode[] dynNames;
     private final NixNode[] dynValues;
     private final SourceSection[] dynPositions;
@@ -18,9 +16,8 @@ public final class AttrsNode extends NixNode {
      * {@code overridesIndex} is its key index and {@code recSlots} the slots of the keys.
      */
     public AttrsNode(
-            String[] keys,
+            Name[] keys,
             NixNode[] values,
-            SourceSection[] positions,
             NixNode[] dynNames,
             NixNode[] dynValues,
             SourceSection[] dynPositions,
@@ -28,7 +25,6 @@ public final class AttrsNode extends NixNode {
             int[] recSlots) {
         this.keys = keys;
         this.values = values;
-        this.positions = positions;
         this.dynNames = dynNames;
         this.dynValues = dynValues;
         this.dynPositions = dynPositions;
@@ -40,12 +36,13 @@ public final class AttrsNode extends NixNode {
     public Object execute(Object[] frame) {
         Object[] vals = new Object[values.length];
         for (int i = 0; i < values.length; i++) vals[i] = values[i].executeLazy(frame);
-        NixAttrs attrs = new NixAttrs(keys, vals, positions);
+        NixAttrs attrs = new NixAttrs(keys, vals);
         if (overridesIndex >= 0) attrs = applyOverrides(frame, attrs);
         for (int i = 0; i < dynNames.length; i++) {
             Object name = dynNames[i].execute(frame);
             if (name == NixNull.INSTANCE) continue;
-            attrs = addDynamic(attrs, Types.string(name).value, dynValues[i].executeLazy(frame), dynPositions[i], true);
+            Name key = new Name(Types.string(name).value, dynPositions[i]);
+            attrs = addDynamic(attrs, key, dynValues[i].executeLazy(frame), true);
         }
         return attrs;
     }
@@ -54,39 +51,35 @@ public final class AttrsNode extends NixNode {
     private NixAttrs applyOverrides(Object[] frame, NixAttrs attrs) {
         NixAttrs overrides = Types.attrs(attrs.values()[overridesIndex]);
         for (int i = 0; i < overrides.size(); i++) {
-            String k = overrides.keys()[i];
-            int j = Arrays.binarySearch(keys, k);
+            Name k = overrides.keys()[i];
+            int j = NixAttrs.search(keys, k);
             if (j >= 0) {
                 attrs.values()[j] = overrides.values()[i];
                 frame[recSlots[j]] = overrides.values()[i];
             } else {
-                attrs = addDynamic(attrs, k, overrides.values()[i], null, false);
+                attrs = addDynamic(attrs, k.withoutPosition(), overrides.values()[i], false);
             }
         }
         return attrs;
     }
 
-    private NixAttrs addDynamic(NixAttrs attrs, String name, Object value, SourceSection pos, boolean unique) {
+    private NixAttrs addDynamic(NixAttrs attrs, Name name, Object value, boolean unique) {
         int i = attrs.indexOf(name);
         if (i >= 0 && !unique) {
             attrs.values()[i] = value;
             return attrs;
         }
-        if (i >= 0) throw new NixException("dynamic attribute '" + name + "' already defined", this);
+        if (i >= 0) throw new NixException("dynamic attribute '" + name.name + "' already defined", this);
         int at = -i - 1;
         int n = attrs.size();
-        String[] k = new String[n + 1];
+        Name[] k = new Name[n + 1];
         Object[] v = new Object[n + 1];
-        SourceSection[] p = new SourceSection[n + 1];
         System.arraycopy(attrs.keys(), 0, k, 0, at);
         System.arraycopy(attrs.values(), 0, v, 0, at);
-        if (attrs.positions() != null) System.arraycopy(attrs.positions(), 0, p, 0, at);
         k[at] = name;
         v[at] = value;
-        p[at] = pos;
         System.arraycopy(attrs.keys(), at, k, at + 1, n - at);
         System.arraycopy(attrs.values(), at, v, at + 1, n - at);
-        if (attrs.positions() != null) System.arraycopy(attrs.positions(), at, p, at + 1, n - at);
-        return new NixAttrs(k, v, p);
+        return new NixAttrs(k, v);
     }
 }

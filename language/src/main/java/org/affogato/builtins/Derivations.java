@@ -114,7 +114,7 @@ public final class Derivations {
         StringBuilder json = structured ? new StringBuilder("{") : null;
 
         for (int i = 0; i < attrs.size(); i++) {
-            String key = attrs.keys()[i];
+            String key = attrs.key(i);
             if (key.equals("__ignoreNulls")) continue;
             Object v = Thunk.force(attrs.values()[i]);
             if (ignoreNulls && v == NixNull.INSTANCE) continue;

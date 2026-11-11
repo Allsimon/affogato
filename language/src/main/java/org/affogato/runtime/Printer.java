@@ -86,7 +86,7 @@ public final class Printer {
     private void attrs(NixAttrs a) {
         out.append("{ ");
         for (int i = 0; i < a.size(); i++) {
-            attrName(out, a.keys()[i]);
+            attrName(out, a.key(i));
             out.append(" = ");
             value(a.values()[i]);
             out.append("; ");

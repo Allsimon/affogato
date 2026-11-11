@@ -18,9 +18,9 @@ public final class Coerce {
             return NixString.withContext(sp, sp);
         }
         if (v instanceof NixAttrs a) {
-            Object f = a.getRaw("__toString");
+            Object f = a.getRaw(Name.TO_STRING);
             if (f != null) return toNixString(Apply.apply(f, a), coerceMore, copyToStore);
-            Object out = a.getRaw("outPath");
+            Object out = a.getRaw(Name.OUT_PATH);
             if (out != null) return toNixString(out, coerceMore, copyToStore);
         }
         if (coerceMore) {

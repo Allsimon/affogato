@@ -278,13 +278,13 @@ public final class Session implements AutoCloseable {
         if (path == null) return List.of();
         if (!options) {
             NixAttrs a = set(path);
-            return a == null ? List.of() : List.of(a.keys());
+            return a == null ? List.of() : List.of(a.names());
         }
         NixAttrs a = optionAt(path);
         if (a != null && isOption(a)) a = isNamed(a) ? null : subOptions(a);
         return a == null
                 ? List.of()
-                : List.of(a.keys()).stream().filter(n -> !n.startsWith("_")).toList();
+                : List.of(a.names()).stream().filter(n -> !n.startsWith("_")).toList();
     }
 
     /** The option or group of options at {@code path}, or null. */

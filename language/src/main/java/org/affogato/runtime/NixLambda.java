@@ -13,13 +13,17 @@ public final class NixLambda {
         this.info = info;
     }
 
-    /** Formals are null for a plain {@code x: body} lambda. */
+    /**
+     * Formals are null for a plain {@code x: body} lambda. {@code formalNames}, sorted, and {@code formalDefaults}
+     * are what {@code functionArgs} returns.
+     */
     public record LambdaInfo(
             String name,
             String arg,
             String[] formals,
             boolean[] hasDefault,
-            SourceSection[] formalPositions,
+            Name[] formalNames,
+            Object[] formalDefaults,
             boolean ellipsis,
             SourceSection pos) {}
 }

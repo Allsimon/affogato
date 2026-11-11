@@ -4,11 +4,11 @@ import org.affogato.runtime.*;
 
 /** A variable bound by no lexical scope, looked up in the enclosing {@code with} scopes, innermost first. */
 public final class WithVarNode extends NixNode {
-    private final String name;
+    private final Name name;
     private final int[] depths;
     private final int[] slots;
 
-    public WithVarNode(String name, int[] depths, int[] slots) {
+    public WithVarNode(Name name, int[] depths, int[] slots) {
         this.name = name;
         this.depths = depths;
         this.slots = slots;
@@ -26,6 +26,6 @@ public final class WithVarNode extends NixNode {
             Object v = scope.getRaw(name);
             if (v != null) return v;
         }
-        throw new NixException("undefined variable '" + name + "'", this);
+        throw new NixException("undefined variable '" + name.name + "'", this);
     }
 }

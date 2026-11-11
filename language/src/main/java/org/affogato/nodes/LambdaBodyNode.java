@@ -8,7 +8,7 @@ import org.affogato.runtime.*;
 public final class LambdaBodyNode extends NixNode {
     private final String fnName;
     private final int argSlot;
-    private final String[] formals;
+    private final Name[] formals;
     private final int[] formalSlots;
     private final NixNode[] defaults;
     private final boolean ellipsis;
@@ -17,7 +17,7 @@ public final class LambdaBodyNode extends NixNode {
     public LambdaBodyNode(
             String fnName,
             int argSlot,
-            String[] formals,
+            Name[] formals,
             int[] formalSlots,
             NixNode[] defaults,
             boolean ellipsis,
@@ -56,7 +56,7 @@ public final class LambdaBodyNode extends NixNode {
             Object v = attrs.getRaw(formals[i]);
             if (v == null) {
                 if (defaults[i] == null)
-                    throw new NixException(fn() + " called without required argument '" + formals[i] + "'", this);
+                    throw new NixException(fn() + " called without required argument '" + formals[i].name + "'", this);
                 v = defaults[i].executeLazy(frame);
             } else {
                 matched++;
@@ -64,9 +64,9 @@ public final class LambdaBodyNode extends NixNode {
             frame[formalSlots[i]] = v;
         }
         if (!ellipsis && matched < attrs.size()) {
-            for (String k : attrs.keys()) {
+            for (Name k : attrs.keys()) {
                 if (!Arrays.asList(formals).contains(k))
-                    throw new NixException(fn() + " called with unexpected argument '" + k + "'", this);
+                    throw new NixException(fn() + " called with unexpected argument '" + k.name + "'", this);
             }
         }
     }

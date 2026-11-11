@@ -76,9 +76,13 @@ public final class Builtins {
         TreeMap<String, Object> withSelf = new TreeMap<>(b.values);
         withSelf.put("builtins", null);
         Object[] vals = new Object[withSelf.size()];
-        String[] keys = withSelf.keySet().toArray(new String[0]);
-        NixAttrs self = new NixAttrs(keys, vals, null);
-        for (int i = 0; i < keys.length; i++) vals[i] = keys[i].equals("builtins") ? self : b.values.get(keys[i]);
+        String[] names = withSelf.keySet().toArray(new String[0]);
+        Name[] keys = new Name[names.length];
+        NixAttrs self = new NixAttrs(keys, vals);
+        for (int i = 0; i < names.length; i++) {
+            keys[i] = ctx.name(names[i]);
+            vals[i] = names[i].equals("builtins") ? self : b.values.get(names[i]);
+        }
 
         ctx.globals.put("builtins", self);
         for (var e : b.values.entrySet()) {

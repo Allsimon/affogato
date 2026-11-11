@@ -96,7 +96,7 @@ public final class Json {
                 out.append('{');
                 for (int i = 0; i < a.size(); i++) {
                     if (i > 0) out.append(',');
-                    string(a.keys()[i]);
+                    string(a.key(i));
                     out.append(':');
                     value(a.values()[i]);
                 }
