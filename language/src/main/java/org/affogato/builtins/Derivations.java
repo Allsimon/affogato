@@ -1,6 +1,7 @@
 package org.affogato.builtins;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
@@ -39,14 +40,54 @@ public final class Derivations {
         boolean fixed;
     }
 
-    /** What a derivation's dependents need of it, kept instead of the derivation since its env can be large. */
-    private record Closure(String[] outputs, String[] inputSrcs, String[] inputDrvs) {}
+    /**
+     * What a derivation's dependents need of it, kept instead of the derivation since its env can be large:
+     * {@code hashModulo} in hex, and {@code names} and {@code values}, what {@code derivationStrict} returns for it.
+     * Dependents hold its {@code path} and {@code outputs} strings rather than copies.
+     */
+    private record Closure(
+            String path,
+            String[] outputs,
+            String[] inputSrcs,
+            String[] inputDrvs,
+            String hashModulo,
+            Name[] names,
+            Object[] values) {}
 
     /** Derivations produced so far, by .drv path; stands in for reading them back from the store. */
     private static final Map<String, Closure> DRVS = new ConcurrentHashMap<>();
 
-    /** Written before {@link #DRVS}, so that a thread seeing a derivation there sees its hash. */
-    private static final Map<String, Map<String, byte[]>> HASH_MODULO = new ConcurrentHashMap<>();
+    /** {@code drvPath} and the output names. */
+    private static final Map<String, Name> RESULT_NAMES = new ConcurrentHashMap<>();
+
+    /** {@code inputs} holds each input derivation's path, then its outputs, then null. */
+    private record Memo(byte[] maskedHash, String storeDir, String[] inputs) {
+        static Memo of(byte[] maskedHash, String storeDir, TreeMap<String, TreeSet<String>> inputDrvs) {
+            List<String> inputs = new ArrayList<>();
+            for (var e : inputDrvs.entrySet()) {
+                inputs.add(e.getKey());
+                inputs.addAll(e.getValue());
+                inputs.add(null);
+            }
+            return new Memo(maskedHash, storeDir, inputs.toArray(new String[0]));
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof Memo m
+                    && Arrays.equals(maskedHash, m.maskedHash)
+                    && storeDir.equals(m.storeDir)
+                    && Arrays.equals(inputs, m.inputs);
+        }
+
+        @Override
+        public int hashCode() {
+            return maskedHash[0] << 24
+                    | (maskedHash[1] & 0xff) << 16
+                    | (maskedHash[2] & 0xff) << 8
+                    | maskedHash[3] & 0xff;
+        }
+    }
 
     private static final ThreadLocal<AtermWriter> ATERM =
             ThreadLocal.withInitial(() -> new AtermWriter(Hashes.digest("sha256")));
@@ -56,9 +97,9 @@ public final class Derivations {
      * output paths, derived from those, and the input derivations' paths, which fixed-output inputs keep from the
      * masked hash.
      */
-    private static final LinkedHashMap<String, String> DRV_PATHS = new LinkedHashMap<>(1024, 0.75f, true) {
+    private static final LinkedHashMap<Memo, String> DRV_PATHS = new LinkedHashMap<>(1024, 0.75f, true) {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<Memo, String> eldest) {
             return size() > 1 << 16;
         }
     };
@@ -168,15 +209,21 @@ public final class Derivations {
                 addDeepClosure(c.substring(1), drv);
             } else if (c.startsWith("!")) {
                 int sep = c.indexOf('!', 1);
-                drv.inputDrvs
-                        .computeIfAbsent(c.substring(sep + 1), k -> new TreeSet<>())
-                        .add(c.substring(1, sep));
+                String path = c.substring(sep + 1);
+                String output = c.substring(1, sep);
+                Closure dep = DRVS.get(path);
+                if (dep != null) {
+                    path = dep.path();
+                    int i = Arrays.binarySearch(dep.outputs(), output);
+                    if (i >= 0) output = dep.outputs()[i];
+                }
+                drv.inputDrvs.computeIfAbsent(path, k -> new TreeSet<>()).add(output);
             } else {
                 drv.inputSrcs.add(c);
             }
         }
 
-        String memoKey = null;
+        Memo memoKey = null;
         if (outputHash != null) {
             if (!outputs.equals(Set.of("out")))
                 throw error(drvName, "multiple outputs are not supported in fixed-output derivations");
@@ -202,20 +249,13 @@ public final class Derivations {
                 drv.env.put(o, "");
                 drv.outputs.put(o, new Output("", "", ""));
             }
-            Map<String, byte[]> hashes = hashModulo(drv, true);
+            byte[] masked = hashModulo(drv, true);
             for (String o : outputs) {
-                String path = StorePaths.output(ctx.storeDir, drvName, o, hashes.get(o));
+                String path = StorePaths.output(ctx.storeDir, drvName, o, masked);
                 drv.env.put(o, path);
                 drv.outputs.put(o, new Output(path, "", ""));
             }
-            StringBuilder k = new StringBuilder(Hashes.hex(hashes.get(outputs.first())))
-                    .append('\0')
-                    .append(ctx.storeDir);
-            for (var e : drv.inputDrvs.entrySet()) {
-                k.append('\0').append(e.getKey());
-                for (String o : e.getValue()) k.append('\1').append(o);
-            }
-            memoKey = k.toString();
+            memoKey = Memo.of(masked, ctx.storeDir, drv.inputDrvs);
         }
 
         String drvPath;
@@ -232,20 +272,28 @@ public final class Derivations {
                 }
             }
         }
-        if (!DRVS.containsKey(drvPath)) {
-            HASH_MODULO.put(drvPath, hashModulo(drv, false));
-            DRVS.put(
+        Closure closure = DRVS.get(drvPath);
+        if (closure == null) {
+            TreeMap<String, Object> result = new TreeMap<>();
+            result.put("drvPath", NixString.withContext(drvPath, "=" + drvPath));
+            for (var o : drv.outputs.entrySet()) {
+                result.put(o.getKey(), NixString.withContext(o.getValue().path(), "!" + o.getKey() + "!" + drvPath));
+            }
+            Name[] names = new Name[result.size()];
+            int i = 0;
+            for (String name : result.keySet()) names[i++] = RESULT_NAMES.computeIfAbsent(name, Name::new);
+            Closure made = new Closure(
                     drvPath,
-                    new Closure(
-                            strings(drv.outputs.keySet()), strings(drv.inputSrcs), strings(drv.inputDrvs.keySet())));
+                    strings(drv.outputs.keySet()),
+                    strings(drv.inputSrcs),
+                    strings(drv.inputDrvs.keySet()),
+                    Hashes.hex(hashModulo(drv, false)),
+                    names,
+                    result.values().toArray());
+            closure = DRVS.putIfAbsent(drvPath, made);
+            if (closure == null) closure = made;
         }
-
-        TreeMap<String, Object> result = new TreeMap<>();
-        result.put("drvPath", NixString.withContext(drvPath, "=" + drvPath));
-        for (var o : drv.outputs.entrySet()) {
-            result.put(o.getKey(), NixString.withContext(o.getValue().path(), "!" + o.getKey() + "!" + drvPath));
-        }
-        return NixAttrs.of(result);
+        return new NixAttrs(closure.names(), closure.values().clone());
     }
 
     private static String[] strings(Collection<String> c) {
@@ -272,39 +320,29 @@ public final class Derivations {
     private static void addDeepClosure(String drvPath, Drv drv) {
         Closure dep = DRVS.get(drvPath);
         if (dep == null) throw new NixException("derivation '" + drvPath + "' is not known to affogato");
-        drv.inputSrcs.add(drvPath);
-        Collections.addAll(drv.inputDrvs.computeIfAbsent(drvPath, k -> new TreeSet<>()), dep.outputs());
+        drv.inputSrcs.add(dep.path());
+        Collections.addAll(drv.inputDrvs.computeIfAbsent(dep.path(), k -> new TreeSet<>()), dep.outputs());
         Collections.addAll(drv.inputSrcs, dep.inputSrcs());
         for (String d : dep.inputDrvs()) addDeepClosure(d, drv);
     }
 
     /** Port of {@code hashDerivationModulo}. */
-    private static Map<String, byte[]> hashModulo(Drv drv, boolean mask) {
-        Map<String, byte[]> out = new TreeMap<>();
+    private static byte[] hashModulo(Drv drv, boolean mask) {
         if (drv.fixed) {
             Output o = drv.outputs.get("out");
-            out.put("out", Hashes.sha256("fixed:out:" + o.hashAlgo() + ":" + o.hash() + ":" + o.path()));
-            return out;
+            return Hashes.sha256("fixed:out:" + o.hashAlgo() + ":" + o.hash() + ":" + o.path());
         }
         TreeMap<String, TreeSet<String>> inputs = new TreeMap<>();
         for (var e : drv.inputDrvs.entrySet()) {
-            Map<String, byte[]> h = pathHashModulo(e.getKey());
+            Closure dep = DRVS.get(e.getKey());
+            if (dep == null) throw new NixException("derivation '" + e.getKey() + "' is not known to affogato");
             for (String o : e.getValue()) {
-                byte[] oh = h.get(o);
-                if (oh == null)
+                if (Arrays.binarySearch(dep.outputs(), o) < 0)
                     throw new NixException("no hash for output '" + o + "' of derivation '" + e.getKey() + "'");
-                inputs.computeIfAbsent(Hashes.hex(oh), k -> new TreeSet<>()).add(o);
+                inputs.computeIfAbsent(dep.hashModulo(), k -> new TreeSet<>()).add(o);
             }
         }
-        byte[] hash = atermHash(drv, mask, inputs);
-        for (String o : drv.outputs.keySet()) out.put(o, hash);
-        return out;
-    }
-
-    private static Map<String, byte[]> pathHashModulo(String drvPath) {
-        Map<String, byte[]> h = HASH_MODULO.get(drvPath);
-        if (h == null) throw new NixException("derivation '" + drvPath + "' is not known to affogato");
-        return h;
+        return atermHash(drv, mask, inputs);
     }
 
     /** ATerm serialisation, as {@code Derivation::unparse}. */
