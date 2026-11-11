@@ -13,8 +13,8 @@ public final class Thunk {
 
     /**
      * A {@link NixRootNode} called with {@code env} as parent frame, a {@link NixNode} executed on {@code env}, a
-     * {@link Supplier}, a {@link MapAttrs} entry whose key is {@code env}, an {@link Eager}, or a function applied to
-     * {@code env}.
+     * {@link Supplier}, a {@link MapAttrs} entry whose key is {@code env}, a {@link ZipAttrs} entry whose name and
+     * values are {@code env}, an {@link Eager}, or a function applied to {@code env}.
      */
     private Object code;
 
@@ -79,8 +79,16 @@ public final class Thunk {
 
     private record MapAttrs(Object fn, NixAttrs attrs) {}
 
-    public static Thunk apply(Object fn, Object a, Object b) {
-        return new Thunk(() -> Apply.apply(Apply.apply(fn, a), b));
+    /** Makes the values of one {@code zipAttrsWith fn}: {@link ZipAttrs#entry}. */
+    public static ZipAttrs zipAttrs(Object fn) {
+        return new ZipAttrs(fn);
+    }
+
+    public record ZipAttrs(Object fn) {
+        /** {@code fn name values}, suspended; {@code entry} is the name, a string, followed by the values. */
+        public Thunk entry(Object[] entry) {
+            return new Thunk(this, entry, true);
+        }
     }
 
     public boolean isEvaluated() {
@@ -105,6 +113,11 @@ public final class Thunk {
                 case MapAttrs m -> {
                     Name key = (Name) e;
                     yield Apply.apply(Apply.apply(m.fn, new NixString(key.name)), m.attrs.getRaw(key));
+                }
+                case ZipAttrs z -> {
+                    Object[] entry = (Object[]) e;
+                    NixList values = new NixList(java.util.Arrays.copyOfRange(entry, 1, entry.length));
+                    yield Apply.apply(Apply.apply(z.fn, new NixString((String) entry[0])), values);
                 }
                 default -> Apply.apply(code, e);
             };

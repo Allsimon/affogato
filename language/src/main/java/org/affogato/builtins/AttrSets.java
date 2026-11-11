@@ -98,12 +98,25 @@ final class AttrSets {
             TreeMap<String, List<Object>> m = new TreeMap<>();
             for (Object x : Types.list(a[1]).items) {
                 NixAttrs s = Types.attrs(x);
-                for (int i = 0; i < s.size(); i++)
-                    m.computeIfAbsent(s.key(i), k -> new ArrayList<>()).add(s.values()[i]);
+                for (int i = 0; i < s.size(); i++) {
+                    String name = s.key(i);
+                    List<Object> entry = m.get(name);
+                    if (entry == null) {
+                        m.put(name, entry = new ArrayList<>(4));
+                        entry.add(name);
+                    }
+                    entry.add(s.values()[i]);
+                }
             }
-            TreeMap<String, Object> out = new TreeMap<>();
-            m.forEach((k, v) -> out.put(k, Thunk.apply(a[0], new NixString(k), new NixList(v.toArray()))));
-            return NixAttrs.of(out);
+            Thunk.ZipAttrs zip = Thunk.zipAttrs(a[0]);
+            Name[] k = new Name[m.size()];
+            Object[] v = new Object[k.length];
+            int i = 0;
+            for (var e : m.entrySet()) {
+                k[i] = Name.of(e.getKey());
+                v[i++] = zip.entry(e.getValue().toArray());
+            }
+            return new NixAttrs(k, v);
         });
         b.add("functionArgs", 1, a -> {
             Object f = Types.function(a[0]);
