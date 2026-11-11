@@ -79,8 +79,12 @@ public final class Translator {
         return new NixRootNode(frame.size, body, fileName, t.section(expr.pos()));
     }
 
+    private int start(Pos pos) {
+        return Math.min(pos.start(), source.getLength());
+    }
+
     private SourceSection section(Pos pos) {
-        int start = Math.min(pos.start(), source.getLength());
+        int start = start(pos);
         int len = Math.max(0, Math.min(pos.end(), source.getLength()) - start);
         return source.createSection(start, len);
     }
@@ -142,7 +146,7 @@ public final class Translator {
                 };
             case CurPos c -> new ConstantNode(position(c.pos()));
         };
-        return n.at(section(e.pos()));
+        return n.at(source, start(e.pos()));
     }
 
     /** Nix rejects these when it lexes the string. */
@@ -200,11 +204,11 @@ public final class Translator {
 
     private NixNode thunk(Expr e, Scope s, String name) {
         int size = strictSize(e);
-        if (size >= 0 && size <= IN_PLACE_MAX) return new InPlaceThunkNode(tr(e, s, name)).at(section(e.pos()));
+        if (size >= 0 && size <= IN_PLACE_MAX) return new InPlaceThunkNode(tr(e, s, name)).at(source, start(e.pos()));
         Frame frame = new Frame();
         NixNode body = tr(e, new Scope(s, frame, null, -1), name);
         NixRootNode root = new NixRootNode(frame.size, body, name == null ? "<thunk>" : name, section(e.pos()));
-        return new ThunkNode(root).at(section(e.pos()));
+        return new ThunkNode(root).at(source, start(e.pos()));
     }
 
     /**
@@ -368,7 +372,7 @@ public final class Translator {
         NixNode body = tr(l.body(), ls);
         boolean ellipsis = l.formals() != null && l.formals().ellipsis();
         LambdaBodyNode node = new LambdaBodyNode(name, argSlot, formals, formalSlots, defaults, ellipsis, body);
-        node.at(section(l.pos()));
+        node.at(source, start(l.pos()));
         NixRootNode root = new NixRootNode(frame.size, node, name == null ? "<lambda>" : name, section(l.pos()));
         return new LambdaNode(
                 root,
@@ -489,6 +493,6 @@ public final class Translator {
                 new AttrsNode(keys, values, positions, dynNames, dynValues, dynPositions, overridesIndex, recSlots);
         return slots.isEmpty()
                 ? node
-                : new BindNode(ints(slots), pre.toArray(new NixNode[0]), node.at(section(a.pos())));
+                : new BindNode(ints(slots), pre.toArray(new NixNode[0]), node.at(source, start(a.pos())));
     }
 }

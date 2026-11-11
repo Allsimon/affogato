@@ -1,9 +1,11 @@
 package org.affogato.nodes;
 
+import org.affogato.runtime.Source;
 import org.affogato.runtime.SourceSection;
 
 public abstract class NixNode {
-    private SourceSection section;
+    private Source source;
+    private int offset;
 
     /** Evaluates to weak head normal form: never returns a {@link org.affogato.runtime.Thunk}. */
     public abstract Object execute(Object[] frame);
@@ -13,12 +15,13 @@ public abstract class NixNode {
         return execute(frame);
     }
 
-    public final NixNode at(SourceSection s) {
-        this.section = s;
+    public final NixNode at(Source source, int offset) {
+        this.source = source;
+        this.offset = offset;
         return this;
     }
 
     public SourceSection getSourceSection() {
-        return section;
+        return source == null ? null : source.createSection(offset, 0);
     }
 }
