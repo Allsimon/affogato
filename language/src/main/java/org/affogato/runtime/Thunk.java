@@ -8,14 +8,17 @@ public final class Thunk {
     /** Stands in for {@code env} while the thunk is being evaluated. */
     private static final Object EVALUATING = new Object();
 
+    /** Stands in for {@code env} once evaluated: {@code code} is then the value. */
+    private static final Object DONE = new Object();
+
     /**
-     * A {@link NixRootNode} called with {@code env} as parent frame, a {@link NixNode} executed on {@code env}, a {@link Supplier}, a {@link MapAttrs} entry whose key is {@code
-     * env}, or a function applied to {@code env}.
+     * A {@link NixRootNode} called with {@code env} as parent frame, a {@link NixNode} executed on {@code env}, a
+     * {@link Supplier}, a {@link MapAttrs} entry whose key is {@code env}, an {@link Eager}, or a function applied to
+     * {@code env}.
      */
     private Object code;
 
     private Object env;
-    private Object value;
 
     /** A suspended expression evaluated on {@code frame}, the frame it was translated for. */
     public Thunk(NixNode body, Object[] frame) {
@@ -46,7 +49,21 @@ public final class Thunk {
         return new Thunk(new Eager(supplier), null, false);
     }
 
-    private record Eager(Supplier<Object> supplier) {}
+    /** Keeps its value itself: a thunk's two fields cannot be published together to another thread. */
+    private static final class Eager {
+        private final Supplier<Object> supplier;
+        private Object value;
+
+        Eager(Supplier<Object> supplier) {
+            this.supplier = supplier;
+        }
+
+        Object get() {
+            Object v = value;
+            if (v == null) value = v = supplier.get();
+            return v;
+        }
+    }
 
     public static Thunk apply(Object fn, Object arg) {
         return new Thunk(fn, arg, true);
@@ -67,17 +84,16 @@ public final class Thunk {
     }
 
     public boolean isEvaluated() {
-        return value != null || code instanceof Eager;
+        return env == DONE || code instanceof Eager;
     }
 
     public Object force() {
-        Object v = value;
-        if (v != null) return v;
-        if (code instanceof Eager x) return value = x.supplier.get();
-        return evaluate();
+        return env == DONE ? code : evaluate();
     }
 
     private Object evaluate() {
+        Object code = this.code;
+        if (code instanceof Eager x) return x.get();
         Object e = env;
         if (e == EVALUATING) throw new NixException("infinite recursion encountered" + describeSource());
         env = EVALUATING;
@@ -92,12 +108,12 @@ public final class Thunk {
                 }
                 default -> Apply.apply(code, e);
             };
-            value = Thunk.force(v);
-            code = null;
-            env = null;
-            return value;
+            v = Thunk.force(v);
+            this.code = v;
+            env = DONE;
+            return v;
         } finally {
-            if (value == null) env = e;
+            if (env == EVALUATING) env = e;
         }
     }
 
