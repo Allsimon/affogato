@@ -403,7 +403,8 @@ public final class Session implements AutoCloseable {
         String value = v instanceof Long || v instanceof Double || v instanceof Boolean || v instanceof NixString
                 ? Printer.print(v)
                 : null;
-        SourceSection defined = v instanceof NixLambda l && l.info.pos() != null ? l.info.pos() : at;
+        SourceSection defined =
+                v instanceof NixLambda l && l.info().pos() != null ? l.info().pos() : at;
         String doc = defined == null ? null : doc(defined);
         if (doc == null && at != null && at != defined) doc = doc(at);
         return position(

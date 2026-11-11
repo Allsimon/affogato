@@ -346,11 +346,7 @@ public final class Translator {
     private NixNode lambda(Lambda l, Scope s, String name) {
         Frame frame = new Frame();
         Map<String, Integer> vars = new HashMap<>();
-        int argSlot = -1;
-        if (l.arg() != null) {
-            argSlot = frame.add(l.arg());
-            vars.put(l.arg(), argSlot);
-        }
+        if (l.arg() != null) vars.put(l.arg(), NixRootNode.ARG);
         String[] formals = null;
         int[] formalSlots = null;
         boolean[] hasDefault = null;
@@ -388,13 +384,13 @@ public final class Translator {
         }
         NixNode body = tr(l.body(), ls);
         boolean ellipsis = l.formals() != null && l.formals().ellipsis();
-        LambdaBodyNode node = new LambdaBodyNode(name, argSlot, formalNames, formalSlots, defaults, ellipsis, body);
+        LambdaBodyNode node =
+                new LambdaBodyNode(name, l.arg() != null, formalNames, formalSlots, defaults, ellipsis, body);
         node.at(source, start(l.pos()));
-        NixRootNode root = new NixRootNode(frame.size, node, name == null ? "<lambda>" : name, section(l.pos()));
+        var info = new NixLambda.LambdaInfo(
+                name, l.arg(), formals, hasDefault, sortedNames, sortedDefaults, ellipsis, section(l.pos()));
         return new LambdaNode(
-                root,
-                new NixLambda.LambdaInfo(
-                        name, l.arg(), formals, hasDefault, sortedNames, sortedDefaults, ellipsis, section(l.pos())));
+                new NixRootNode(frame.size, node, name == null ? "<lambda>" : name, section(l.pos()), info));
     }
 
     /** Assigns hidden variables to the {@code inherit (from)} sources of a binding group. */

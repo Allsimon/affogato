@@ -120,8 +120,9 @@ final class AttrSets {
         });
         b.add("functionArgs", 1, a -> {
             Object f = Types.function(a[0]);
-            if (!(f instanceof NixLambda l) || l.info.formals() == null) return NixAttrs.EMPTY;
-            return new NixAttrs(l.info.formalNames(), l.info.formalDefaults().clone());
+            if (!(f instanceof NixLambda l) || l.info().formals() == null) return NixAttrs.EMPTY;
+            return new NixAttrs(
+                    l.info().formalNames(), l.info().formalDefaults().clone());
         });
     }
 

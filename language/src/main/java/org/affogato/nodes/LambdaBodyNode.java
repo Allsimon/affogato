@@ -7,7 +7,9 @@ import org.affogato.runtime.*;
 /** Binds the argument (and formals, if any) in the lambda's frame, then evaluates the body. */
 public final class LambdaBodyNode extends NixNode {
     private final String fnName;
-    private final int argSlot;
+    /** Whether the body reads the argument itself, as {@code x: } or {@code args@}. */
+    private final boolean named;
+
     private final Name[] formals;
     private final int[] formalSlots;
     private final NixNode[] defaults;
@@ -16,14 +18,14 @@ public final class LambdaBodyNode extends NixNode {
 
     public LambdaBodyNode(
             String fnName,
-            int argSlot,
+            boolean named,
             Name[] formals,
             int[] formalSlots,
             NixNode[] defaults,
             boolean ellipsis,
             NixNode body) {
         this.fnName = fnName;
-        this.argSlot = argSlot;
+        this.named = named;
         this.formals = formals;
         this.formalSlots = formalSlots;
         this.defaults = defaults;
@@ -40,9 +42,10 @@ public final class LambdaBodyNode extends NixNode {
             throw new NixException("stack overflow; max-call-depth exceeded", this);
         }
         try {
-            Object arg = frame[1];
-            if (argSlot >= 0) frame[argSlot] = arg;
-            if (formals != null) bindFormals(frame, arg);
+            if (formals != null) {
+                bindFormals(frame, frame[NixRootNode.ARG]);
+                if (!named) frame[NixRootNode.ARG] = null;
+            }
             return body.execute(frame);
         } finally {
             ctx.callDepth--;

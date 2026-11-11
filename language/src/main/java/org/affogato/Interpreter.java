@@ -162,13 +162,13 @@ public final class Interpreter {
             if (f instanceof NixLambda) return autoCall(f, args);
             return v;
         }
-        if (!(v instanceof NixLambda l) || l.info.formals() == null) return v;
+        if (!(v instanceof NixLambda l) || l.info().formals() == null) return v;
         TreeMap<String, Object> m = new TreeMap<>();
-        for (int i = 0; i < l.info.formals().length; i++) {
-            String f = l.info.formals()[i];
+        for (int i = 0; i < l.info().formals().length; i++) {
+            String f = l.info().formals()[i];
             if (args.containsKey(f)) {
                 m.put(f, args.get(f));
-            } else if (!l.info.hasDefault()[i]) {
+            } else if (!l.info().hasDefault()[i]) {
                 throw new NixException("cannot evaluate a function that has an argument without a value ('" + f + "')");
             }
         }

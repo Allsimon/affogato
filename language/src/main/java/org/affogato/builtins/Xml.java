@@ -127,17 +127,17 @@ final class Xml {
             }
             case NixLambda l -> {
                 open("function", null);
-                if (l.info.formals() != null) {
+                if (l.info().formals() != null) {
                     TreeMap<String, String> pa = new TreeMap<>();
-                    if (l.info.arg() != null) pa.put("name", l.info.arg());
-                    if (l.info.ellipsis()) pa.put("ellipsis", "1");
+                    if (l.info().arg() != null) pa.put("name", l.info().arg());
+                    if (l.info().ellipsis()) pa.put("ellipsis", "1");
                     open("attrspat", pa);
-                    String[] names = l.info.formals().clone();
+                    String[] names = l.info().formals().clone();
                     Arrays.sort(names);
                     for (String n : names) empty("attr", attr("name", n));
                     close("attrspat");
                 } else {
-                    empty("varpat", attr("name", l.info.arg()));
+                    empty("varpat", attr("name", l.info().arg()));
                 }
                 close("function");
             }

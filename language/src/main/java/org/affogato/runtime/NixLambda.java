@@ -5,12 +5,14 @@ import org.affogato.nodes.NixRootNode;
 public final class NixLambda {
     public final NixRootNode target;
     public final Object[] closure;
-    public final LambdaInfo info;
 
-    public NixLambda(NixRootNode target, Object[] closure, LambdaInfo info) {
+    public NixLambda(NixRootNode target, Object[] closure) {
         this.target = target;
         this.closure = closure;
-        this.info = info;
+    }
+
+    public LambdaInfo info() {
+        return target.info;
     }
 
     /**
