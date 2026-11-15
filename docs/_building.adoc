@@ -9,6 +9,14 @@ java build/jenesis/Make.java                       # compile, test, format and r
 java build/jenesis/Execute.java eval -E '1 + 1'    # run the command line on the JVM
 ----
 
+The shell runs the build on OpenJDK. Only the native image needs GraalVM, which
+the shell names in `GRAALVM_HOME`, where Jenesis finds `native-image`:
+
+[source,sh]
+----
+java -Djenesis.make.profiles=native build/jenesis/Make.java build/modules/compose/module/package-module-cli+src+main+java
+----
+
 == Playground
 
 The `web` module compiles the language server to `affogato.js` with TeaVM; the

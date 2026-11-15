@@ -44,10 +44,12 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = [
-            pkgs.graalvmPackages.graalvm-ce-musl
+            pkgs.jdk25_headless
             pkgs.vendir
           ];
-          JAVA_HOME = pkgs.graalvmPackages.graalvm-ce-musl;
+          JAVA_HOME = pkgs.jdk25_headless;
+          # Jenesis looks for native-image there before the running JDK.
+          GRAALVM_HOME = pkgs.graalvmPackages.graalvm-ce-musl;
         };
       });
 
