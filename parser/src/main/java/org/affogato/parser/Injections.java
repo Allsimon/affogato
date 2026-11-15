@@ -173,7 +173,7 @@ public final class Injections {
     }
 
     /** {@code lua} in {@code /* lua *\/}, as {@code /\*\s*([\w+#.-]+)\s*\*\/} matches it. */
-    private static String blockLanguage(String comment) {
+    public static String blockLanguage(String comment) {
         if (comment.length() < 4 || !comment.startsWith("/*") || !comment.endsWith("*/")) return null;
         return language(comment, 2, comment.length() - 2);
     }
