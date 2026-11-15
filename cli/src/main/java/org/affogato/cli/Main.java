@@ -3,6 +3,7 @@ package org.affogato.cli;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import org.affogato.Interpreter;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -13,8 +14,6 @@ import picocli.CommandLine.ScopeType;
         description = "A Nix language implementation in Java.",
         subcommands = {Format.class, Check.class, Fix.class, Lsp.class, Eval.class, DrvPath.class, Completion.class})
 public final class Main {
-    private static final long STACK_SIZE = 1L << 30;
-
     @Option(
             names = {"-h", "--help"},
             usageHelp = true,
@@ -44,7 +43,7 @@ public final class Main {
                         .setErr(new PrintWriter(new OutputStreamWriter(System.err, StandardCharsets.UTF_8), true))
                         .execute(argv),
                 "affogato",
-                STACK_SIZE);
+                Interpreter.STACK_SIZE);
         t.start();
         t.join();
         System.exit(status[0]);

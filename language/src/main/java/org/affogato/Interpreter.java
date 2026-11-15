@@ -38,7 +38,8 @@ public final class Interpreter {
      */
     public record Options(String nixPath, String system, String storeDir, Output output, String attr, List<Arg> args) {}
 
-    static final long STACK_SIZE = 1L << 30;
+    // Evaluating every nixpkgs drvPath peaks under 1 MB; max-call-depth nested calls take ~9 MB.
+    public static final long STACK_SIZE = 64L << 20;
 
     private Interpreter() {}
 
