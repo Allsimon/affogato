@@ -9,17 +9,24 @@ import java.util.List;
 import java.util.Map;
 
 /** Identifies a regular file's content: any write changes its ctime, which tools cannot set. */
-final class FileStamp {
+public final class FileStamp {
     /** Timestamps are coarse, so a change within the same tick could keep them: as git does for its index. */
     private static final long SETTLED_MILLIS = 1000;
 
     private static final String ATTRIBUTES = "unix:isRegularFile,dev,ino,size,lastModifiedTime,ctime";
 
+    private static volatile long clockShift;
+
     private FileStamp() {}
+
+    /** Lets tests settle a file without waiting {@link #SETTLED_MILLIS}. */
+    public static void shiftClock(long millis) {
+        clockShift = millis;
+    }
 
     /** Null unless {@code p} is a regular file unchanged for {@link #SETTLED_MILLIS}. */
     static List<Object> of(Path p) {
-        long now = System.currentTimeMillis();
+        long now = System.currentTimeMillis() + clockShift;
         Map<String, Object> a;
         try {
             a = Files.readAttributes(p, ATTRIBUTES, LinkOption.NOFOLLOW_LINKS);
