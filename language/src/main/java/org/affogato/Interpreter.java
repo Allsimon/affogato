@@ -38,7 +38,8 @@ public final class Interpreter {
      */
     public record Options(String nixPath, String system, String storeDir, Output output, String attr, List<Arg> args) {}
 
-    static final long STACK_SIZE = 1L << 30;
+    // Evaluating every nixpkgs drvPath peaks under 1 MB; max-call-depth nested calls take ~9 MB.
+    public static final long STACK_SIZE = 64L << 20;
 
     private Interpreter() {}
 
@@ -48,6 +49,12 @@ public final class Interpreter {
      * function call once {@code timeoutMillis} have passed (0 for no limit).
      */
     public static String evaluate(Options options, String file, String content, long timeoutMillis)
+            throws EvalException, InterruptedException {
+        return evaluate(options, file, content, timeoutMillis, STACK_SIZE);
+    }
+
+    /** As {@link #evaluate(Options, String, String, long)}, on a thread of {@code stackSize} bytes. */
+    public static String evaluate(Options options, String file, String content, long timeoutMillis, long stackSize)
             throws EvalException, InterruptedException {
         NixContext ctx = new NixContext(options.storeDir(), options.system(), options.nixPath());
         Object[] outcome = new Object[1];
@@ -61,7 +68,7 @@ public final class Interpreter {
                     }
                 },
                 "nix-eval",
-                STACK_SIZE);
+                stackSize);
         t.setDaemon(true);
         t.start();
         t.join(timeoutMillis);
