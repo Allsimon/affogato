@@ -11,7 +11,8 @@
         "aarch64-linux"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
-      # The Nix whose language tests vendir.yml vendors; the vendir-nix check keeps both in step.
+      # The Nix whose language tests vendir.yml vendors, and whose builtins BuiltinDocsTest documents; the vendir-nix
+      # check keeps vendir in step.
       nixFor = pkgs: pkgs.nixVersions.nix_2_35;
     in
     {

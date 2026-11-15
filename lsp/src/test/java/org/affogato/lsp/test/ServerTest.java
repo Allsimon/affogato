@@ -476,7 +476,9 @@ class ServerTest {
                 .containsEntry("value", "`hello` 2.12\n\nGreets\n\nhttps://h");
         assertThat(map(map(result("textDocument/hover", at(0, 46))).get("contents")))
                 .containsEntry("value", "`lambda`\n\nAdds one.");
-        assertThat(result("textDocument/hover", at(0, 52))).isNull();
+        assertThat((String) map(map(result("textDocument/hover", at(0, 52))).get("contents"))
+                        .get("value"))
+                .startsWith("```nix\nbuiltins.map f list\n```");
         assertThat(result("textDocument/hover", at(0, 56))).isNull();
         assertThat(result("textDocument/hover", at(0, 66))).isNull();
         assertThat(result("textDocument/definition", at(0, 29)))

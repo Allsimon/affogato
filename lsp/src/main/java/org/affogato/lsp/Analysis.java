@@ -336,8 +336,17 @@ public final class Analysis {
 
     // Hover and evaluated locations
 
-    /** What the evaluator knows of the nixpkgs attribute or the option at {@code offset}, or null. */
+    /**
+     * Nix's documentation of the builtin at {@code offset}, or what the evaluator knows of the nixpkgs attribute or the
+     * option there, or null.
+     */
     public Hover hover(int offset) {
+        Node builtin = builtinAt(tree, offset);
+        if (builtin != null) {
+            String name = tree.text(builtin);
+            String markdown = BuiltinDocs.markdown(name.startsWith("__") ? name.substring(2) : name);
+            return markdown == null ? null : new Hover(builtin.start(), builtin.end(), markdown);
+        }
         Evaluator evaluator = evaluator();
         boolean module = evaluator != null && module();
         Selected selected = selected(evaluator, module, tree, offset);
@@ -383,6 +392,59 @@ public final class Analysis {
             if (a.doc() != null) text.append("\n\n").append(a.doc());
         }
         return new Hover(selected.name().start(), selected.name().end(), text.toString());
+    }
+
+    /**
+     * The name at {@code offset} when it stands for a builtin: a free variable such as {@code map} or {@code __add}, the
+     * first name selected from a free {@code builtins}, or one inherited from either; else null.
+     */
+    private static Node builtinAt(SyntaxTree tree, int offset) {
+        Node name = tree.at(offset).parent();
+        if (name == null) return null;
+        SyntaxView<Node> view = tree.view();
+        if (name.kind == NodeKind.VAR) {
+            String text = tree.text(name);
+            boolean global = Linter.GLOBALS.contains(text)
+                    || text.startsWith("__") && Linter.BUILTINS.contains(text.substring(2));
+            return global && Scopes.resolve(view, text, name) == null ? name : null;
+        }
+        if (name.kind != NodeKind.ATTR_NAME || name.parent() == null) return null;
+        Node parent = name.parent();
+        if (parent.kind == NodeKind.INHERIT) {
+            Node from = Scopes.inheritedFrom(view, name);
+            if (from != null) {
+                String text = tree.text(name);
+                return Linter.GLOBALS.contains(text) && Scopes.resolve(view, text, from) == null ? name : null;
+            }
+            Node paren = parent.children().stream()
+                    .filter(c -> c.kind == NodeKind.PAREN)
+                    .findFirst()
+                    .orElse(null);
+            Node set = paren == null
+                    ? null
+                    : paren.children().stream()
+                            .filter(c -> c.token == null)
+                            .findFirst()
+                            .orElse(null);
+            return isBuiltins(tree, set) ? name : null;
+        }
+        Node select = parent.parent();
+        if (parent.kind != NodeKind.ATTR_PATH
+                || select == null
+                || select.kind != NodeKind.SELECT && select.kind != NodeKind.HAS_ATTR) return null;
+        Node first = parent.children().stream()
+                .filter(c -> c.token == null)
+                .findFirst()
+                .orElse(null);
+        return first == name && isBuiltins(tree, select.children().getFirst()) ? name : null;
+    }
+
+    /** Whether {@code expr} is the variable {@code builtins}, unbound in the file. */
+    private static boolean isBuiltins(SyntaxTree tree, Node expr) {
+        return expr != null
+                && expr.kind == NodeKind.VAR
+                && tree.text(expr).equals("builtins")
+                && Scopes.resolve(tree.view(), "builtins", expr) == null;
     }
 
     /** Where the nixpkgs attribute or the option at {@code offset} is defined, or null. */
