@@ -1,53 +1,48 @@
 = Architecture
 
-Each top-level folder is a Java module.
+Each top-level folder is a Java module:
 
-`parser/`::
-A hand-written lexer and parser. It builds a concrete syntax tree that keeps
-every token, then lowers it to the evaluator's AST. `Tokenizer` splits the
-source into lexemes that cover all of it, comments included, which the
+----
+affogato/
+├── parser/ <.>
+├── store/ <.>
+├── language/ <.>
+│   ├── Interpreter.java <.>
+│   ├── Translator.java <.>
+│   ├── nodes/ <.>
+│   ├── runtime/ <.>
+│   ├── builtins/ <.>
+│   └── corepkgs/ <.>
+├── format/ <.>
+├── lint/ <.>
+├── lsp/ <.>
+├── evaluator/ <.>
+├── web/ <.>
+└── cli/ <.>
+----
+<.> A hand-written lexer and parser. It builds a concrete syntax tree that
+keeps every token, then lowers it to the evaluator's AST. `Tokenizer` splits
+the source into lexemes that cover all of it, comments included, which the
 linter reads its suppression comments from. For editors, `TreeParser` parses
 them through a `TreeBuilder` shaped like IntelliJ's `PsiBuilder`, reporting
 errors and going on where `Parser` stops.
-
-`store/`::
-NAR hashing, Nix base32 and store-path computation.
-
-`language/`::
-The evaluator, a tree-walking interpreter:
-+
-* `Interpreter`: the entry point, which evaluates a file or an expression.
-* `Translator`: static scope resolution into nodes.
-* `nodes/` and `runtime/`: the evaluator and its values.
-* `builtins/`: the builtins.
-* `corepkgs/`: Nix's `derivation.nix` and `fetchurl.nix`, vendored from NixOS/nix.
-
-`cli/`::
-The command line, plus its native-image build.
-
-`format/`::
-The formatter.
-
-`lint/`::
-The linter.
-
-== Formatter
-
-`org.affogato.format.Formatter` ports https://github.com/NixOS/nixfmt[nixfmt]
-1.5.0 (MPL-2.0) to the parser's concrete syntax tree. `Formatter.format(src)`
-formats with nixfmt's defaults. `format(src, width, indent, strict)` sets the
-line width, the indentation and nixfmt's strict mode.
-
-== Linter
-
-`org.affogato.lint.Linter` runs checks in the spirit of
-https://github.com/astro/deadnix[deadnix] (unused bindings),
-https://github.com/oppiliappan/statix[statix] (simpler forms) and
-https://github.com/nix-community/nixd[nixd] (undefined variables, unknown
-builtins, unused `with` and `rec`). `Linter.lint(src)` returns the diagnostics,
-and `Linter.fix(src)` applies the fixes that come with most of them. Both take
-an optional set of `Rule` values to restrict the checks. <<lint-rules>> lists
-the rules.
+<.> NAR hashing, Nix base32 and store-path computation.
+<.> The evaluator, a tree-walking interpreter.
+<.> The entry point, which evaluates a file or an expression.
+<.> Static scope resolution into nodes.
+<.> The evaluator's nodes.
+<.> The values.
+<.> The builtins.
+<.> Nix's `derivation.nix` and `fetchurl.nix`, vendored from NixOS/nix.
+<.> The formatter.
+<.> The linter.
+<.> The language server over stdio: the linter's diagnostics, the formatter,
+and navigation over the parser's tree. `Analysis` answers its questions
+without the protocol, so that an editor can call it in-process.
+<.> The language server's evaluator: nixpkgs and option sets evaluated by the
+interpreter, for the server and for editors that call it in-process.
+<.> The language server compiled to JavaScript by TeaVM, for the playground.
+<.> The command line, plus its native-image build.
 
 == Tests
 
@@ -61,6 +56,10 @@ whenever the data change.
 
 `format/src/test/java/nixfmt/`::
 nixfmt's own test suite.
+
+`nixpkgs-formatted`::
+`affogato format --check` on the flake's nixpkgs: nixpkgs is formatted with
+nixfmt, so affogato must find nothing to change.
 
 `lint/src/test/java/cases/`::
 The linter's cases.

@@ -50,6 +50,7 @@ let
     ../parser/src/test
     ../docs/cli
     ../docs/_lint-rules.adoc
+    ../docs/_lang-tests.adoc
     ../web/playground/examples.js
   ];
   docPaths = [

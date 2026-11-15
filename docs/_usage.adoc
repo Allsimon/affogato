@@ -13,15 +13,8 @@ Each package installs bash and zsh completions; `affogato generate-completion`
 prints the script, to source in a shell where it is not installed.
 
 To try the formatter and linter in a browser, open the
-link:playground/index.html[playground]: a Monaco editor talking to the language
-server, which runs in the page, compiled to JavaScript. To build it locally and
-serve it, as its workers do not load from a file:
-
-[source,sh]
-----
-nix build .#playground
-nix run nixpkgs#python3 -- -m http.server -d result
-----
+https://allsimon.github.io/affogato/playground/index.html[playground]: a Monaco editor talking to the language
+server, which runs in the page, compiled to JavaScript via https://teavm.org/[TeaVM].
 
 Evaluate an expression:
 
@@ -35,5 +28,5 @@ Compute the derivation path of a nixpkgs attribute:
 
 [source,sh]
 ----
-./result/bin/affogato drv-path -I nixpkgs=/path/to/nixpkgs -E 'import <nixpkgs> {}' -A hello
+affogato drv-path -I nixpkgs=/path/to/nixpkgs -E 'import <nixpkgs> {}' -A hello
 ----
