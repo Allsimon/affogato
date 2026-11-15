@@ -153,7 +153,6 @@ final class Files {
     }
 
     private static Object findFile(NixContext ctx, NixList searchPath, String path) {
-        if (path.equals("nix/fetchurl.nix")) return new NixPath(Derivations.FETCHURL_PATH);
         for (Object entry : searchPath.items) {
             NixAttrs e = Types.attrs(entry);
             Object prefixV = e.get("prefix");
@@ -176,6 +175,7 @@ final class Files {
             NixContext.read(candidate);
             if (java.nio.file.Files.exists(Path.of(candidate))) return new NixPath(candidate);
         }
+        if (path.startsWith("nix/")) return new NixPath(Derivations.COREPKGS + path.substring(4));
         throw Builtins.catchable(
                 "file '" + path + "' was not found in the Nix search path (add it using $NIX_PATH or -I)");
     }

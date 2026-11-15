@@ -98,7 +98,7 @@ final class Xml {
                 if (s.context != null) Collections.addAll(context, s.context);
                 empty("string", attr("value", s.value));
             }
-            case NixPath p -> empty("path", attr("value", p.path()));
+            case NixPath p -> empty("path", attr("value", display(p.path())));
             case NixNull n -> empty("null", null);
             case Double d -> empty("float", attr("value", Printer.formatFloat(d)));
             case NixAttrs a -> {
@@ -143,5 +143,12 @@ final class Xml {
             }
             default -> empty("unevaluated", null);
         }
+    }
+
+    /** {@code path} as Nix shows it, its own files as {@code <nix/name>}. */
+    private static String display(String path) {
+        return path.startsWith(Derivations.COREPKGS)
+                ? "<nix/" + path.substring(Derivations.COREPKGS.length()) + ">"
+                : path;
     }
 }
