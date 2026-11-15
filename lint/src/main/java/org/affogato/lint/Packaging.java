@@ -7,7 +7,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.affogato.parser.Syntax.*;
 import org.affogato.parser.TokenType;
 import org.affogato.store.NixBase32;
@@ -544,9 +543,6 @@ final class Packaging {
     private static final Set<String> FAKE_HASHES = Set.of("fakeHash", "fakeSha256", "fakeSha512");
 
     /** {@code sha256-AAAA...=} and the like: the SRI hash of an algorithm, all zeros. */
-    private static final java.util.regex.Pattern FAKE_SRI =
-            java.util.regex.Pattern.compile("(sha1|sha256|sha512)-A+=*");
-
     private static void fakeHash(String src, Node n, List<Diagnostic> out) {
         boolean fake = switch (n) {
             case Select s ->
@@ -556,9 +552,7 @@ final class Packaging {
                         && FAKE_HASHES.contains(
                                 Nodes.staticName(s.path().getFirst().attr()));
             case Str str ->
-                str.parts().size() == 1
-                        && str.parts().getFirst() instanceof Lit lit
-                        && FAKE_SRI.matcher(lit.text()).matches();
+                str.parts().size() == 1 && str.parts().getFirst() instanceof Lit lit && isFakeSri(lit.text());
             default -> false;
         };
         if (fake) {
@@ -596,8 +590,26 @@ final class Packaging {
                 fix(str, body, hasPre ? null : pre, hasPost ? null : post)));
     }
 
+    private static boolean isFakeSri(String s) {
+        int i = s.startsWith("sha1-") ? 5 : s.startsWith("sha256-") || s.startsWith("sha512-") ? 7 : -1;
+        if (i < 0 || i == s.length() || s.charAt(i) != 'A') return false;
+        while (i < s.length() && s.charAt(i) == 'A') i++;
+        while (i < s.length() && s.charAt(i) == '=') i++;
+        return i == s.length();
+    }
+
+    /** Whether {@code call} occurs in {@code body} as {@code \bcall\b} would find it. */
     private static boolean runs(String body, String call) {
-        return Pattern.compile("\\b" + call + "\\b").matcher(body).find();
+        for (int i = body.indexOf(call); i >= 0; i = body.indexOf(call, i + 1)) {
+            int after = i + call.length();
+            if ((i == 0 || !isWord(body.charAt(i - 1))) && (after == body.length() || !isWord(body.charAt(after))))
+                return true;
+        }
+        return false;
+    }
+
+    private static boolean isWord(char c) {
+        return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_';
     }
 
     /**

@@ -126,7 +126,10 @@ final class Imports {
 
     private static String normalize(String path) {
         List<String> parts = new ArrayList<>();
-        for (String part : path.split("/")) {
+        for (int from = 0, to; from <= path.length(); from = to + 1) {
+            to = path.indexOf('/', from);
+            if (to < 0) to = path.length();
+            String part = path.substring(from, to);
             if (part.isEmpty() || part.equals(".")) continue;
             if (part.equals("..")) {
                 if (!parts.isEmpty()) parts.removeLast();

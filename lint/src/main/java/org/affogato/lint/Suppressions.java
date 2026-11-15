@@ -1,13 +1,12 @@
 package org.affogato.lint;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.affogato.parser.Lexeme;
 import org.affogato.parser.Tokenizer;
 
@@ -16,9 +15,6 @@ import org.affogato.parser.Tokenizer;
  * affogato: ignore-file <rules>} for the whole file, the rules separated by commas.
  */
 public final class Suppressions {
-    private static final Pattern DIRECTIVE =
-            Pattern.compile("^(?:#|/\\*)\\s*affogato:\\s*(ignore|ignore-file)\\s+([\\w\\s,-]+?)\\s*(?:\\*/)?$");
-
     private final Set<String> file = new HashSet<>();
     private final Map<Integer, Set<String>> lines = new HashMap<>();
     private final int[] lineStarts;
@@ -27,13 +23,19 @@ public final class Suppressions {
         lineStarts = starts(src);
         for (Lexeme l : Tokenizer.tokenize(src)) {
             if (l.kind() != Lexeme.Kind.COMMENT) continue;
-            Matcher m = DIRECTIVE.matcher(src.substring(l.start(), l.end()).strip());
-            if (!m.matches()) continue;
-            List<String> rules = Arrays.stream(m.group(2).split(","))
-                    .map(String::strip)
-                    .filter(s -> !s.isEmpty())
-                    .toList();
-            if (m.group(1).equals("ignore-file")) {
+            String comment = src.substring(l.start(), l.end()).strip();
+            int start = comment.startsWith("#") ? 1 : comment.startsWith("/*") ? 2 : -1;
+            if (start < 0) continue;
+            int i = skipSpace(comment, start);
+            if (!comment.startsWith("affogato:", i)) continue;
+            i = skipSpace(comment, i + "affogato:".length());
+            boolean wholeFile = comment.startsWith("ignore-file", i);
+            if (!wholeFile && !comment.startsWith("ignore", i)) continue;
+            i += wholeFile ? "ignore-file".length() : "ignore".length();
+            if (i == comment.length() || !isSpace(comment.charAt(i))) continue;
+            List<String> rules = rules(comment.substring(i, comment.length() - (comment.endsWith("*/") ? 2 : 0)));
+            if (rules == null) continue;
+            if (wholeFile) {
                 file.addAll(rules);
             } else {
                 int line = line(l.start());
@@ -55,6 +57,34 @@ public final class Suppressions {
     /** The comment that switches {@code rule} off in the whole file. */
     public static String ignoreFile(Rule rule) {
         return "# affogato: ignore-file " + rule.id();
+    }
+
+    /** The rules named in {@code list}, or null unless it holds only {@code [\w\s,-]}. */
+    private static List<String> rules(String list) {
+        List<String> rules = new ArrayList<>();
+        int from = 0;
+        for (int i = 0; i <= list.length(); i++) {
+            char c = i < list.length() ? list.charAt(i) : ',';
+            if (c == ',') {
+                String rule = list.substring(from, i).strip();
+                if (!rule.isEmpty()) rules.add(rule);
+                from = i + 1;
+            } else if (!isSpace(c)
+                    && c != '-'
+                    && c != '_'
+                    && !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9')) return null;
+        }
+        return rules;
+    }
+
+    private static int skipSpace(String s, int i) {
+        while (i < s.length() && isSpace(s.charAt(i))) i++;
+        return i;
+    }
+
+    /** {@code \s} of a regex. */
+    private static boolean isSpace(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\u000b' || c == '\f' || c == '\r';
     }
 
     private static int[] starts(String src) {
