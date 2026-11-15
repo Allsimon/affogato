@@ -49,6 +49,12 @@ public final class Interpreter {
      */
     public static String evaluate(Options options, String file, String content, long timeoutMillis)
             throws EvalException, InterruptedException {
+        return evaluate(options, file, content, timeoutMillis, STACK_SIZE);
+    }
+
+    /** As {@link #evaluate(Options, String, String, long)}, on a thread of {@code stackSize} bytes. */
+    public static String evaluate(Options options, String file, String content, long timeoutMillis, long stackSize)
+            throws EvalException, InterruptedException {
         NixContext ctx = new NixContext(options.storeDir(), options.system(), options.nixPath());
         Object[] outcome = new Object[1];
         Thread t = new Thread(
@@ -61,7 +67,7 @@ public final class Interpreter {
                     }
                 },
                 "nix-eval",
-                STACK_SIZE);
+                stackSize);
         t.setDaemon(true);
         t.start();
         t.join(timeoutMillis);

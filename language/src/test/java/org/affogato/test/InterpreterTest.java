@@ -422,10 +422,10 @@ class InterpreterTest {
 
     @Test
     void turnsAJavaStackOverflowIntoAnError() {
-        assertThatThrownBy(() -> eval(
-                        Interpreter.Output.STRICT,
-                        "builtins.foldl' (acc: _: [ acc ]) [ ] (builtins.genList (x: x) 30000000)",
-                        0))
+        var options =
+                new Interpreter.Options("", "x86_64-linux", "/nix/store", Interpreter.Output.STRICT, "", List.of());
+        String expr = "builtins.foldl' (acc: _: [ acc ]) [ ] (builtins.genList (x: x) 1000000)";
+        assertThatThrownBy(() -> Interpreter.evaluate(options, null, expr, 0, 16L << 20))
                 .isInstanceOf(EvalException.class)
                 .hasMessage("stack overflow");
     }
