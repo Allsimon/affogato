@@ -8,7 +8,7 @@ buildDotnetModule              false       false
 buildDunePackage               true        false
 buildGoModule                  true        false
 buildHomeAssistantComponent    true        true
-buildMavenPackage              false       false
+buildMavenPackage              true        true
 buildNpmPackage                true        false
 buildPythonApplication         true        true
 buildPythonPackage             true        true
