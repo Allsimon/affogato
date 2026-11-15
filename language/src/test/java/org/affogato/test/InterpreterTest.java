@@ -8,10 +8,13 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.affogato.EvalException;
+import org.affogato.FileStamp;
 import org.affogato.Interpreter;
 import org.affogato.Session;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 class InterpreterTest {
     private static String eval(Interpreter.Output output, String expr, long timeout) throws Exception {
@@ -349,15 +352,22 @@ class InterpreterTest {
     }
 
     @Test
+    @ResourceLock(Resources.GLOBAL)
     void reHashesAFileChangedBetweenEvaluations(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("a");
         Files.writeString(file, "1");
-        Thread.sleep(1100);
         String expr = "\"${" + file + "}\"";
-        String first = eval(Interpreter.Output.RAW, expr, 0);
-        assertThat(eval(Interpreter.Output.RAW, expr, 0)).isEqualTo(first);
-        Files.writeString(file, "2");
-        assertThat(eval(Interpreter.Output.RAW, expr, 0)).isNotEqualTo(first).endsWith("-a");
+        FileStamp.shiftClock(1100);
+        try {
+            String first = eval(Interpreter.Output.RAW, expr, 0);
+            assertThat(eval(Interpreter.Output.RAW, expr, 0)).isEqualTo(first);
+            Files.writeString(file, "2");
+            assertThat(eval(Interpreter.Output.RAW, expr, 0))
+                    .isNotEqualTo(first)
+                    .endsWith("-a");
+        } finally {
+            FileStamp.shiftClock(0);
+        }
     }
 
     @Test
@@ -372,15 +382,20 @@ class InterpreterTest {
     }
 
     @Test
+    @ResourceLock(Resources.GLOBAL)
     void reReadsASettledImportedFileEditedBetweenEvaluations(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("a.nix");
         String expr = "import " + file;
         Files.writeString(file, "1");
-        Thread.sleep(1100);
-        assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("1");
-        assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("1");
-        Files.writeString(file, "2");
-        assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("2");
+        FileStamp.shiftClock(1100);
+        try {
+            assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("1");
+            assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("1");
+            Files.writeString(file, "2");
+            assertThat(eval(Interpreter.Output.EVAL, expr, 0)).isEqualTo("2");
+        } finally {
+            FileStamp.shiftClock(0);
+        }
     }
 
     @Test
