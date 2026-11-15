@@ -11,6 +11,8 @@
         "aarch64-linux"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      # The Nix whose language tests vendir.yml vendors; the vendir-nix check keeps both in step.
+      nixFor = pkgs: pkgs.nixVersions.nix_2_35;
     in
     {
       packages = forAllSystems (pkgs: rec {
@@ -39,12 +41,27 @@
           ${self.packages.${pkgs.stdenv.hostPlatform.system}.affogato-native}/bin/affogato format --check ${nixpkgs}
           touch $out
         '';
+        vendir-nix =
+          let
+            lock = builtins.readFile ./vendir.lock.yml;
+            tag = builtins.match ".*tags:\n      - ([^\n]+)\n    path: \\.\n  path: language/src/test/java/lang\n.*" lock;
+            locked = if tag == null then "no tag" else builtins.head tag;
+            nix = (nixFor pkgs).version;
+          in
+          pkgs.runCommand "vendir-nix" { } ''
+            if [ ${pkgs.lib.escapeShellArg locked} != ${pkgs.lib.escapeShellArg nix} ]; then
+              echo "vendir.lock.yml locks NixOS/nix ${locked} for the language tests, the dev shell has Nix ${nix}" >&2
+              exit 1
+            fi
+            touch $out
+          '';
       });
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = [
             pkgs.jdk25_headless
+            (nixFor pkgs)
             pkgs.vendir
           ];
           JAVA_HOME = pkgs.jdk25_headless;

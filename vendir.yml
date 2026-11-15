@@ -7,7 +7,7 @@ directories:
       - path: .
         git:
           url: https://github.com/NixOS/nix
-          ref: 2.34.9
+          ref: 2.35.6
           depth: 1
         includePaths:
           - tests/functional/lang/**/*

@@ -22,7 +22,6 @@ import org.affogato.store.StorePaths;
 /** {@code derivationStrict}: builds the store derivation in memory and computes its paths without writing them. */
 public final class Derivations {
     public static final String COREPKGS = "/__corepkgs__/";
-    public static final String FETCHURL_PATH = COREPKGS + "fetchurl.nix";
 
     private Derivations() {}
 
@@ -313,7 +312,7 @@ public final class Derivations {
         TreeSet<String> outs = new TreeSet<>();
         for (Object x : Types.list(v).items) {
             String o = Types.string(x).value;
-            if (o.equals("drv")) throw error(drvName, "invalid derivation output name 'drv'");
+            if (o.equals("drvPath")) throw error(drvName, "invalid derivation output name 'drvPath'");
             if (!outs.add(o)) throw error(drvName, "duplicate derivation output '" + o + "'");
         }
         if (outs.isEmpty()) throw error(drvName, "derivation cannot have an empty set of outputs");

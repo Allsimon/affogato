@@ -2,11 +2,11 @@ apiVersion: vendir.k14s.io/v1alpha1
 directories:
 - contents:
   - git:
-      commitTitle: Merge remote-tracking branch 'nix-ghsa-m4vq-qf6v-82pj/fix-macos-sandbox-2.34'
-        into mitigations-2.34
-      sha: 5fb7eb7d64ba7b78819aa3ac6a7fdd21354910fc
+      commitTitle: '[Backport 2.35-maintenance] packaging/scripted-installer: Only
+        chown pre-existing files when needed (#16790)'
+      sha: 4c9c2490ff10c6fc30f9675273af989569cf37da
       tags:
-      - 2.34.9
+      - 2.35.6
     path: .
   path: language/src/test/java/lang
 - contents:
