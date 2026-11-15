@@ -1,22 +1,44 @@
 = Status
 
+include::_lang-tests.adoc[]
+
 Checked against Nix 2.35.6 and nixpkgs `d4f25a3e5620` on x86_64-linux.
 
 Language tests::
-affogato passes NixOS/nix's `tests/functional/lang` suite (467 tests) and
-Tvix's `eval/src/tests/tvix_tests`, apart from the cases listed with reasons in
+affogato passes {lang-passed} of the {lang-tests} tests of NixOS/nix's
+`tests/functional/lang` suite and {tvix-passed} of the {tvix-tests} of Tvix's
+`eval/src/tests/tvix_tests`. The others are listed with reasons in
 `language/src/test/java/lang-skip.txt`.
 
 Top-level packages::
 For every top-level nixpkgs attribute (`scripts/toplevel-drvpaths.nix`),
 affogato and `nix-instantiate` produce 24,311 identical drvPaths. 717 attributes
-fail in both, and none differ or fail in only one evaluator. The run takes
-1 min 12 s and 7.4 GB on the JVM, against 1 min 52 s and 8.8 GB for Nix.
+fail in both, and none differ or fail in only one evaluator:
++
+[cols="3,1,1",options="header"]
+|===
+|Evaluator |Time |Peak RSS
+|`nix-instantiate` |1 min 54 s |9.3 GB
+|affogato on the JVM |1 min 1 s |8.0 GB
+|===
 
 Heavier attributes::
 `scripts/parity.sh` finds identical drvPaths for `firefox`, `chromium`,
 `libreoffice`, `texliveFull`, `haskellPackages.pandoc`, `nixosTests.firefox`,
 `pkgsCross.aarch64-multiplatform.hello` and `pkgsStatic.hello`.
+
+Formatter::
+`affogato format --check` finds nixpkgs' 45,377 files formatted, as
+`nixfmt --check` 1.5.0 does. Both go through the files sequentially:
++
+[cols="3,1,1",options="header"]
+|===
+|Formatter |Time |Peak RSS
+|nixfmt |2 min 40 s |1.4 GB
+|affogato on the JVM |21 s |1.7 GB
+|affogato on the JVM, `-Xmx512m` |21 s |0.74 GB
+|affogato as a native image |37 s |0.8 GB
+|===
 
 == Not supported
 

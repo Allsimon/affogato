@@ -1,0 +1,12 @@
+= Linter
+
+`org.affogato.lint.Linter` runs checks in the spirit of
+https://github.com/astro/deadnix[deadnix] (unused bindings),
+https://github.com/oppiliappan/statix[statix] (simpler forms) and
+https://github.com/nix-community/nixd[nixd] (undefined variables, unknown
+builtins, unused `with` and `rec`). `Linter.lint(src)` returns the diagnostics,
+and `Linter.fix(src)` applies the fixes that come with most of them. Both take
+an optional set of `Rule` values to restrict the checks. <<lint-rules>> lists
+the rules.
+
+include::_lint-rules.adoc[leveloffset=+1]

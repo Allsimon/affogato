@@ -1,0 +1,33 @@
+= Formatter
+
+`org.affogato.format.Formatter` ports https://github.com/NixOS/nixfmt[nixfmt]
+1.5.0 in Java and re-use the parser's concrete syntax tree.
+
+== Suppressing a rule
+
+A comment switches rules off, for `check` and `fix` alike: `ignore` for its
+own line and the next one, `ignore-file` for the whole file. The rules are
+separated by commas; `syntax-error` cannot be switched off.
+
+[source,nix]
+----
+# affogato: ignore-file unused-let-binding, empty-let-in
+[
+  # affogato: ignore bool-comparison
+  (x == true)
+  (y == true) # affogato: ignore bool-comparison
+]
+----
+
+== treefmt
+
+`format` and `fix` follow the
+https://treefmt.com/latest/reference/formatter-spec/[treefmt formatter spec]:
+
+[source,toml]
+----
+[formatter.affogato]
+command = "affogato"
+options = ["fix"]
+includes = ["*.nix"]
+----
