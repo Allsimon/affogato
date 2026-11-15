@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 import org.affogato.format.Formatter;
 import org.affogato.lint.Linter;
 import org.affogato.parser.Bindings;
@@ -88,8 +87,6 @@ public final class Analysis {
     static final List<String> KEYWORDS =
             List.of("assert", "else", "if", "in", "inherit", "let", "or", "rec", "then", "with");
 
-    private static final Pattern IDENTIFIER = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_'-]*");
-
     private static final Map<String, String> SNIPPETS = snippets(
             "let … in", "let\n  ${1:name} = ${2:value};\nin\n${0}",
             "if … then … else", "if ${1:condition} then ${2} else ${0}",
@@ -106,8 +103,6 @@ public final class Analysis {
     private static final Location PENDING = new Location(null, -1, -1);
 
     private static final Set<String> CONSTANTS = Set.of("true", "false", "null");
-
-    private static final Pattern URL = Pattern.compile("https?://[^\\s\\\\]+");
 
     private static final int MAX_ITEMS = 1000;
 
@@ -1100,12 +1095,35 @@ public final class Analysis {
             } else if (node.kind == NodeKind.STRING
                     && children.size() == 3
                     && children.get(1).token == Lexeme.Kind.STR_TEXT
-                    && URL.matcher(tree.text(children.get(1))).matches()) {
+                    && isUrl(tree.text(children.get(1)))) {
                 Node range = children.get(1);
                 links.add(new Link(range.start(), range.end(), tree.text(range), false));
             }
         });
         return links;
+    }
+
+    /** As {@code https?://[^\s\\]+} matches. */
+    private static boolean isUrl(String s) {
+        int i = s.startsWith("http://") ? 7 : s.startsWith("https://") ? 8 : -1;
+        if (i < 0 || i == s.length()) return false;
+        for (; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\u000b' || c == '\f' || c == '\r' || c == '\\')
+                return false;
+        }
+        return true;
+    }
+
+    /** As {@code [a-zA-Z_][a-zA-Z0-9_'-]*} matches. */
+    private static boolean isIdentifier(String s) {
+        if (s.isEmpty()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            boolean letter = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_';
+            if (!letter && (i == 0 || !(c >= '0' && c <= '9' || c == '\'' || c == '-'))) return false;
+        }
+        return true;
     }
 
     /**
@@ -1131,7 +1149,7 @@ public final class Analysis {
         String content = name.length() < 2 ? "" : name.substring(1, name.length() - 1);
         if (string.kind == NodeKind.ATTR_NAME)
             return new Rewrite("Quote the attribute name", string.start(), string.end(), "\"" + name + "\"");
-        if (IDENTIFIER.matcher(content).matches() && !KEYWORDS.contains(content))
+        if (isIdentifier(content) && !KEYWORDS.contains(content))
             return new Rewrite("Unquote the attribute name", string.start(), string.end(), content);
         return null;
     }

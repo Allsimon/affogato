@@ -3,7 +3,6 @@ package org.affogato.format;
 import static org.affogato.format.Tree.*;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -184,11 +183,23 @@ final class Convert {
         s = s.replace("\r\n", "\n");
         List<String> lines = new ArrayList<>();
         if (!s.isEmpty()) {
-            lines.addAll(Arrays.asList(s.split("\n", -1)));
+            lines.addAll(splitAtNewlines(s));
             if (s.endsWith("\n")) lines.removeLast();
         }
         lines.replaceAll(String::stripTrailing);
         dropTrailingEmpty(lines);
+        return lines;
+    }
+
+    /** {@code s.split("\n", -1)}, which TeaVM would compile with its regex engine. */
+    private static List<String> splitAtNewlines(String s) {
+        List<String> lines = new ArrayList<>();
+        int from = 0;
+        for (int to = s.indexOf('\n'); to >= 0; to = s.indexOf('\n', from)) {
+            lines.add(s.substring(from, to));
+            from = to + 1;
+        }
+        lines.add(s.substring(from));
         return lines;
     }
 
@@ -737,13 +748,13 @@ final class Convert {
         List<StringPart> cur = new ArrayList<>();
         for (StringPart p : parts) {
             if (p instanceof TextPart(String t)) {
-                String[] pieces = t.split("\n", -1);
-                for (int i = 0; i < pieces.length; i++) {
+                List<String> pieces = splitAtNewlines(t);
+                for (int i = 0; i < pieces.size(); i++) {
                     if (i > 0) {
                         lines.add(cur);
                         cur = new ArrayList<>();
                     }
-                    cur.add(new TextPart(pieces[i]));
+                    cur.add(new TextPart(pieces.get(i)));
                 }
             } else {
                 cur.add(p);

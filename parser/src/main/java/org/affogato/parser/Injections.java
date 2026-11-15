@@ -5,8 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.function.Predicate;
 
 /**
  * Which language a string is written in, by where it stands:
@@ -35,7 +34,7 @@ public final class Injections {
     }
 
     /** Which attributes and builders get shell. */
-    public record Rules(Pattern shellAttributes, Set<String> shellBuilders) {
+    public record Rules(Predicate<String> shellAttributes, Set<String> shellBuilders) {
         public static final String SHELL_ATTRIBUTES =
                 "(pre|post)[A-Z]\\w*|\\w+Phase|shellHook|buildCommand|script|enterShell|enterTest|exec";
         public static final Set<String> SHELL_BUILDERS = Set.of(
@@ -45,7 +44,29 @@ public final class Injections {
                 "runCommandNoCC",
                 "writeShellScript",
                 "writeShellScriptBin");
-        public static final Rules DEFAULT = new Rules(Pattern.compile(SHELL_ATTRIBUTES), SHELL_BUILDERS);
+        /** Matches as {@link #SHELL_ATTRIBUTES} does, without the regex engine TeaVM would compile into the playground. */
+        public static final Rules DEFAULT = new Rules(Rules::isShellAttribute, SHELL_BUILDERS);
+
+        private static boolean isShellAttribute(String name) {
+            return switch (name) {
+                case "shellHook", "buildCommand", "script", "enterShell", "enterTest", "exec" -> true;
+                default -> {
+                    int prefix = name.startsWith("pre") ? 3 : name.startsWith("post") ? 4 : 0;
+                    if (prefix > 0
+                            && name.length() > prefix
+                            && name.charAt(prefix) >= 'A'
+                            && name.charAt(prefix) <= 'Z'
+                            && allWord(name, prefix, name.length())) yield true;
+                    int phase = name.length() - "Phase".length();
+                    yield phase > 0 && name.endsWith("Phase") && allWord(name, 0, phase);
+                }
+            };
+        }
+
+        private static boolean allWord(String s, int from, int to) {
+            for (int i = from; i < to; i++) if (!isWord(s.charAt(i))) return false;
+            return true;
+        }
     }
 
     /** The builders whose first argument is a file name and whose last one is its content. */
@@ -80,11 +101,6 @@ public final class Injections {
                 });
     }
 
-    /** {@code lua} in {@code /* lua *\/}. */
-    public static final Pattern BLOCK_LANGUAGE = Pattern.compile("/\\*\\s*([\\w+#.-]+)\\s*\\*/");
-    /** {@code json} in {@code # language=json}. */
-    public static final Pattern LINE_LANGUAGE = Pattern.compile("#\\s*language\\s*=\\s*([\\w+#.-]+)\\s*");
-
     private Injections() {}
 
     /** What to inject into {@code string}, a STRING or IND_STRING, or null. */
@@ -97,7 +113,7 @@ public final class Injections {
             List<String> path = names(view, parent);
             String last = path.isEmpty() ? null : path.getLast();
             if (last == null) return null;
-            if (rules.shellAttributes().matcher(last).matches()) return Injection.shell();
+            if (rules.shellAttributes().test(last)) return Injection.shell();
             return last.equals("text") ? textLanguage(view, parent) : null;
         }
         if (kind == NodeKind.APPLY) {
@@ -149,12 +165,54 @@ public final class Injections {
         for (N node : nodes) {
             String comment = view.commentBefore(node);
             if (comment == null) continue;
-            Matcher block = BLOCK_LANGUAGE.matcher(comment);
-            if (node == string && block.matches()) return block.group(1);
-            Matcher line = LINE_LANGUAGE.matcher(comment);
-            if (line.matches()) return line.group(1);
+            String language = node == string ? blockLanguage(comment) : null;
+            if (language == null) language = lineLanguage(comment);
+            if (language != null) return language;
         }
         return null;
+    }
+
+    /** {@code lua} in {@code /* lua *\/}, as {@code /\*\s*([\w+#.-]+)\s*\*\/} matches it. */
+    private static String blockLanguage(String comment) {
+        if (comment.length() < 4 || !comment.startsWith("/*") || !comment.endsWith("*/")) return null;
+        return language(comment, 2, comment.length() - 2);
+    }
+
+    /** {@code json} in {@code # language=json}, as {@code #\s*language\s*=\s*([\w+#.-]+)\s*} matches it. */
+    private static String lineLanguage(String comment) {
+        if (!comment.startsWith("#")) return null;
+        int i = skipSpace(comment, 1, comment.length());
+        if (!comment.startsWith("language", i)) return null;
+        i = skipSpace(comment, i + "language".length(), comment.length());
+        if (i == comment.length() || comment.charAt(i) != '=') return null;
+        return language(comment, i + 1, comment.length());
+    }
+
+    /** The language name between {@code from} and {@code to}, around which only whitespace may stand. */
+    private static String language(String s, int from, int to) {
+        from = skipSpace(s, from, to);
+        while (to > from && isSpace(s.charAt(to - 1))) to--;
+        if (from == to) return null;
+        for (int i = from; i < to; i++) {
+            char c = s.charAt(i);
+            if (!isWord(c) && c != '+' && c != '#' && c != '.' && c != '-') return null;
+        }
+        return s.substring(from, to);
+    }
+
+    private static int skipSpace(String s, int i, int to) {
+        while (i < to && isSpace(s.charAt(i))) i++;
+        return i;
+    }
+
+    /** {@code \s} of a regex. */
+    private static boolean isSpace(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\u000b' || c == '\f' || c == '\r';
+    }
+
+    /** {@code \w} of a regex. */
+    private static boolean isWord(char c) {
+        return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_';
     }
 
     private static <N> N enclosingBinding(SyntaxView<N> view, N binding) {
