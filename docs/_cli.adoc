@@ -42,6 +42,10 @@ the same parser as the other commands. It answers with:
   nixpkgs after `pkgs.` and `lib.`, unless the file binds them otherwise than as
   a parameter, and of a set literal a `let` or `rec` set binds after its name
   and a dot, as `x.a.`, through the names bound to it and its `inherit`s;
+* a hover on a builtin with Nix's documentation of it: on a name no binding of
+  the file shadows, as `map` or `__add`, on the first name selected from
+  `builtins`, as `builtins.toJSON` or `builtins ? hasContext`, and on such a
+  name inherited, as in `inherit (builtins) toJSON;`;
 * across the files of the workspace folders, hidden folders and `result`
   aside: find references and rename of an attribute of the set a file
   evaluates to, under its function arguments and `let`s, with the selections

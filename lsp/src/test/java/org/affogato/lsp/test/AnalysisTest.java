@@ -190,4 +190,45 @@ class AnalysisTest {
 
         assertThat(analysis(text).links()).containsExactly(new Analysis.Link(9, 28, "https://example.org", false));
     }
+
+    @Test
+    void documentsBuiltins() {
+        String text = "[ (map f l) (builtins.foldl' f 0 l) (__add 1 2) builtins (builtins ? hasContext) ]";
+
+        Analysis.Hover map = analysis(text).hover(text.indexOf("map") + 1);
+        assertThat(map.start()).isEqualTo(text.indexOf("map"));
+        assertThat(map.end()).isEqualTo(text.indexOf("map") + 3);
+        assertThat(map.markdown()).startsWith("```nix\nbuiltins.map f list\n```\n\nApply the function");
+        assertThat(analysis(text).hover(text.indexOf("foldl'")).markdown())
+                .startsWith("```nix\nbuiltins.foldl' op nul list");
+        assertThat(analysis(text).hover(text.indexOf("__add")).markdown()).startsWith("```nix\nbuiltins.add e1 e2");
+        assertThat(analysis(text).hover(text.indexOf("builtins (")).markdown()).contains("*Type:* set");
+        assertThat(analysis(text).hover(text.indexOf("hasContext")).markdown())
+                .startsWith("```nix\nbuiltins.hasContext");
+    }
+
+    @Test
+    void documentsInheritedBuiltins() {
+        String text = "{ inherit map; inherit (builtins) toJSON; }";
+
+        assertThat(analysis(text).hover(text.indexOf("map")).markdown()).startsWith("```nix\nbuiltins.map");
+        assertThat(analysis(text).hover(text.indexOf("toJSON")).markdown()).startsWith("```nix\nbuiltins.toJSON");
+    }
+
+    @Test
+    void linksBuiltinDocumentationToTheManual() {
+        String text = "true";
+
+        assertThat(analysis(text).hover(0).markdown())
+                .containsPattern("]\\(https://nix\\.dev/manual/nix/\\d+\\.\\d+/language/operators\\.html#comparison\\)")
+                .doesNotContain("@docroot@");
+    }
+
+    @Test
+    void documentsNoShadowedBuiltin() {
+        String text = "let map = 1; builtins = { }; in [ map builtins.map ]";
+
+        assertThat(analysis(text).hover(text.lastIndexOf("[ map") + 2)).isNull();
+        assertThat(analysis(text).hover(text.indexOf("builtins.map") + 9)).isNull();
+    }
 }
