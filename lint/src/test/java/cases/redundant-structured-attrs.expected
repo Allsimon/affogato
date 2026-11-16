@@ -1,0 +1,5 @@
+redundant-structured-attrs.nix:17:5: warning[redundant-structured-attrs]: '__structuredAttrs' is already true for buildMavenPackage [fix]
+redundant-structured-attrs.nix:25:5: warning[redundant-structured-attrs]: '__structuredAttrs' is already true for buildPythonPackage [fix]
+redundant-structured-attrs.nix:30:5: warning[redundant-structured-attrs]: '__structuredAttrs' is already true for buildHomeAssistantComponent [fix]
+redundant-structured-attrs.nix:38:5: warning[redundant-structured-attrs]: '__structuredAttrs' is already true for buildPythonApplication [fix]
+redundant-structured-attrs.nix:45:5: warning[redundant-structured-attrs]: '__structuredAttrs' is already true for buildMavenPackage

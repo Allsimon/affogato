@@ -1,0 +1,3 @@
+redundant-strict-deps.nix:15:5: warning[redundant-strict-deps]: 'strictDeps' is already true for buildGoModule [fix]
+redundant-strict-deps.nix:22:5: warning[redundant-strict-deps]: 'strictDeps' is already true for buildRustPackage
+redundant-strict-deps.nix:26:5: warning[redundant-strict-deps]: 'strictDeps' is already true for buildNpmPackage [fix]
