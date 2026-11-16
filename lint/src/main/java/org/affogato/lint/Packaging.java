@@ -59,6 +59,7 @@ final class Packaging {
             if (n instanceof Call c) {
                 flag(src, c, Rule.MISSING_STRUCTURED_ATTRS, "__structuredAttrs", Builders.STRUCTURED_ATTRS, out);
                 flag(src, c, Rule.MISSING_STRICT_DEPS, "strictDeps", Builders.STRICT_DEPS, out);
+                redundant(src, c, out);
             }
             if (!(n instanceof AttrSet s)) continue;
             for (Binding b : s.binds()) {
@@ -130,6 +131,82 @@ final class Packaging {
                 flagFix(src, set, attr + " = true;")));
     }
 
+    /** Reports a flag set to true for a builder that sets it to true already. */
+    private static void redundant(String src, Call call, List<Diagnostic> out) {
+        AttrSet set = derivation(call);
+        if (set == null) return;
+        String builder = name(call.fn());
+        List<Assign> found = new ArrayList<>();
+        List<Edit> deletes = new ArrayList<>();
+        Set<Integer> removed = new java.util.HashSet<>();
+        for (Binding b : set.binds()) {
+            if (!(b instanceof Assign a)
+                    || a.path().size() != 1
+                    || !(a.value() instanceof Ident v)
+                    || !Scope.name(v).equals("true")) continue;
+            String attr = Nodes.staticName(a.path().getFirst().attr());
+            Set<String> defaults = switch (attr) {
+                case "__structuredAttrs" -> python2(call.fn()) ? Set.of() : Builders.STRUCTURED_ATTRS;
+                case "strictDeps" -> Builders.STRICT_DEPS;
+                case null, default -> Set.of();
+            };
+            if (!defaults.contains(builder)) continue;
+            int start = Nodes.start(b);
+            int end = Nodes.end(b);
+            boolean commented = Text.leadingComments(src, start) != start || Text.trailingComment(src, end) != end;
+            Edit e = commented ? null : Text.delete(src, start, end);
+            if (e != null && wholeLines(src, e)) removed.add(e.start());
+            found.add(a);
+            deletes.add(e);
+        }
+        for (int i = 0; i < found.size(); i++) {
+            Assign a = found.get(i);
+            String attr = Nodes.staticName(a.path().getFirst().attr());
+            Edit e = deletes.get(i);
+            out.add(new Diagnostic(
+                    attr.equals("strictDeps") ? Rule.REDUNDANT_STRICT_DEPS : Rule.REDUNDANT_STRUCTURED_ATTRS,
+                    Nodes.start(a),
+                    Nodes.end(a),
+                    "'" + attr + "' is already true for " + builder,
+                    e == null ? List.of() : List.of(tidy(src, e, removed))));
+        }
+    }
+
+    private static boolean wholeLines(String src, Edit e) {
+        return (e.start() == 0 || src.charAt(e.start() - 1) == '\n')
+                && (e.end() == src.length() || src.charAt(e.end() - 1) == '\n');
+    }
+
+    /**
+     * Widens the deletion of a line to the blank line it would leave after a blank line or the opening brace, or before
+     * the closing one. Lines in {@code removed}, by their start, are deleted too, so the neighbours are those of their
+     * run, and only its last line removes the blank after it, its first the blank before it.
+     */
+    private static Edit tidy(String src, Edit e, Set<Integer> removed) {
+        if (!wholeLines(src, e) || e.start() == 0 || e.end() == src.length()) return e;
+        int prev = lineBefore(src, e.start());
+        while (prev > 0 && removed.contains(prev)) prev = lineBefore(src, prev);
+        int next = e.end();
+        while (next < src.length() && removed.contains(next)) next = src.indexOf('\n', next) + 1;
+        if (next == 0 || next >= src.length()) return e;
+        String prevText = src.substring(prev, src.indexOf('\n', prev)).strip();
+        int nextEnd = src.indexOf('\n', next);
+        if (nextEnd < 0) return e;
+        String nextText = src.substring(next, nextEnd).strip();
+        if (!removed.contains(e.end()) && nextText.isEmpty() && (prevText.isEmpty() || prevText.endsWith("{"))) {
+            return new Edit(e.start(), nextEnd + 1, "");
+        }
+        if (!removed.contains(lineBefore(src, e.start())) && prevText.isEmpty() && nextText.startsWith("}")) {
+            return new Edit(prev, e.end(), "");
+        }
+        return e;
+    }
+
+    /** The start of the line before the one that starts at {@code lineStart}. */
+    private static int lineBefore(String src, int lineStart) {
+        return src.lastIndexOf('\n', lineStart - 2) + 1;
+    }
+
     /**
      * Inserts {@code line} after the leading bindings that name the package, set apart by a blank line, or right
      * under the flags that follow them; else at the top of the set. It takes the indentation of the bindings.
@@ -159,6 +236,32 @@ final class Packaging {
         int end = Nodes.end(after);
         if (end < src.length() && src.charAt(end) != '\n') return List.of();
         return List.of(new Edit(end, end, (flags ? "\n" : "\n\n") + indent + line));
+    }
+
+    /**
+     * Whether a builder comes from a Python 2 package set, as {@code python27.pkgs.buildPythonApplication}: nixpkgs
+     * builds those with resholve/python2/mk-python-derivation.nix, which leaves {@code __structuredAttrs} unset.
+     */
+    private static boolean python2(Node fn) {
+        if (!(fn instanceof Select s)) return false;
+        List<String> names = new ArrayList<>();
+        if (s.target() instanceof Ident t) names.add(Scope.name(t));
+        for (Sel sel : s.path()) names.add(Nodes.staticName(sel.attr()));
+        return names.stream().anyMatch(Packaging::isPython2);
+    }
+
+    /** {@code python2}, {@code python27}, {@code pypy} or {@code pypy27}, with or without {@code Packages}. */
+    private static boolean isPython2(String name) {
+        if (name == null) return false;
+        String n = name.endsWith("Packages") ? name.substring(0, name.length() - "Packages".length()) : name;
+        String version = n.startsWith("python")
+                ? n.substring("python".length())
+                : n.startsWith("pypy") ? n.substring("pypy".length()) : null;
+        if (version == null) return false;
+        if (version.isEmpty()) return n.equals("pypy");
+        if (version.charAt(0) != '2') return false;
+        for (int i = 1; i < version.length(); i++) if (!Character.isDigit(version.charAt(i))) return false;
+        return true;
     }
 
     /** The name a builder is called by, once {@link #builder} has recognized it. */

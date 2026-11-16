@@ -144,6 +144,14 @@ Each rule shows a case from the linter's tests: the original code, what the rule
 |💡 hint
 |A derivation that does not set `strictDeps`, which nixpkgs expects to be `true` for new packages. The builders that set it already, such as those for Python, Go and Rust, are not reported. The fix adds `strictDeps = true;` after `pname` and `version`, or under `__structuredAttrs`; it changes the build, since tools must then be in `nativeBuildInputs` and libraries in `buildInputs`, so check that the package still builds.
 
+|<<lint-redundant-structured-attrs,`redundant-structured-attrs`>>
+|⚠️ warning
+|`__structuredAttrs = true;` given to a builder that sets it to `true` already, such as `buildMavenPackage` or `buildPythonPackage`. Python 2's builders, as in `python27.pkgs.buildPythonApplication`, do not set it and are not reported. The fix removes it.
+
+|<<lint-redundant-strict-deps,`redundant-strict-deps`>>
+|⚠️ warning
+|`strictDeps = true;` given to a builder that sets it to `true` already, such as those for Python, Go and Rust. The fix removes it.
+
 |<<lint-deprecated-replace,`deprecated-replace`>>
 |⚠️ warning
 |`substituteInPlace` and the other `substitute` functions called with `--replace`, which is deprecated and behaves as `--replace-warn`: a pattern that no longer matches only prints a warning. The fix uses `--replace-fail`, which makes such a build fail instead, so check that the package still builds.
@@ -1863,6 +1871,291 @@ link:playground/index.html?rule=missing-strict-deps[Try it in the playground]
 missing-strict-deps.nix:10:10: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-strict-deps.nix:17:16: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
 missing-strict-deps.nix:44:12: hint[missing-strict-deps]: set 'strictDeps = true;' [fix]
+----
+
+[[lint-redundant-structured-attrs]]
+=== `redundant-structured-attrs`
+
+Severity: ⚠️ warning. `__structuredAttrs = true;` given to a builder that sets it to `true` already, such as `buildMavenPackage` or `buildPythonPackage`. Python 2's builders, as in `python27.pkgs.buildPythonApplication`, do not set it and are not reported. The fix removes it.
+
+link:playground/index.html?rule=redundant-structured-attrs[Try it in the playground]
+
+[source,nix,role="primary"]
+.Original
+----
+{
+  stdenv,
+  python,
+  python27,
+  pypyPackages,
+  buildMavenPackage,
+  buildGoModule,
+  buildPythonPackage,
+  buildHomeAssistantComponent,
+  pname,
+  version,
+}:
+{
+  maven = buildMavenPackage {
+    inherit pname version;
+
+    __structuredAttrs = true;
+
+    src = ./.;
+  };
+
+  python = buildPythonPackage (finalAttrs: {
+    pname = "python";
+    version = "1.0";
+    __structuredAttrs = true;
+    strictDeps = true;
+  });
+
+  component = buildHomeAssistantComponent {
+    __structuredAttrs = true;
+
+    inherit pname version;
+  };
+
+  application = python.pkgs.buildPythonApplication {
+    inherit pname version;
+
+    __structuredAttrs = true;
+  };
+
+  # The fix keeps the comment, so there is none.
+  commented = buildMavenPackage {
+    inherit pname version;
+    # Kept for overrides.
+    __structuredAttrs = true;
+  };
+
+  # The builder of stdenv does not set it.
+  plain = stdenv.mkDerivation {
+    inherit pname version;
+    __structuredAttrs = true;
+  };
+
+  # Deliberately off.
+  off = buildMavenPackage {
+    inherit pname version;
+    __structuredAttrs = false;
+  };
+
+  # So does the builder of Python 2.
+  python2 = python27.pkgs.buildPythonApplication {
+    inherit pname version;
+    __structuredAttrs = true;
+  };
+
+  pypy = pypyPackages.buildPythonPackage {
+    inherit pname version;
+    __structuredAttrs = true;
+  };
+
+  # Go's builder leaves it unset.
+  go = buildGoModule {
+    inherit pname version;
+    __structuredAttrs = true;
+  };
+}
+----
+
+[source,nix,role="secondary"]
+.Fixed
+----
+{
+  stdenv,
+  python,
+  python27,
+  pypyPackages,
+  buildMavenPackage,
+  buildGoModule,
+  buildPythonPackage,
+  buildHomeAssistantComponent,
+  pname,
+  version,
+}:
+{
+  maven = buildMavenPackage {
+    inherit pname version;
+
+    src = ./.;
+  };
+
+  python = buildPythonPackage (finalAttrs: {
+    pname = "python";
+    version = "1.0";
+    strictDeps = true;
+  });
+
+  component = buildHomeAssistantComponent {
+    inherit pname version;
+  };
+
+  application = python.pkgs.buildPythonApplication {
+    inherit pname version;
+  };
+
+  # The fix keeps the comment, so there is none.
+  commented = buildMavenPackage {
+    inherit pname version;
+    # Kept for overrides.
+    __structuredAttrs = true;
+  };
+
+  # The builder of stdenv does not set it.
+  plain = stdenv.mkDerivation {
+    inherit pname version;
+    __structuredAttrs = true;
+  };
+
+  # Deliberately off.
+  off = buildMavenPackage {
+    inherit pname version;
+    __structuredAttrs = false;
+  };
+
+  # So does the builder of Python 2.
+  python2 = python27.pkgs.buildPythonApplication {
+    inherit pname version;
+    __structuredAttrs = true;
+  };
+
+  pypy = pypyPackages.buildPythonPackage {
+    inherit pname version;
+    __structuredAttrs = true;
+  };
+
+  # Go's builder leaves it unset.
+  go = buildGoModule {
+    inherit pname version;
+    __structuredAttrs = true;
+  };
+}
+----
+
+[source,text,role="secondary"]
+.Diagnostics
+----
+redundant-structured-attrs.nix:17:5: warning[redundant-structured-attrs]: '__structuredAttrs' is already true for buildMavenPackage [fix]
+redundant-structured-attrs.nix:25:5: warning[redundant-structured-attrs]: '__structuredAttrs' is already true for buildPythonPackage [fix]
+redundant-structured-attrs.nix:30:5: warning[redundant-structured-attrs]: '__structuredAttrs' is already true for buildHomeAssistantComponent [fix]
+redundant-structured-attrs.nix:38:5: warning[redundant-structured-attrs]: '__structuredAttrs' is already true for buildPythonApplication [fix]
+redundant-structured-attrs.nix:45:5: warning[redundant-structured-attrs]: '__structuredAttrs' is already true for buildMavenPackage
+----
+
+[[lint-redundant-strict-deps]]
+=== `redundant-strict-deps`
+
+Severity: ⚠️ warning. `strictDeps = true;` given to a builder that sets it to `true` already, such as those for Python, Go and Rust. The fix removes it.
+
+link:playground/index.html?rule=redundant-strict-deps[Try it in the playground]
+
+[source,nix,role="primary"]
+.Original
+----
+{
+  stdenv,
+  buildGoModule,
+  buildRustPackage,
+  buildNpmPackage,
+  buildDotnetModule,
+  pname,
+  version,
+}:
+{
+  go = buildGoModule (finalAttrs: {
+    inherit pname version;
+
+    __structuredAttrs = true;
+    strictDeps = true;
+
+    vendorHash = null;
+  });
+
+  rust = buildRustPackage {
+    inherit pname version;
+    strictDeps = true; # Always.
+  };
+
+  npm = buildNpmPackage {
+    strictDeps = true;
+    inherit pname version;
+  };
+
+  # Not a literal.
+  conditional = buildGoModule {
+    inherit pname version;
+    strictDeps = !stdenv.hostPlatform.isDarwin;
+  };
+
+  plain = stdenv.mkDerivation {
+    inherit pname version;
+    strictDeps = true;
+  };
+
+  dotnet = buildDotnetModule {
+    inherit pname version;
+    strictDeps = true;
+  };
+}
+----
+
+[source,nix,role="secondary"]
+.Fixed
+----
+{
+  stdenv,
+  buildGoModule,
+  buildRustPackage,
+  buildNpmPackage,
+  buildDotnetModule,
+  pname,
+  version,
+}:
+{
+  go = buildGoModule (finalAttrs: {
+    inherit pname version;
+
+    __structuredAttrs = true;
+
+    vendorHash = null;
+  });
+
+  rust = buildRustPackage {
+    inherit pname version;
+    strictDeps = true; # Always.
+  };
+
+  npm = buildNpmPackage {
+    inherit pname version;
+  };
+
+  # Not a literal.
+  conditional = buildGoModule {
+    inherit pname version;
+    strictDeps = !stdenv.hostPlatform.isDarwin;
+  };
+
+  plain = stdenv.mkDerivation {
+    inherit pname version;
+    strictDeps = true;
+  };
+
+  dotnet = buildDotnetModule {
+    inherit pname version;
+    strictDeps = true;
+  };
+}
+----
+
+[source,text,role="secondary"]
+.Diagnostics
+----
+redundant-strict-deps.nix:15:5: warning[redundant-strict-deps]: 'strictDeps' is already true for buildGoModule [fix]
+redundant-strict-deps.nix:22:5: warning[redundant-strict-deps]: 'strictDeps' is already true for buildRustPackage
+redundant-strict-deps.nix:26:5: warning[redundant-strict-deps]: 'strictDeps' is already true for buildNpmPackage [fix]
 ----
 
 [[lint-deprecated-replace]]

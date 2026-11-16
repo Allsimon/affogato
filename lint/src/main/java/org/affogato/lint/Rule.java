@@ -104,6 +104,16 @@ public enum Rule {
                     + " adds `strictDeps = true;` after `pname` and `version`, or under `__structuredAttrs`; it"
                     + " changes the build, since tools must then be in `nativeBuildInputs` and libraries in"
                     + " `buildInputs`, so check that the package still builds."),
+    REDUNDANT_STRUCTURED_ATTRS(
+            WARNING,
+            "`__structuredAttrs = true;` given to a builder that sets it to `true` already, such as"
+                    + " `buildMavenPackage` or `buildPythonPackage`. Python 2's builders, as in"
+                    + " `python27.pkgs.buildPythonApplication`, do not set it and are not reported. The fix removes"
+                    + " it."),
+    REDUNDANT_STRICT_DEPS(
+            WARNING,
+            "`strictDeps = true;` given to a builder that sets it to `true` already, such as those for Python, Go"
+                    + " and Rust. The fix removes it."),
     DEPRECATED_REPLACE(
             WARNING,
             "`substituteInPlace` and the other `substitute` functions called with `--replace`, which is deprecated"
