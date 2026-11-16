@@ -1,110 +1,77 @@
 = Language server
 
-`affogato lsp` speaks the Language Server Protocol over stdin and stdout, from
-the same parser as the other commands. It answers with:
-
-* the linter's findings, as diagnostics, for the last of the changes of a
-  document that wait to be read, and none for those before;
-* formatting, indented by the request's `tabSize`, of the file or of the
-  bindings a range touches, the whole file when it touches none;
-* go to definition, find references, document highlight, and rename, which
-  refuses up front a name that is not defined in the file, such as a builtin;
-  go to definition also from a selection, as `a` in `x.a` or `x ? a`, to where
-  the set literal bound to `x` in the file binds it;
-* completion of the names in scope, the builtins, with `builtin` as their
-  detail, and the keywords, with snippets such as `let … in` for an editor that
-  takes them, of the attributes of `builtins` after `builtins.`, of those of
-  nixpkgs after `pkgs.` and `lib.`, unless the file binds them otherwise than as
-  a parameter, and of a set literal a `let` or `rec` set binds after its name
-  and a dot, as `x.a.`, through the names bound to it and its `inherit`s;
-* a hover on a builtin with Nix's documentation of it: on a name no binding of
-  the file shadows, as `map` or `__add`, on the first name selected from
-  `builtins`, as `builtins.toJSON` or `builtins ? hasContext`, and on such a
-  name inherited, as in `inherit (builtins) toJSON;`;
-* across the files of the workspace folders, hidden folders and `result`
-  aside: find references and rename of an attribute of the set a file
-  evaluates to, under its function arguments and `let`s, with the selections
-  of it through `import`, as `(import ./lib { }).foo` or `l.foo` where
-  `l = import ./lib;`, and go to definition from such a selection;
-* in a `flake.nix`, completion of the attributes of a flake, of an input
-  (`url`, `follows`, …) and of the outputs, with the systems under those that
-  have one, as `packages.x86_64-linux`, and of the inputs it declares as the
-  formals of `outputs` and after the name it binds them to, as `inputs.`;
-* on such an attribute, as `pkgs.hello` or `lib.strings.concatStrings`: a hover
-  with the version, description and homepage of a package, the doc comment of
-  a function, the value of a number, string or Boolean, or the error an alias
-  throws; go to definition, at the package's `meta.position` or where the
-  attribute or function is defined; and the version or type, and the
-  description or doc comment, of a completion item as the editor resolves it;
-* inlay hints with the version of each package selected from nixpkgs, those
-  evaluated within 200 ms of the request, and the others once evaluated, as the
-  server then sends `workspace/inlayHint/refresh` to an editor that supports it;
-* to an editor that takes `window.workDoneProgress`, the progress of what it
-  evaluates, as `Evaluating nixpkgs`: what a request waited for more than
-  200 ms, nixpkgs as it starts and after a save, and `devenv lsp --print-config`;
-* in a module, the same for a selection from one of its arguments other than
-  `pkgs`, `lib`, `config` and `options`, as `inputs.agenix.packages`, looked up
-  among the arguments the option sets give their modules, the special ones
-  first; a `${...}` name that is itself a selection from nixpkgs giving a plain
-  string, as `${pkgs.stdenv.hostPlatform.system}`, counts as that name;
-* in a module, a function of `config`, `lib`, `pkgs` or `modulesPath`: the
-  completion of option names as a binding's name is typed, also in a set not
-  closed yet, and on such a name a
-  hover with the option's type, description, default and example, and go to its
-  declaration; a hover on a group of options, as `services.nginx`, lists the
-  names under it; a set bound to an option path, also through `mkIf`, `mkMerge`
-  and the like, continues that path, `config.` is skipped, and each attribute
-  of an `attrsOf` submodule takes a name of its own, as in
-  `virtualHosts."example.org".root`;
-* in a devenv project, the folder with a `devenv.yaml` or a `devenv.lock`: the
-  same for its `devenv.nix` and `devenv.local.nix` files and the modules they
-  list in `imports`, against devenv's options, as `languages.rust.enable`,
-  and the `pkgs`, `lib` and `inputs` its modules receive, in place of the
-  configured option sets and nixpkgs; the options are the expression
-  `devenv lsp --print-config` gives nixd, so this needs the `devenv` command,
-  and the inputs in the store, where `devenv shell` puts them;
-* the same completion, hover, definition and hints for the names a `with` of
-  nixpkgs brings into scope, as `hello` in `with pkgs; [ hello ]`: a name bound
-  in the file or a builtin is not one, and the innermost `with` that has the
-  name gives it, up to a `with` of something other than nixpkgs;
-* completion and go to definition for the names a `with` of a set literal of
-  the file brings into scope, written in place or reached through its names
-  and selections, as `with s.a;`;
-* document symbols, folding ranges, selection ranges and semantic tokens;
-* links on the paths without interpolation, the URIs, and the strings that are
-  an http or https URL, and go to definition on such a path, both to the
-  `default.nix` of a directory, as `import` and `callPackage ./foo { }` read it;
-* code actions for the linter's fixes and suppression comments,
-  `source.fixAll` for all the fixes, and rewrites: of a binding, `a.b = x;` into
-  `a = { b = x; };` and back, of a string, in the other quoting when that
-  keeps its value, and of an attribute name, `a` into `"a"` and back when the
-  name is an identifier and no keyword;
-* `affogato/injections`, a request of its own, which takes a `textDocument` and
-  lists the strings written in another language: the range between their
-  quotes, and a `kind` of `shell`, `named` (the `value` a comment names, such as
-  `lua`) or `file` (a file name whose type tells the language).
-
-The `affogato` section of the `workspace/didChangeConfiguration` settings, or
-of the client's configuration, which the server asks for with
-`workspace/configuration` once initialized and when told it changed, or the
-`initializationOptions`, may set the `width`, `strict`, and the `rules` to
-lint with, a list of ids, all when empty, and `nixpkgs.expr`, the expression
-nixpkgs is evaluated from, `import <nixpkgs> { }` unless `--nixpkgs` says
-otherwise, and `options`, a name for each set of options with the `expr` it is
-evaluated from, `{ nixos.expr = "(import <nixpkgs/nixos> { configuration = { };
-}).options"; }` unless `--nixos-options` says otherwise; as in nixd, a
-home-manager set is one more name. Options are evaluated when first asked for,
-in the same context as nixpkgs, so that a flake both expressions read, as with
-`builtins.getFlake`, is evaluated once. The server evaluates it on a thread of its own as it starts, keeps
-the values, and evaluates it again after a file it read is saved, or one in a
-folder it listed or under one it copied to the store; a completion that
-waits for it more than 200 ms comes back marked incomplete, so that the editor
-asks again.
-
-An editor runs it as any server, as Neovim does with:
+`affogato lsp` speaks the Language Server Protocol over stdin and stdout. An
+editor runs it as any server, as Neovim does with:
 
 [source,lua]
 ----
 vim.lsp.config('affogato', { cmd = { 'affogato', 'lsp' }, filetypes = { 'nix' } })
 vim.lsp.enable('affogato')
 ----
+
+== Any Nix file
+
+* the linter's findings as diagnostics, with code actions for its fixes,
+  `source.fixAll` and suppression comments;
+* formatting of the file or of a range;
+* go to definition, find references, document highlight and rename, also across
+  the workspace for attributes reached through `import`;
+* completion of the names in scope, builtins, keywords and the attributes of set
+  literals, and a hover with Nix's documentation of each builtin;
+* document symbols, folding and selection ranges, semantic tokens, and links on
+  paths and URLs;
+* rewrites of `a.b = x;` into `a = { b = x; };` and back, and of a string or an
+  attribute name into the other quoting.
+
+== nixpkgs
+
+The server evaluates nixpkgs in the background as it starts and after a save.
+For `pkgs.hello`, `lib.strings.concatStrings` or a name a `with pkgs;` brings
+into scope, it gives completion, a hover with a package's version and
+description or a function's doc comment, go to definition, and inlay hints with
+package versions. Long evaluations report their progress.
+
+== Modules, flakes and devenv
+
+* in a NixOS or home-manager module: completion of option names, a hover with
+  an option's type, description and default, and go to its declaration;
+* in a `flake.nix`: completion of inputs, outputs and their systems;
+* in a `devenv.nix`: completion, hover and go to declaration of devenv's
+  options, such as `languages.rust.enable`, read from the `devenv` command,
+  which must be on the `PATH`.
+
+== Settings
+
+The `affogato` section of the client's settings, or the
+`initializationOptions`, may set:
+
+[cols="1,3"]
+|===
+| `width`, `strict` | as the `affogato format` options
+| `rules` | the ids of the <<lint-rules,lint rules>> to report, all when empty
+| `nixpkgs.expr` | the expression nixpkgs is evaluated from, `import <nixpkgs> { }` unless `--nixpkgs` says otherwise
+| `options.<name>.expr` | a set of options, NixOS's unless `--nixos-options` says otherwise; as in nixd, home-manager is one more name
+|===
+
+== Embedded languages
+
+Strings often hold code in another language. The custom `affogato/injections`
+request returns, for a document, the range and the language of each such
+string, so that an editor can highlight it as that language. The language comes
+from where the string stands:
+
+[cols="3,1"]
+|===
+| String | Language
+
+| `buildPhase = ''...''`, `postInstall`, `shellHook`, `script`, `enterShell`
+| Bash
+| `runCommand "name" { } ''...''`, `writeShellScript`, `writeShellApplication { text = ''...''; }`
+| Bash
+| `writers.writePython3 "name" { } ''...''`, `writeLua`, `writeRust`, …
+| Python, Lua, Rust, …
+| `writeText "config.json" ''...''`, `environment.etc."app/config.toml".text`
+| that of the file name: JSON, TOML…
+| `/* lua */ ''...''`, or `# language=sql` above the binding
+| the one the comment names
+|===
