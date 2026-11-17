@@ -1,4 +1,4 @@
-package org.affogato.tools;
+package org.affogato.tools.generator;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -43,7 +43,7 @@ final class BuiltinDocs {
         return """
             package org.affogato.lsp;
 
-            /** Nix's documentation of its builtins, from %s, written by tools/ (builtin-docs). */
+            /** Nix's documentation of its builtins, from %s, written by tools/generator (builtin-docs). */
             final class BuiltinDocs {
                 private BuiltinDocs() {}
 

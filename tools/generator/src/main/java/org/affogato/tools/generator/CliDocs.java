@@ -1,4 +1,4 @@
-package org.affogato.tools;
+package org.affogato.tools.generator;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;

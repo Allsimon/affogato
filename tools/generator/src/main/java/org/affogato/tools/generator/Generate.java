@@ -1,4 +1,4 @@
-package org.affogato.tools;
+package org.affogato.tools.generator;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -14,7 +14,7 @@ import java.util.stream.Stream;
 /**
  * Writes the files the repository derives from its code and test data, run from the project root:
  *
- * <pre>java build/jenesis/Execute.java -Djenesis.execute.module=tools/src/main/java [--check] [name...]</pre>
+ * <pre>java build/jenesis/Execute.java -Djenesis.execute.module=tools/generator/src/main/java [--check] [name...]</pre>
  *
  * With {@code --check}, writes nothing and exits with 1 when a file is out of date.
  */

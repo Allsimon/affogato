@@ -85,11 +85,11 @@ let
     '';
   };
 
-  # Checks that the files tools/ derives from the code and test data are up to date.
+  # Checks that the files tools/generator derives from the code and test data are up to date.
   generated = stdenv.mkDerivation {
     name = "affogato-generated";
     src = sources [
-      ../tools/src/main
+      ../tools/generator/src/main
       ../language/src/test/java/lang
       ../language/src/test/java/tvix
       ../language/src/test/java/lang-skip.txt
@@ -110,7 +110,7 @@ let
       runHook preBuild
       ${offline}
       java -Djenesis.make.mode=source -Djenesis.repository.offline=true -Djenesis.dependency.pin=strict -Djenesis.test.skip=true \
-        -Djenesis.documentation.asciidoctor=false -Djenesis.execute.module=tools/src/main/java build/jenesis/Execute.java --check
+        -Djenesis.documentation.asciidoctor=false -Djenesis.execute.module=tools/generator/src/main/java build/jenesis/Execute.java --check
       runHook postBuild
     '';
     installPhase = "touch $out";
