@@ -41,6 +41,21 @@ included. The build renders it, or:
 nix build .#docs
 ----
 
+== Generated files
+
+Some committed files derive from the code and the test data: `docs/cli/`,
+`docs/_lang-tests.adoc`, `docs/_lint-rules.adoc`, `format/_versions.adoc`,
+`web/playground/examples.js` and `lsp/.../BuiltinDocs.java`, the last from
+`nix __dump-language` of the Nix in the shell. The `tools` module, which is
+built but never staged, writes them:
+
+[source,sh]
+----
+java -Djenesis.execute.module=tools/src/main/java build/jenesis/Execute.java            # all of them
+java -Djenesis.execute.module=tools/src/main/java build/jenesis/Execute.java lint-rules # one of them
+java -Djenesis.execute.module=tools/src/main/java build/jenesis/Execute.java --check    # write nothing, fail when stale
+----
+
 == Dependencies
 
 Versions and checksums live in `build.jenesis/pin-affogato.properties`. After
@@ -61,5 +76,6 @@ The flake provides:
 file.
 `docs`:: this documentation, rendered to HTML.
 `tests`:: a check that runs the test suite and outputs its coverage report.
+`generated`:: a check that the generated files are up to date.
 `playground-tests`:: a check that runs the formatter and linter test cases
 against `affogato.js`.

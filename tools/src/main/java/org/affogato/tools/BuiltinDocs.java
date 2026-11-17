@@ -1,45 +1,35 @@
-package org.affogato.lsp.test;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
+package org.affogato.tools;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.SequencedMap;
 import java.util.StringJoiner;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.affogato.lsp.Json;
-import org.junit.jupiter.api.Test;
 
-/**
- * Generates BuiltinDocs.java from {@code nix __dump-language}. When it is out of date, the test rewrites it and fails,
- * so that the new version gets committed.
- */
-class BuiltinDocsTest {
-    /** Tests run from the project root; the Nix build of the tests has no {@code nix} to dump. */
-    private static final Path SOURCE = Path.of("lsp/src/main/java/org/affogato/lsp/BuiltinDocs.java");
-
+/** lsp/src/main/java/org/affogato/lsp/BuiltinDocs.java, from {@code nix __dump-language} of the nix on the PATH. */
+final class BuiltinDocs {
     private static final Pattern LINK = Pattern.compile("\\]\\(([^)\\s]+)\\)");
     private static final String INDENT = " ".repeat(16);
 
-    @Test
-    void docsAreUpToDate() throws IOException, InterruptedException {
-        assumeTrue(Files.exists(SOURCE), "no " + SOURCE + " in " + Path.of("").toAbsolutePath());
-        String version = run("nix", "--version");
-        assumeTrue(version != null, "no nix");
-        Matcher number = Pattern.compile("(\\d+)\\.(\\d+)").matcher(version);
-        assertThat(number.find()).as(version).isTrue();
-        String manual = "https://nix.dev/manual/nix/" + number.group(1) + "." + number.group(2) + "/";
+    private BuiltinDocs() {}
 
-        String generated = generate(manual, new TreeMap<>(map(Json.parse(run("nix", "__dump-language")))));
-        String committed = Files.readString(SOURCE, StandardCharsets.UTF_8);
-        if (!committed.equals(generated)) Files.writeString(SOURCE, generated, StandardCharsets.UTF_8);
-        assertThat(committed).as(SOURCE + " out of date and rewritten").isEqualTo(generated);
+    static Generate.Output generate(Path root) throws IOException, InterruptedException {
+        String version = run("nix", "--version");
+        Matcher number = Pattern.compile("(\\d+)\\.(\\d+)").matcher(version);
+        if (!number.find()) throw new IllegalStateException("nix --version printed no version: " + version);
+        String manual = "https://nix.dev/manual/nix/" + number.group(1) + "." + number.group(2) + "/";
+        SequencedMap<Path, String> files = new LinkedHashMap<>();
+        files.put(
+                Path.of("lsp", "src", "main", "java", "org", "affogato", "lsp", "BuiltinDocs.java"),
+                generate(manual, new TreeMap<>(map(Json.parse(run("nix", "__dump-language"))))));
+        return new Generate.Output(files);
     }
 
     private static String generate(String manual, Map<String, Object> dump) {
@@ -53,7 +43,7 @@ class BuiltinDocsTest {
         return """
             package org.affogato.lsp;
 
-            /** Nix's documentation of its builtins, from %s, written by BuiltinDocsTest. */
+            /** Nix's documentation of its builtins, from %s, written by tools/ (builtin-docs). */
             final class BuiltinDocs {
                 private BuiltinDocs() {}
 
@@ -107,7 +97,6 @@ class BuiltinDocsTest {
         return "\"\"\"\n" + lines + "\\\n" + INDENT + "\"\"\"";
     }
 
-    /** The output of {@code command}, or null when it cannot be started. */
     private static String run(String... command) throws IOException, InterruptedException {
         Process process;
         try {
@@ -115,10 +104,11 @@ class BuiltinDocsTest {
                     .redirectError(ProcessBuilder.Redirect.INHERIT)
                     .start();
         } catch (IOException e) {
-            return null;
+            throw new IllegalStateException(
+                    "builtin-docs runs " + String.join(" ", command) + ": no nix on the PATH", e);
         }
         String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertThat(process.waitFor()).as(String.join(" ", command)).isZero();
+        if (process.waitFor() != 0) throw new IllegalStateException(String.join(" ", command) + " failed");
         return out;
     }
 

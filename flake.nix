@@ -11,13 +11,13 @@
         "aarch64-linux"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
-      # The Nix whose language tests vendir.yml vendors, and whose builtins BuiltinDocsTest documents; the vendir-nix
+      # The Nix whose language tests vendir.yml vendors, and whose builtins tools/ documents; the vendir-nix
       # check keeps vendir in step.
       nixFor = pkgs: pkgs.nixVersions.nix_2_35;
     in
     {
       packages = forAllSystems (pkgs: rec {
-        affogato = pkgs.callPackage ./nix/package.nix { };
+        affogato = pkgs.callPackage ./nix/package.nix { nix = nixFor pkgs; };
         affogato-native = affogato.native;
         inherit (affogato) docs playground site;
         maven-repo = affogato.mavenRepo;
@@ -31,6 +31,7 @@
           ;
         inherit (self.packages.${pkgs.stdenv.hostPlatform.system}.affogato)
           tests
+          generated
           docs
           playground
           site
