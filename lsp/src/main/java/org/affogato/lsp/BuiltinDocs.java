@@ -1,6 +1,6 @@
 package org.affogato.lsp;
 
-/** Nix's documentation of its builtins, from https://nix.dev/manual/nix/2.35/, written by BuiltinDocsTest. */
+/** Nix's documentation of its builtins, from https://nix.dev/manual/nix/2.35/, written by tools/generator (builtin-docs). */
 final class BuiltinDocs {
     private BuiltinDocs() {}
 

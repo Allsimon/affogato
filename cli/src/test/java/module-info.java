@@ -11,7 +11,6 @@
 module org.affogato.cli.test {
     requires org.affogato.cli;
     requires info.picocli;
-    requires info.picocli.codegen;
     requires org.junit.jupiter;
     requires org.assertj.core;
 }

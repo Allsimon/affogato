@@ -13,6 +13,7 @@
   runCommand,
   makeWrapper,
   unzip,
+  nix,
 }:
 let
   jdk = jdk25_headless;
@@ -42,16 +43,9 @@ let
     ../language/src/test
     ../cli/src/test
     ../format/src/test
-    ../format/_versions.adoc
-    ../vendir.yml
-    ../flake.lock
     ../lint/src/test
     ../lsp/src/test
     ../parser/src/test
-    ../docs/cli
-    ../docs/_lint-rules.adoc
-    ../docs/_lang-tests.adoc
-    ../web/playground/examples.js
   ];
   docPaths = [
     ../docs
@@ -89,6 +83,37 @@ let
       cp -r target/build/modules/compose/module/*/produce/assemble/observed/observations/jacoco/report/output/reports/jacoco $coverage
       runHook postInstall
     '';
+  };
+
+  # Checks that the files tools/generator derives from the code and test data are up to date.
+  generated = stdenv.mkDerivation {
+    name = "affogato-generated";
+    src = sources [
+      ../tools/generator/src/main
+      ../language/src/test/java/lang
+      ../language/src/test/java/tvix
+      ../language/src/test/java/lang-skip.txt
+      ../lint/src/test/java/cases
+      ../vendir.yml
+      ../flake.lock
+      ../docs/cli
+      ../docs/_lang-tests.adoc
+      ../docs/_lint-rules.adoc
+      ../format/_versions.adoc
+      ../web/playground/examples.js
+    ];
+    nativeBuildInputs = [
+      jdk
+      nix
+    ];
+    buildPhase = ''
+      runHook preBuild
+      ${offline}
+      java -Djenesis.make.mode=source -Djenesis.repository.offline=true -Djenesis.dependency.pin=strict -Djenesis.test.skip=true \
+        -Djenesis.documentation.asciidoctor=false -Djenesis.execute.module=tools/generator/src/main/java build/jenesis/Execute.java --check
+      runHook postBuild
+    '';
+    installPhase = "touch $out";
   };
 
   docs = stdenv.mkDerivation {
@@ -331,6 +356,7 @@ in
   passthru = {
     inherit
       deps
+      generated
       tests
       docs
       mavenRepo
