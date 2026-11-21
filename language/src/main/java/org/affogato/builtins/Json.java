@@ -10,6 +10,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import org.affogato.EvalThread;
 import org.affogato.NixContext;
+import org.affogato.Parallel;
 import org.affogato.runtime.*;
 
 public final class Json {
@@ -96,6 +97,7 @@ public final class Json {
                 }
             }
             case NixList l -> {
+                Parallel.fanout(l.items, l.size());
                 out.append('[');
                 for (int i = 0; i < l.size(); i++) {
                     if (i > 0) out.append(',');
@@ -115,6 +117,7 @@ public final class Json {
                     value(outPath);
                     return;
                 }
+                Parallel.fanout(a.values(), a.size());
                 out.append('{');
                 for (int i = 0; i < a.size(); i++) {
                     if (i > 0) out.append(',');

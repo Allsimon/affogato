@@ -106,26 +106,46 @@ public final class Thunk {
         return ENV.getAcquire(this) == DONE || code instanceof Eager;
     }
 
+    /** Whether no thread evaluates it, nor evaluated it or failed to on a helper. */
+    public boolean idle() {
+        Object e = ENV.getAcquire(this);
+        return e != DONE
+                && !(e instanceof Thread || e instanceof Waited || e instanceof Failed || code instanceof Eager);
+    }
+
+    /** The thread evaluating it, or null. */
+    public Thread owner() {
+        return switch (ENV.getAcquire(this)) {
+            case Thread t -> t;
+            case Waited w -> w.owner;
+            default -> null;
+        };
+    }
+
     public Object force() {
         Object e = ENV.getAcquire(this);
         return e == DONE ? code : evaluate(e);
     }
 
-    private Object evaluate(Object e) {
+    private Object evaluate(Object s) {
         if (code instanceof Eager x) return x.get();
         Thread me = Thread.currentThread();
-        if (e instanceof Thread || e instanceof Waited) {
-            if (e == me || e instanceof Waited w && w.owner == me) {
+        if (s instanceof Thread || s instanceof Waited) {
+            if (s == me || s instanceof Waited w && w.owner == me) {
                 throw new NixException("infinite recursion encountered" + describeSource());
             }
             return await();
         }
+        Object e = s;
+        if (s instanceof Failed f) {
+            if (Parallel.helper()) Parallel.abort();
+            e = f.env;
+        }
         if (!Parallel.on) {
             env = me;
-        } else if (!ENV.compareAndSet(this, e, me)) {
+        } else if (!ENV.compareAndSet(this, s, me)) {
             return force();
         }
-        boolean ok = false;
         try {
             Object v = switch (code) {
                 case NixRootNode target -> target.call(e, null);
@@ -145,10 +165,11 @@ public final class Thunk {
             v = Thunk.force(v);
             this.code = v;
             publish(DONE);
-            ok = true;
             return v;
-        } finally {
-            if (!ok) publish(e);
+        } catch (Throwable x) {
+            boolean failed = s == e && (x instanceof NixException || x instanceof StackOverflowError);
+            publish(failed && Parallel.helper() ? new Failed(e) : s);
+            throw x;
         }
     }
 
@@ -157,36 +178,48 @@ public final class Thunk {
         if (!Parallel.on) {
             ENV.setRelease(this, state);
         } else if (ENV.getAndSet(this, state) instanceof Waited) {
-            synchronized (Waited.class) {
-                Waited.class.notifyAll();
-            }
+            wakeAll();
+        }
+    }
+
+    public static void wakeAll() {
+        synchronized (Waited.class) {
+            Waited.class.notifyAll();
         }
     }
 
     /** Stands in for {@code env} while {@code owner} evaluates the thunk and other threads wait for it. */
     private record Waited(Thread owner) {}
 
+    /** Stands in for {@code env} once a helper failed to evaluate the thunk, which only the demand path retries. */
+    private record Failed(Object env) {}
+
     /** Waits for the thread evaluating this thunk to finish or give up, then forces it. */
     private Object await() {
-        for (; ; ) {
-            Object s = ENV.getAcquire(this);
-            if (s instanceof Thread owner) {
-                if (Parallel.on) ENV.compareAndSet(this, s, new Waited(owner));
-                else Thread.yield();
-            } else if (s instanceof Waited) {
-                synchronized (Waited.class) {
-                    while (ENV.getAcquire(this) == s) {
-                        try {
-                            Waited.class.wait();
-                        } catch (InterruptedException ex) {
-                            Thread.currentThread().interrupt();
-                            throw new NixException("interrupted");
+        try {
+            for (; ; ) {
+                Object s = ENV.getAcquire(this);
+                if (s instanceof Thread owner) {
+                    if (Parallel.on) ENV.compareAndSet(this, s, new Waited(owner));
+                    else Thread.yield();
+                } else if (s instanceof Waited w) {
+                    Parallel.waiting(this, w.owner);
+                    synchronized (Waited.class) {
+                        if (ENV.getAcquire(this) == s) {
+                            try {
+                                Waited.class.wait(20);
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                                throw new NixException("interrupted");
+                            }
                         }
                     }
+                } else {
+                    return force();
                 }
-            } else {
-                return force();
             }
+        } finally {
+            Parallel.waited();
         }
     }
 

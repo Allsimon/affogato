@@ -19,7 +19,7 @@ affogato-eval - Evaluate an expression and print the result, like nix-instantiat
 // tag::picocli-generated-man-section-synopsis[]
 == Synopsis
 
-*affogato eval* [*-h*] [*--json*] [*--raw*] [*--show-trace*] [*--strict*] [*-A*=_ATTR_]
+*affogato eval* [*-h*] [*--json*] [*--raw*] [*--show-trace*] [*--strict*] [*-A*=_ATTR_] [*-j*=_N_]
               [*--system*=_SYS_] [*--timeout*=_MS_] [*--arg*=_NAME EXPR_]... [*--argstr*=_NAME _
          _     VALUE_]... [*-I*=_PATH_]... (*-E*=_EXPR_ | _FILE_)
 
@@ -52,6 +52,9 @@ Evaluate an expression and print the result, like nix-instantiate --eval.
 
 *-I*, *--include*=_PATH_::
   Add an entry to the search path of lookups such as <nixpkgs>, as nixpkgs=/path/to/nixpkgs; the entries of NIX_PATH come after.
+
+*-j*, *--workers*=_N_::
+  Evaluate on N threads, forcing ahead of demand the values the output needs; 1, the default, for one.
 
 *--json*::
   Print the result as JSON.

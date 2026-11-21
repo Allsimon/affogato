@@ -19,9 +19,9 @@ affogato-drv-path - Evaluate an expression to a derivation and print its drvPath
 // tag::picocli-generated-man-section-synopsis[]
 == Synopsis
 
-*affogato drv-path* [*-h*] [*--show-trace*] [*-A*=_ATTR_] [*--system*=_SYS_] [*--timeout*=_MS_]
-                  [*--arg*=_NAME EXPR_]... [*--argstr*=_NAME VALUE_]... [*-I*=_PATH_]...
-                  (*-E*=_EXPR_ | _FILE_)
+*affogato drv-path* [*-h*] [*--show-trace*] [*-A*=_ATTR_] [*-j*=_N_] [*--system*=_SYS_]
+                  [*--timeout*=_MS_] [*--arg*=_NAME EXPR_]... [*--argstr*=_NAME VALUE_]...
+                  [*-I*=_PATH_]... (*-E*=_EXPR_ | _FILE_)
 
 // end::picocli-generated-man-section-synopsis[]
 
@@ -52,6 +52,9 @@ Evaluate an expression to a derivation and print its drvPath.
 
 *-I*, *--include*=_PATH_::
   Add an entry to the search path of lookups such as <nixpkgs>, as nixpkgs=/path/to/nixpkgs; the entries of NIX_PATH come after.
+
+*-j*, *--workers*=_N_::
+  Evaluate on N threads, forcing ahead of demand the values the output needs; 1, the default, for one.
 
 *--show-trace*::
   Print the location of the failing expression when the evaluation fails.
