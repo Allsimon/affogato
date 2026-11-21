@@ -104,9 +104,9 @@ abstract class Evaluate implements Callable<Integer> {
     @Option(
             names = {"-j", "--workers"},
             paramLabel = "N",
-            description = "Evaluate on N threads, forcing ahead of demand the values the output needs; 1, the default,"
-                    + " for one.")
-    int workers = 1;
+            description = "Evaluate on N threads, forcing ahead of demand the values the output needs; the default is"
+                    + " the number of processors, up to 4.")
+    int workers = Math.min(Runtime.getRuntime().availableProcessors(), 4);
 
     abstract Interpreter.Output output();
 
