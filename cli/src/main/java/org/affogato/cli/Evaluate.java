@@ -101,6 +101,13 @@ abstract class Evaluate implements Callable<Integer> {
             description = "Stop the evaluation after MS milliseconds; 0, the default, for no limit.")
     long timeout;
 
+    @Option(
+            names = {"-j", "--workers"},
+            paramLabel = "N",
+            description = "Evaluate on N threads, forcing ahead of demand the values the output needs; 1, the default,"
+                    + " for one.")
+    int workers = 1;
+
     abstract Interpreter.Output output();
 
     /** Nix strings are bytes; arguments arrive as UTF-16, so re-encode them one char per UTF-8 byte. */
@@ -129,7 +136,7 @@ abstract class Evaluate implements Callable<Integer> {
         pairs(false, args, nixArgs);
         pairs(true, argstrs, nixArgs);
         var options = new Interpreter.Options(
-                String.join(":", path), system == null ? "" : system, "", output(), attr, nixArgs);
+                String.join(":", path), system == null ? "" : system, "", output(), attr, nixArgs, workers);
 
         PrintWriter err = spec.commandLine().getErr();
         PrintStream out = new PrintStream(System.out, true, StandardCharsets.ISO_8859_1);

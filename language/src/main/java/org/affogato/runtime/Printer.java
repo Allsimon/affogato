@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.affogato.Parallel;
 
 /** Renders values the way {@code nix-instantiate --eval} does. */
 public final class Printer {
@@ -33,8 +34,10 @@ public final class Printer {
         v = Thunk.force(v);
         if (!seen.add(v)) return;
         if (v instanceof NixAttrs a) {
+            Parallel.fanout(a.values(), a.size());
             for (Object x : a.values()) forceDeep(x, seen);
         } else if (v instanceof NixList l) {
+            Parallel.fanout(l.items, l.items.length);
             for (Object x : l.items) forceDeep(x, seen);
         }
     }

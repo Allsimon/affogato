@@ -112,6 +112,10 @@ class LangTest {
     }
 
     private static String eval(Path file, List<String> flags) throws Exception {
+        return eval(file, flags, 1);
+    }
+
+    private static String eval(Path file, List<String> flags, int workers) throws Exception {
         List<String> searchPath = new ArrayList<>();
         List<Interpreter.Arg> args = new ArrayList<>();
         String attr = "";
@@ -127,8 +131,8 @@ class LangTest {
         }
         searchPath.add(LANG + "/dir3");
         searchPath.add(LANG + "/dir4");
-        var options =
-                new Interpreter.Options(String.join(":", searchPath), "", "", Interpreter.Output.STRICT, attr, args);
+        var options = new Interpreter.Options(
+                String.join(":", searchPath), "", "", Interpreter.Output.STRICT, attr, args, workers);
         return Interpreter.evaluate(options, file.toString(), latin1(file), 0).replace(TESTS.toString(), "/pwd");
     }
 
@@ -173,6 +177,23 @@ class LangTest {
         return tests("eval-fail-").stream()
                 .map(p -> test(
                         p, () -> assertThatThrownBy(() -> eval(p, flags(p))).isInstanceOf(EvalException.class)));
+    }
+
+    /** The outcome on one thread: the output, or the error and where it happened. */
+    private static String outcome(Path p, int workers) throws Exception {
+        try {
+            return eval(p, flags(p), workers);
+        } catch (EvalException e) {
+            // Which call crosses max-call-depth depends on what helpers forced ahead, at shallower depths.
+            if (e.getMessage().contains("max-call-depth")) return "error: " + e.getMessage();
+            return "error: " + e.getMessage() + " at " + e.location;
+        }
+    }
+
+    @TestFactory
+    Stream<DynamicTest> evalParallel() throws IOException {
+        return Stream.concat(evalOkayTests().stream(), tests("eval-fail-").stream())
+                .map(p -> test(p, () -> assertThat(outcome(p, 4)).isEqualTo(outcome(p, 1))));
     }
 
     private static void parse(Path p) throws IOException {
