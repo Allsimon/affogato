@@ -1,15 +1,26 @@
 package org.affogato.runtime;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.function.Supplier;
+import org.affogato.Parallel;
 import org.affogato.nodes.NixNode;
 import org.affogato.nodes.NixRootNode;
 
 public final class Thunk {
-    /** Stands in for {@code env} while the thunk is being evaluated. */
-    private static final Object EVALUATING = new Object();
-
     /** Stands in for {@code env} once evaluated: {@code code} is then the value. */
     private static final Object DONE = new Object();
+
+    /** {@code env}, which holds the evaluating thread while the thunk is evaluated. */
+    private static final VarHandle ENV;
+
+    static {
+        try {
+            ENV = MethodHandles.lookup().findVarHandle(Thunk.class, "env", Object.class);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
 
     /**
      * A {@link NixRootNode} called with {@code env} as parent frame, a {@link NixNode} executed on {@code env}, a
@@ -92,19 +103,29 @@ public final class Thunk {
     }
 
     public boolean isEvaluated() {
-        return env == DONE || code instanceof Eager;
+        return ENV.getAcquire(this) == DONE || code instanceof Eager;
     }
 
     public Object force() {
-        return env == DONE ? code : evaluate();
+        Object e = ENV.getAcquire(this);
+        return e == DONE ? code : evaluate(e);
     }
 
-    private Object evaluate() {
-        Object code = this.code;
+    private Object evaluate(Object e) {
         if (code instanceof Eager x) return x.get();
-        Object e = env;
-        if (e == EVALUATING) throw new NixException("infinite recursion encountered" + describeSource());
-        env = EVALUATING;
+        Thread me = Thread.currentThread();
+        if (e instanceof Thread || e instanceof Waited) {
+            if (e == me || e instanceof Waited w && w.owner == me) {
+                throw new NixException("infinite recursion encountered" + describeSource());
+            }
+            return await();
+        }
+        if (!Parallel.on) {
+            env = me;
+        } else if (!ENV.compareAndSet(this, e, me)) {
+            return force();
+        }
+        boolean ok = false;
         try {
             Object v = switch (code) {
                 case NixRootNode target -> target.call(e, null);
@@ -123,10 +144,49 @@ public final class Thunk {
             };
             v = Thunk.force(v);
             this.code = v;
-            env = DONE;
+            publish(DONE);
+            ok = true;
             return v;
         } finally {
-            if (env == EVALUATING) env = e;
+            if (!ok) publish(e);
+        }
+    }
+
+    /** Replaces the evaluating thread in {@code env}, waking the threads that wait for it. */
+    private void publish(Object state) {
+        if (!Parallel.on) {
+            ENV.setRelease(this, state);
+        } else if (ENV.getAndSet(this, state) instanceof Waited) {
+            synchronized (Waited.class) {
+                Waited.class.notifyAll();
+            }
+        }
+    }
+
+    /** Stands in for {@code env} while {@code owner} evaluates the thunk and other threads wait for it. */
+    private record Waited(Thread owner) {}
+
+    /** Waits for the thread evaluating this thunk to finish or give up, then forces it. */
+    private Object await() {
+        for (; ; ) {
+            Object s = ENV.getAcquire(this);
+            if (s instanceof Thread owner) {
+                if (Parallel.on) ENV.compareAndSet(this, s, new Waited(owner));
+                else Thread.yield();
+            } else if (s instanceof Waited) {
+                synchronized (Waited.class) {
+                    while (ENV.getAcquire(this) == s) {
+                        try {
+                            Waited.class.wait();
+                        } catch (InterruptedException ex) {
+                            Thread.currentThread().interrupt();
+                            throw new NixException("interrupted");
+                        }
+                    }
+                }
+            } else {
+                return force();
+            }
         }
     }
 

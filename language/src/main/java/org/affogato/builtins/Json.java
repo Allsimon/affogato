@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import org.affogato.EvalThread;
 import org.affogato.NixContext;
 import org.affogato.runtime.*;
 
@@ -62,15 +63,15 @@ public final class Json {
     }
 
     private void value(Object v) {
-        NixContext ctx = NixContext.get();
-        if (++ctx.callDepth > NixContext.MAX_CALL_DEPTH) {
-            ctx.callDepth--;
+        EvalThread t = EvalThread.current();
+        if (++t.callDepth > NixContext.MAX_CALL_DEPTH) {
+            t.callDepth--;
             throw new NixException("stack overflow; max-call-depth exceeded");
         }
         try {
             valueInner(v);
         } finally {
-            ctx.callDepth--;
+            t.callDepth--;
         }
     }
 

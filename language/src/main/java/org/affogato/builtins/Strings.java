@@ -1,10 +1,10 @@
 package org.affogato.builtins;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -175,9 +175,9 @@ final class Strings {
         return new NixList(out);
     }
 
-    private static final Map<String, Pattern> REGEX_CACHE = new HashMap<>();
+    private static final Map<String, Pattern> REGEX_CACHE = new ConcurrentHashMap<>();
 
-    static synchronized Pattern regex(String posix) {
+    static Pattern regex(String posix) {
         Pattern p = REGEX_CACHE.get(posix);
         if (p == null) {
             try {

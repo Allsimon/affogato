@@ -25,14 +25,11 @@ import org.affogato.runtime.Thunk;
 import org.affogato.store.StorePaths;
 
 public final class NixContext {
-    private static final ThreadLocal<NixContext> CURRENT = new ThreadLocal<>();
-
     /** UTF-8 bytes of {@code «string»}, the file name Nix reports for expressions given on the command line. */
     public static final String STRING_SOURCE = "\u00c2\u00abstring\u00c2\u00bb";
 
     public static final int MAX_CALL_DEPTH = 10000;
 
-    public int callDepth;
     /** Set from another thread to stop the evaluation at its next function call. */
     public volatile boolean cancelled;
 
@@ -48,12 +45,12 @@ public final class NixContext {
     public final List<String[]> nixPath = new ArrayList<>();
 
     public final Map<String, Object> globals = new HashMap<>();
-    private final Map<String, Thunk> imports = new HashMap<>();
+    private final Map<String, Thunk> imports = new ConcurrentHashMap<>();
     /** The flakes {@code builtins.getFlake} evaluated, by reference. */
-    public final Map<String, Thunk> flakes = new HashMap<>();
+    public final Map<String, Thunk> flakes = new ConcurrentHashMap<>();
 
-    private final Map<String, String> copiedPaths = new HashMap<>();
-    private final Map<String, Name> names = new HashMap<>();
+    private final Map<String, String> copiedPaths = new ConcurrentHashMap<>();
+    private final Map<String, Name> names = new ConcurrentHashMap<>();
 
     /** The files read or looked for, the folders listed, and those hashed whole, which its values depend on. */
     private final Set<String> readPaths = ConcurrentHashMap.newKeySet();
@@ -86,28 +83,28 @@ public final class NixContext {
     }
 
     public static NixContext get() {
-        return CURRENT.get();
+        return Thread.currentThread() instanceof EvalThread t ? t.ctx : null;
     }
 
     void enter() {
-        CURRENT.set(this);
+        EvalThread.current().ctx = this;
     }
 
     /** Notes that the evaluation under way read {@code path}, or looked for it. */
     public static void read(String path) {
-        NixContext c = CURRENT.get();
+        NixContext c = get();
         if (c != null) c.readPaths.add(path);
     }
 
     /** Notes that the evaluation under way listed the folder {@code path}. */
     public static void listed(String path) {
-        NixContext c = CURRENT.get();
+        NixContext c = get();
         if (c != null) c.listedDirs.add(path);
     }
 
     /** Notes that the evaluation under way read all of {@code path}, as to copy it to the store. */
     public static void readTree(String path) {
-        NixContext c = CURRENT.get();
+        NixContext c = get();
         if (c != null) c.trees.add(path);
     }
 
@@ -144,14 +141,16 @@ public final class NixContext {
     }
 
     static void leave() {
-        CURRENT.remove();
+        EvalThread.current().ctx = null;
     }
 
     /** The one {@link Name} of this context for {@code name} without a definition. */
     public Name name(String name) {
         Name n = names.get(name);
-        if (n == null) names.put(name, n = new Name(name));
-        return n;
+        if (n != null) return n;
+        n = new Name(name);
+        Name raced = names.putIfAbsent(name, n);
+        return raced != null ? raced : n;
     }
 
     public NixAttrs builtins() {
@@ -207,7 +206,8 @@ public final class NixContext {
             NixRootNode target = ParseCache.cached(file, stamp);
             if (target == null) target = parse(readFile(file), file, parentDir(file), new String[0], true, stamp);
             t = new Thunk(target, null);
-            imports.put(file, t);
+            Thunk raced = imports.putIfAbsent(file, t);
+            if (raced != null) t = raced;
         }
         return t.force();
     }
