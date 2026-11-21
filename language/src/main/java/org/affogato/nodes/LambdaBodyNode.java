@@ -1,6 +1,7 @@
 package org.affogato.nodes;
 
 import java.util.Arrays;
+import org.affogato.EvalThread;
 import org.affogato.NixContext;
 import org.affogato.runtime.*;
 
@@ -35,10 +36,10 @@ public final class LambdaBodyNode extends NixNode {
 
     @Override
     public Object execute(Object[] frame) {
-        NixContext ctx = NixContext.get();
-        if (ctx.cancelled) throw new Cancelled();
-        if (++ctx.callDepth > NixContext.MAX_CALL_DEPTH) {
-            ctx.callDepth--;
+        EvalThread t = EvalThread.current();
+        if (t.context().cancelled) throw new Cancelled();
+        if (++t.callDepth > NixContext.MAX_CALL_DEPTH) {
+            t.callDepth--;
             throw new NixException("stack overflow; max-call-depth exceeded", this);
         }
         try {
@@ -48,7 +49,7 @@ public final class LambdaBodyNode extends NixNode {
             }
             return body.execute(frame);
         } finally {
-            ctx.callDepth--;
+            t.callDepth--;
         }
     }
 

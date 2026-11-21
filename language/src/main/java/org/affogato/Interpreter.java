@@ -58,8 +58,7 @@ public final class Interpreter {
             throws EvalException, InterruptedException {
         NixContext ctx = new NixContext(options.storeDir(), options.system(), options.nixPath());
         Object[] outcome = new Object[1];
-        Thread t = new Thread(
-                null,
+        Thread t = new EvalThread(
                 () -> {
                     try {
                         outcome[0] = run(ctx, options, file, content);

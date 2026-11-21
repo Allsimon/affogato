@@ -1,5 +1,7 @@
 package org.affogato.runtime;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
@@ -20,8 +22,21 @@ public final class NixAttrs {
     /** Sorted by byte order, which is what {@code attrNames} and iteration expose; null while a union. */
     private Name[] keys;
 
-    /** While a union, a {@code NixAttrs[]}: the flat operands of the {@code //}, lowest priority first. */
+    /**
+     * While a union, a {@code NixAttrs[]}: the flat operands of the {@code //}, lowest priority first. Its type, not
+     * {@code keys}, tells a union, as another thread may be flattening it: {@link #flatten} sets {@code keys} first.
+     */
     private Object[] values;
+
+    private static final VarHandle VALUES;
+
+    static {
+        try {
+            VALUES = MethodHandles.lookup().findVarHandle(NixAttrs.class, "values", Object[].class);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
 
     public NixAttrs(Name[] keys, Object[] values) {
         this.keys = keys;
@@ -34,7 +49,7 @@ public final class NixAttrs {
 
     /** Null once flat. */
     private NixAttrs[] leaves() {
-        return this.keys == null ? (NixAttrs[]) this.values : null;
+        return VALUES.getAcquire(this) instanceof NixAttrs[] l ? l : null;
     }
 
     public static NixAttrs of(Map<String, Object> map) {
@@ -101,7 +116,7 @@ public final class NixAttrs {
     }
 
     public boolean isEmpty() {
-        return keys != null && keys.length == 0;
+        return leaves() == null && keys.length == 0;
     }
 
     /** Same contract as {@link Arrays#binarySearch(Object[], Object)}. */
@@ -296,12 +311,13 @@ public final class NixAttrs {
     }
 
     private void flatten() {
-        if (keys != null) return;
-        NixAttrs[] ls = leaves().clone();
+        NixAttrs[] leaves = leaves();
+        if (leaves == null) return;
+        NixAttrs[] ls = leaves.clone();
         compact(ls, 1);
         NixAttrs acc = ls[0];
         keys = acc.keys;
-        values = acc.values;
+        VALUES.setRelease(this, acc.values);
     }
 
     /** Merges two flat sets, {@code right} winning. */
