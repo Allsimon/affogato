@@ -16,6 +16,9 @@ public final class EvalThread extends Thread {
     /** Set by the demand path when this helper waits in a cycle with it. */
     volatile boolean abort;
 
+    /** Whether it is a helper waiting for a thunk, which a spare helper stands in for meanwhile. */
+    boolean blocked;
+
     public EvalThread(Runnable task, String name, long stackSize) {
         this(task, name, stackSize, false);
     }

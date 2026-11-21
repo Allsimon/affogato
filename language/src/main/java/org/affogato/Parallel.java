@@ -1,6 +1,7 @@
 package org.affogato;
 
 import java.util.ArrayDeque;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.affogato.runtime.Thunk;
 
 /**
@@ -15,20 +16,27 @@ public final class Parallel {
     private static final int BATCH = 16;
     private static final int MIN_CELLS = 4;
     private static final int MAX_CHAIN = 64;
+    private static final int SPARES = 2;
 
     /** {@code depth} bounds the helper's calls as tightly as the demand path's, or one call more tightly. */
     private record Task(Object[] cells, int from, int to, int depth) {}
 
     private final ArrayDeque<Task> tasks = new ArrayDeque<>();
     private final EvalThread[] helpers;
+    private final NixContext ctx;
+    private final long stackSize;
+    private final AtomicInteger running = new AtomicInteger();
+    private int spares;
     private int idle;
     private boolean stopped;
 
     Parallel(NixContext ctx, int workers, long stackSize) {
         on = true;
+        this.ctx = ctx;
+        this.stackSize = stackSize;
         helpers = new EvalThread[workers - 1];
         for (int i = 0; i < helpers.length; i++) {
-            EvalThread h = new EvalThread(this::work, "nix-eval-" + (i + 1), stackSize, true);
+            EvalThread h = new EvalThread(() -> work(false), "nix-eval-" + (i + 1), stackSize, true);
             h.ctx = ctx;
             h.setDaemon(true);
             helpers[i] = h;
@@ -36,6 +44,7 @@ public final class Parallel {
     }
 
     void start() {
+        running.set(helpers.length);
         for (EvalThread h : helpers) h.start();
     }
 
@@ -75,11 +84,16 @@ public final class Parallel {
         }
     }
 
-    private void work() {
+    private void work(boolean spare) {
         EvalThread me = EvalThread.current();
         for (; ; ) {
             Task task;
             synchronized (this) {
+                if (spare && (stopped || tasks.isEmpty() || running.get() > helpers.length)) {
+                    running.decrementAndGet();
+                    spares--;
+                    return;
+                }
                 while (!stopped && tasks.isEmpty()) {
                     idle++;
                     try {
@@ -128,6 +142,7 @@ public final class Parallel {
             throw new HelperAbort();
         }
         me.waitingOn = thunk;
+        if (me.helper && !me.blocked) block(me);
         Thread o = owner;
         for (int i = 0; i < MAX_CHAIN && o instanceof EvalThread e; i++) {
             if (e == me) {
@@ -149,6 +164,29 @@ public final class Parallel {
 
     /** The current thread waits no more. */
     public static void waited() {
-        if (Thread.currentThread() instanceof EvalThread me) me.waitingOn = null;
+        if (Thread.currentThread() instanceof EvalThread me) {
+            me.waitingOn = null;
+            if (me.blocked) {
+                me.blocked = false;
+                me.ctx.pool.running.incrementAndGet();
+            }
+        }
+    }
+
+    /** Starts a spare helper, unless one is idle, to run the queued tasks while {@code me} waits. */
+    private static void block(EvalThread me) {
+        Parallel p = me.ctx == null ? null : me.ctx.pool;
+        if (p == null) return;
+        me.blocked = true;
+        p.running.decrementAndGet();
+        synchronized (p) {
+            if (p.stopped || p.tasks.isEmpty() || p.idle > 0 || p.spares >= SPARES * p.helpers.length) return;
+            p.spares++;
+            p.running.incrementAndGet();
+        }
+        EvalThread s = new EvalThread(() -> p.work(true), "nix-eval-spare", p.stackSize, true);
+        s.ctx = p.ctx;
+        s.setDaemon(true);
+        s.start();
     }
 }
