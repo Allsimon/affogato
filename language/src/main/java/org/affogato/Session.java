@@ -114,7 +114,7 @@ public final class Session implements AutoCloseable {
         this.system = system;
         this.storeDir = storeDir;
         thread = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(null, r, "nix-session", Interpreter.STACK_SIZE);
+            Thread t = new EvalThread(r, "nix-session", Interpreter.STACK_SIZE);
             t.setDaemon(true);
             return t;
         });
