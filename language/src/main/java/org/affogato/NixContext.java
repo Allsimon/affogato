@@ -39,6 +39,9 @@ public final class NixContext {
      */
     public volatile Predicate<String> inputs;
 
+    /** The helpers forcing this context's thunks ahead of demand, or null. */
+    Parallel pool;
+
     public final String storeDir;
     public final String system;
     /** Search path entries as {@code [prefix, path]}; the prefix is empty for unprefixed entries. */

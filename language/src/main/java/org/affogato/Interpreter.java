@@ -36,7 +36,12 @@ public final class Interpreter {
      * {@code nixPath} is as {@code NIX_PATH}, and empty values take the defaults: {@code NIX_PATH}, the host's system,
      * {@code NIX_STORE_DIR} or {@code /nix/store}.
      */
-    public record Options(String nixPath, String system, String storeDir, Output output, String attr, List<Arg> args) {}
+    public record Options(
+            String nixPath, String system, String storeDir, Output output, String attr, List<Arg> args, int workers) {
+        public Options(String nixPath, String system, String storeDir, Output output, String attr, List<Arg> args) {
+            this(nixPath, system, storeDir, output, attr, args, 1);
+        }
+    }
 
     // Evaluating every nixpkgs drvPath peaks under 1 MB; max-call-depth nested calls take ~9 MB.
     public static final long STACK_SIZE = 64L << 20;
@@ -57,6 +62,8 @@ public final class Interpreter {
     public static String evaluate(Options options, String file, String content, long timeoutMillis, long stackSize)
             throws EvalException, InterruptedException {
         NixContext ctx = new NixContext(options.storeDir(), options.system(), options.nixPath());
+        Parallel pool = options.workers() > 1 ? new Parallel(ctx, options.workers(), stackSize) : null;
+        ctx.pool = pool;
         Object[] outcome = new Object[1];
         Thread t = new EvalThread(
                 () -> {
@@ -69,12 +76,20 @@ public final class Interpreter {
                 "nix-eval",
                 stackSize);
         t.setDaemon(true);
+        if (pool != null) pool.start();
         t.start();
-        t.join(timeoutMillis);
-        if (t.isAlive()) {
-            ctx.cancelled = true;
-            t.join();
-            throw new EvalException("evaluation timed out after " + timeoutMillis + " ms", null);
+        try {
+            t.join(timeoutMillis);
+            if (t.isAlive()) {
+                ctx.cancelled = true;
+                t.join();
+                throw new EvalException("evaluation timed out after " + timeoutMillis + " ms", null);
+            }
+        } finally {
+            if (pool != null) {
+                pool.stop();
+                ctx.cancelled = true;
+            }
         }
         return switch (outcome[0]) {
             case String s -> s;

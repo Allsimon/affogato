@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeMap;
 import org.affogato.NixContext;
+import org.affogato.Parallel;
 import org.affogato.runtime.*;
 
 public final class Builtins {
@@ -98,6 +99,7 @@ public final class Builtins {
     private static final PrintStream STDERR = new PrintStream(System.err, true, StandardCharsets.ISO_8859_1);
 
     static void trace(String message) {
+        if (Parallel.helper()) Parallel.abort();
         STDERR.println(message);
     }
 
