@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import org.affogato.Parallel;
 import org.affogato.runtime.*;
 import org.affogato.store.Hashes;
 
@@ -33,6 +34,7 @@ final class Strings {
             StringBuilder sb = new StringBuilder();
             String[] ctx = sep.context;
             Object[] items = Types.list(a[1]).items;
+            Parallel.fanout(items, items.length);
             for (int i = 0; i < items.length; i++) {
                 if (i > 0) sb.append(sep.value);
                 NixString s = Coerce.toNixString(items[i], false, true);
