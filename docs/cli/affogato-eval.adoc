@@ -54,7 +54,7 @@ Evaluate an expression and print the result, like nix-instantiate --eval.
   Add an entry to the search path of lookups such as <nixpkgs>, as nixpkgs=/path/to/nixpkgs; the entries of NIX_PATH come after.
 
 *-j*, *--workers*=_N_::
-  Evaluate on N threads, forcing ahead of demand the values the output needs; 1, the default, for one.
+  Evaluate on N threads, forcing ahead of demand the values the output needs; the default is the number of processors, up to 4.
 
 *--json*::
   Print the result as JSON.

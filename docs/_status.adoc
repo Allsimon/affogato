@@ -19,8 +19,13 @@ fail in both, and none differ or fail in only one evaluator:
 |===
 |Evaluator |Time |Peak RSS
 |`nix-instantiate` |1 min 54 s |9.3 GB
-|affogato on the JVM |1 min 1 s |8.0 GB
+|affogato on the JVM, `-j 1` |1 min 1 s |8.0 GB
+|affogato on the JVM, `-j 4` |21 s |9.1 GB
 |===
++
+With more than one worker, helper threads force ahead of demand the values
+the output walks, as numtide/iets does; the output and errors are those of one
+thread. The default is the number of processors, up to 4.
 
 Heavier attributes::
 `scripts/parity.sh` finds identical drvPaths for `firefox`, `chromium`,

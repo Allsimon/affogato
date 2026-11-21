@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import org.affogato.Parallel;
 import org.affogato.runtime.*;
 
 final class Lists {
@@ -39,13 +40,16 @@ final class Lists {
         });
         b.add("filter", 2, a -> {
             NixList l = Types.list(a[1]);
+            Parallel.fanout(l.items, l.size());
             List<Object> out = new ArrayList<>();
             for (Object x : l.items) if (Types.bool(Apply.apply(a[0], x))) out.add(x);
             return out.size() == l.size() ? l : new NixList(out.toArray());
         });
         b.add("foldl'", 3, a -> {
             Object acc = a[1];
-            for (Object x : Types.list(a[2]).items) acc = Apply.apply(Apply.apply(a[0], acc), x);
+            Object[] items = Types.list(a[2]).items;
+            Parallel.fanout(items, items.length);
+            for (Object x : items) acc = Apply.apply(Apply.apply(a[0], acc), x);
             return acc;
         });
         b.add("genList", 2, a -> {
@@ -58,24 +62,34 @@ final class Lists {
         });
         b.add("concatLists", 1, a -> {
             List<Object> out = new ArrayList<>();
-            for (Object x : Types.list(a[0]).items) out.addAll(Arrays.asList(Types.list(x).items));
+            Object[] items = Types.list(a[0]).items;
+            Parallel.fanout(items, items.length);
+            for (Object x : items) out.addAll(Arrays.asList(Types.list(x).items));
             return new NixList(out.toArray());
         });
         b.add("concatMap", 2, a -> {
             List<Object> out = new ArrayList<>();
-            for (Object x : Types.list(a[1]).items) out.addAll(Arrays.asList(Types.list(Apply.apply(a[0], x)).items));
+            Object[] items = Types.list(a[1]).items;
+            Parallel.fanout(items, items.length);
+            for (Object x : items) out.addAll(Arrays.asList(Types.list(Apply.apply(a[0], x)).items));
             return new NixList(out.toArray());
         });
         b.add("elem", 2, a -> {
-            for (Object x : Types.list(a[1]).items) if (Ops.equalCells(a[0], x)) return true;
+            Object[] items = Types.list(a[1]).items;
+            Parallel.fanout(items, items.length);
+            for (Object x : items) if (Ops.equalCells(a[0], x)) return true;
             return false;
         });
         b.add("all", 2, a -> {
-            for (Object x : Types.list(a[1]).items) if (!Types.bool(Apply.apply(a[0], x))) return false;
+            Object[] items = Types.list(a[1]).items;
+            Parallel.fanout(items, items.length);
+            for (Object x : items) if (!Types.bool(Apply.apply(a[0], x))) return false;
             return true;
         });
         b.add("any", 2, a -> {
-            for (Object x : Types.list(a[1]).items) if (Types.bool(Apply.apply(a[0], x))) return true;
+            Object[] items = Types.list(a[1]).items;
+            Parallel.fanout(items, items.length);
+            for (Object x : items) if (Types.bool(Apply.apply(a[0], x))) return true;
             return false;
         });
         b.add("sort", 2, a -> {
@@ -83,6 +97,7 @@ final class Lists {
             if (l.size() == 0) return l;
             Types.callable(a[0]);
             Object[] items = l.items.clone();
+            Parallel.fanout(items, items.length);
             for (int i = 0; i < items.length; i++) items[i] = Thunk.force(items[i]);
             mergeSort(items, (x, y) -> Types.bool(Apply.apply(Apply.apply(a[0], x), y)));
             return new NixList(items);
@@ -90,7 +105,9 @@ final class Lists {
         b.add("partition", 2, a -> {
             List<Object> right = new ArrayList<>();
             List<Object> wrong = new ArrayList<>();
-            for (Object x : Types.list(a[1]).items) (Types.bool(Apply.apply(a[0], x)) ? right : wrong).add(x);
+            Object[] items = Types.list(a[1]).items;
+            Parallel.fanout(items, items.length);
+            for (Object x : items) (Types.bool(Apply.apply(a[0], x)) ? right : wrong).add(x);
             TreeMap<String, Object> m = new TreeMap<>();
             m.put("right", new NixList(right.toArray()));
             m.put("wrong", new NixList(wrong.toArray()));
@@ -98,7 +115,9 @@ final class Lists {
         });
         b.add("groupBy", 2, a -> {
             TreeMap<String, List<Object>> groups = new TreeMap<>();
-            for (Object x : Types.list(a[1]).items) {
+            Object[] items = Types.list(a[1]).items;
+            Parallel.fanout(items, items.length);
+            for (Object x : items) {
                 groups.computeIfAbsent(Types.string(Apply.apply(a[0], x)).value, k -> new ArrayList<>())
                         .add(x);
             }
