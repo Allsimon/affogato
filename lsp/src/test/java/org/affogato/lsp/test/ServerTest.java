@@ -1039,6 +1039,22 @@ class ServerTest {
     }
 
     @Test
+    void offersTheKindsTheClientAsksFor() {
+        open("let unused = { a.b = 1; }; in 2\n");
+        String request = "{\"textDocument\":{\"uri\":\"" + URI + "\"},\"range\":" + Json.write(range(0, 15, 0, 15))
+                + ",\"context\":{\"diagnostics\":[],\"only\":";
+        assertThat(list(result(
+                                "textDocument/codeAction",
+                                request + "[\"quickfix\",\"refactor.rewrite\",\"source.fixAll\"]}}"))
+                        .stream()
+                        .map(a -> map(a).get("kind")))
+                .contains("source.fixAll", "refactor.rewrite");
+        assertThat(list(result("textDocument/codeAction", request + "[\"refactor\"]}}")).stream()
+                        .map(a -> map(a).get("kind")))
+                .containsOnly("refactor.rewrite");
+    }
+
+    @Test
     void expandsAndCollapsesABinding() {
         open("{ a.b = 1; }\n");
         Map<String, Object> expand = map(list(result(
