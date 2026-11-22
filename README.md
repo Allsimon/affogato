@@ -25,7 +25,7 @@ nix build .#affogato-native           # the same as a static native binary (musl
 affogato format .                     # format like nixfmt
 affogato check .                      # lint
 affogato fix .                        # apply the lint fixes, then format
-affogato update --commit .            # bump the packages of a tree, one commit each
+affogato update .                     # bump the packages of a tree to their latest version
 affogato eval --strict -E 'builtins.map (x: x * 2) [ 1 2 3 ]'
 affogato lsp                          # language server over stdio
 nix develop .#zed -c zed-affogato .   # Zed (or .#vscodium -c codium-affogato) with the language server

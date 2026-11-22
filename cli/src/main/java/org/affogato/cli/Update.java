@@ -12,12 +12,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.affogato.lint.Edit;
 import org.affogato.lint.Packages;
@@ -85,12 +83,6 @@ final class Update implements Callable<Integer> {
             names = {"-c", "--check"},
             description = "Write nothing, and fail if a package has an update, or with --refresh a hash that is wrong.")
     boolean check;
-
-    @Option(
-            names = "--commit",
-            description = "Commit each package updated on its own, as \"name: old -> new\". A file with uncommitted"
-                    + " changes is left alone.")
-    boolean commit;
 
     @Option(
             names = "--refresh",
@@ -255,49 +247,24 @@ final class Update implements Callable<Integer> {
         List<List<String>> left = new ArrayList<>();
         for (int i = 0; i < found.size(); i++) left.add(List.of());
         Map<Path, List<Integer>> byFile = new LinkedHashMap<>();
-        List<Integer> written = new ArrayList<>();
         for (int i = 0; i < found.size(); i++) {
             Outcome o = outcomes.get(i);
-            if (o instanceof Newer && (!check || refresh) || o instanceof Script) {
+            if (o instanceof Newer && (!check || refresh) || o instanceof Script)
                 byFile.computeIfAbsent(found.get(i).file(), k -> new ArrayList<>())
                         .add(i);
-                written.add(i);
-            }
         }
-        // A file's packages go one after the other, the files at once; the commits in order. Waiting for its turn to
-        // commit holds no permit, so that the files before can go on.
-        Semaphore permits = new Semaphore(jobs);
-        Map<Integer, CompletableFuture<Void>> turns = new LinkedHashMap<>();
-        for (int i : written) turns.put(i, new CompletableFuture<>());
-        try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
+        try (ExecutorService pool =
+                Executors.newFixedThreadPool(jobs, Thread.ofVirtual().factory())) {
             List<Future<?>> futures = new ArrayList<>();
             for (List<Integer> indices : byFile.values()) {
                 futures.add(pool.submit(() -> {
                     for (int i : indices) {
-                        Found f = found.get(i);
                         List<String> notUpdated = new ArrayList<>();
-                        Applied applied;
-                        permits.acquire();
+                        Outcome done;
                         try {
-                            applied = apply(f, outcomes.get(i), updater, notUpdated, line);
+                            done = apply(found.get(i), outcomes.get(i), updater, notUpdated, line);
                         } catch (RuntimeException e) {
-                            applied = new Applied(new Failed("internal error: " + e));
-                        } finally {
-                            permits.release();
-                        }
-                        Outcome done = applied.outcome();
-                        try {
-                            if (applied.commit() != null) {
-                                for (int before : written) {
-                                    if (before == i) break;
-                                    turns.get(before).join();
-                                }
-                                Git.commit(applied.commit(), applied.message());
-                            }
-                        } catch (IOException e) {
-                            done = new Failed(e.getMessage());
-                        } finally {
-                            turns.get(i).complete(null);
+                            done = new Failed("internal error: " + e);
                         }
                         synchronized (outcomes) {
                             outcomes.set(i, done);
@@ -393,32 +360,19 @@ final class Update implements Callable<Integer> {
         }
     }
 
-    /** The outcome of an update written, and the files to commit with their message, null when there are none. */
-    private record Applied(Outcome outcome, List<Path> commit, String message) {
-        Applied(Outcome outcome) {
-            this(outcome, null, null);
-        }
-    }
-
     /** Writes, unless {@code --check}, the update of {@code f}; its outcome. */
-    private Applied apply(Found f, Outcome o, Updater updater, List<String> notUpdated, Status line) {
+    private Outcome apply(Found f, Outcome o, Updater updater, List<String> notUpdated, Status line) {
         try {
             if (o instanceof Script) return script(f, updater, line);
             Newer n = (Newer) o;
             Updates.Progress progress = (step, part) -> line.show(f.name() + ": " + step);
-            String dirty = commit && !check ? Git.dirty(f.file()) : null;
-            if (dirty != null) return new Applied(new Failed(dirty));
             String src = Sources.read(f.file());
             Updates.Update u = refresh
                     ? updater.refresh(f.file(), src, f.index(), f.target(), n.hashes(), !noBuild, progress)
                     : updater.update(f.file(), src, f.index(), f.target(), n.to(), n.hashes(), !noBuild, progress);
             notUpdated.addAll(u.notUpdated());
-            if (refresh && u.edits().isEmpty() && u.files().isEmpty()) return new Applied(new Current());
-            if (check) return new Applied(o);
-            for (String lock : u.files().keySet()) {
-                String why = commit ? Git.dirty(Path.of(lock)) : null;
-                if (why != null && !why.equals("not tracked by git")) return new Applied(new Failed(lock + ": " + why));
-            }
+            if (refresh && u.edits().isEmpty() && u.files().isEmpty()) return new Current();
+            if (check) return o;
             String result = Edit.apply(src, u.edits());
             Parser.parse(result);
             write(f.file(), u, result);
@@ -434,21 +388,15 @@ final class Update implements Callable<Integer> {
                     Files.writeString(f.file(), src, StandardCharsets.UTF_8);
                     for (Map.Entry<String, Updates.Change> e2 : u.files().entrySet())
                         Files.writeString(Path.of(e2.getKey()), e2.getValue().before(), StandardCharsets.UTF_8);
-                    return new Applied(new Failed(e.getMessage()));
+                    return new Failed(e.getMessage());
                 }
             }
-            if (!commit) return new Applied(o);
-            List<Path> changed = new ArrayList<>(List.of(f.file()));
-            for (String lock : u.files().keySet()) changed.add(Path.of(lock));
-            return new Applied(
-                    o,
-                    changed,
-                    f.name() + ": " + (refresh ? "refresh hashes" : f.pkg().version() + " -> " + n.to().version()));
+            return o;
         } catch (IOException | ParseException e) {
-            return new Applied(new Failed(e.getMessage()));
+            return new Failed(e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new Applied(new Failed("interrupted"));
+            return new Failed("interrupted");
         }
     }
 
@@ -458,27 +406,15 @@ final class Update implements Callable<Integer> {
             Files.writeString(Path.of(e.getKey()), e.getValue().after(), StandardCharsets.UTF_8);
     }
 
-    /** Runs the update script of {@code f}, which writes the files itself, and commits its directory. */
-    private Applied script(Found f, Updater updater, Status line) throws IOException, InterruptedException {
-        Path dir = f.file().toAbsolutePath().getParent();
-        String dirty = commit ? Git.dirty(dir) : null;
-        if (dirty != null) return new Applied(new Failed(dirty));
+    /** Runs the update script of {@code f}, which writes the files itself. */
+    private Outcome script(Found f, Updater updater, Status line) throws IOException, InterruptedException {
         String before = Sources.read(f.file());
         line.show(f.name() + ": running its update script");
         updater.runUpdateScript(f.file(), before, f.index(), f.target());
         String after = Sources.read(f.file());
-        String version = after.equals(before) ? null : version(after, f.index());
-        boolean changed = commit ? Git.dirty(dir) != null : !after.equals(before);
-        if (!changed) return new Applied(new Current());
-        Outcome o = new Updated("-> " + (version != null ? version : "?") + " (update script)");
-        if (!commit) return new Applied(o);
-        return new Applied(
-                o,
-                List.of(dir),
-                f.name() + ": "
-                        + (version == null || version.equals(f.pkg().version())
-                                ? "update"
-                                : f.pkg().version() + " -> " + version));
+        if (after.equals(before)) return new Current();
+        String version = version(after, f.index());
+        return new Updated("-> " + (version != null ? version : "?") + " (update script)");
     }
 
     private static String version(String text, int index) {

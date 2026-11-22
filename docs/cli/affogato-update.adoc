@@ -19,7 +19,7 @@ affogato-update - Update the packages fetched from a forge, a registry or a URL 
 // tag::picocli-generated-man-section-synopsis[]
 == Synopsis
 
-*affogato update* [*-chv*] [*--branch*] [*--build*] [*--commit*] [*--no-build*] [*--no-eval*]
+*affogato update* [*-chv*] [*--branch*] [*--build*] [*--no-build*] [*--no-eval*]
                 [*--no-update-script*] [*--refresh*] [*--test*] [*--github-api*=_URL_]
                 [*-j*=_N_] [*--nixpkgs*=_PATH_] [_PATH|NAME_...]
 
@@ -43,9 +43,6 @@ Update the packages fetched from a forge, a registry or a URL to their latest ve
 
 *-c*, *--check*::
   Write nothing, and fail if a package has an update, or with --refresh a hash that is wrong.
-
-*--commit*::
-  Commit each package updated on its own, as "name: old -> new". A file with uncommitted changes is left alone.
 
 *--github-api*=_URL_::
   GitHub's API; https://api.github.com by default.

@@ -7,7 +7,6 @@
   importNpmLock,
   esbuild,
   fetchurl,
-  gitMinimal,
   installShellFiles,
   linkFarm,
   nodejs,
@@ -67,10 +66,7 @@ let
   tests = stdenv.mkDerivation {
     name = "affogato-tests";
     src = testSrc;
-    nativeBuildInputs = [
-      jdk
-      gitMinimal
-    ];
+    nativeBuildInputs = [ jdk ];
     buildPhase = ''
       runHook preBuild
       ${offline}

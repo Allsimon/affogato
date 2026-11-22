@@ -254,31 +254,6 @@ class UpdateTest {
     }
 
     @Test
-    void commitsEachPackageOnItsOwn() throws IOException, InterruptedException {
-        Path a = file("a/default.nix", pkg("a", "1.0"));
-        Path b = file("b/default.nix", pkg("b", "1.0"));
-        Path dirty = file("c/default.nix", pkg("c", "1.0"));
-        release("a", "v1.1");
-        release("b", "v2.0");
-        release("c", "v1.1");
-        git("init", "-q");
-        git("config", "user.name", "test");
-        git("config", "user.email", "test@example.com");
-        git("config", "commit.gpgsign", "false");
-        git("add", ".");
-        git("commit", "-qm", "init");
-        Files.writeString(dirty, pkg("c", "1.0") + "# local change\n");
-
-        assertThat(run("--commit", dir.toString())).isEqualTo(1);
-
-        assertThat(git("log", "--format=%s")).isEqualTo("b: 1.0 -> 2.0\na: 1.0 -> 1.1\ninit");
-        assertThat(git("show", "--name-only", "--format=", "HEAD")).isEqualTo("b/default.nix");
-        assertThat(Files.readString(a)).contains("1.1");
-        assertThat(Files.readString(dirty)).contains("1.0").endsWith("# local change\n");
-        assertThat(err.toString()).contains("c  1.0  error: uncommitted changes  " + dirty + "\n");
-    }
-
-    @Test
     void namesPackagesAfterTheirFlakeAttribute() throws IOException {
         Path p = file("pkgs/hello.nix", pkg("hello", "1.0"));
         file("flake.nix", """
@@ -458,18 +433,6 @@ class UpdateTest {
 
         assertThat(Files.readString(p)).contains("cargoHash = \"" + GOT + "\";");
         assertThat(built()).contains(" -A cargoDeps\n").contains("cargoHash = \"" + FAKE + "\"");
-    }
-
-    private String git(String... args) throws IOException, InterruptedException {
-        List<String> command = new ArrayList<>(List.of("git"));
-        command.addAll(List.of(args));
-        Process p = new ProcessBuilder(command)
-                .directory(dir.toFile())
-                .redirectErrorStream(true)
-                .start();
-        String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
-        assertThat(p.waitFor()).as(out).isZero();
-        return out;
     }
 
     @Test
