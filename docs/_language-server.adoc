@@ -49,30 +49,18 @@ package versions. Long evaluations report their progress.
 
 == Packages
 
-In a package fetched from a forge, a registry or a URL with its version, as
-`affogato update` finds them, the code action *Update hello* runs what
-`affogato update` does for that package, in the background with its progress
-shown: it finds the latest version, prefetches the source and builds the
-dependencies, such as `cargoDeps`, with a fake hash to learn theirs. The edits,
-with those of its lock files, then reach the editor as a `workspace/applyEdit`
-request, unless the document changed meanwhile; the file on disk is left to the
-editor to save. Cancelling the progress stops the fetch or build under way. The
-action's command, `affogato.updatePackage`, takes the document's URI and the
-index of the package in it.
+In a package `affogato update` can update, the code action *Update hello*
+updates it in the background, with its progress shown, then sends the edits to
+the editor; cancelling the progress stops it. *Refresh the hashes of hello*
+recomputes the hashes at the current version, as `affogato update --refresh`
+does. Their commands are `affogato.updatePackage` and `affogato.refreshHashes`,
+with the document's URI and the package's index as arguments.
 
-*Refresh the hashes of hello*, `affogato.refreshHashes`, does the same at the
-version the package has, or at the commit it is pinned to, as
-`affogato update --refresh` does: after a version changed by hand, say.
+When a document opens or is saved, the server marks each package that has a
+newer version with an `outdated` diagnostic, whose quick fix is the update.
 
-When a document opens or is saved, the server asks in the background for the
-latest version of each of its packages, and shows those that have a newer one
-as an information diagnostic, `outdated`, on their version, whose quick fix is
-the update. What it learns is kept an hour, to stay under GitHub's rate limit.
-
-The command `affogato.updateWorkspace` updates every package below the
-workspace folders, or below the `file:` URIs it is given, as
-`affogato update .` does, and sends the edits of every file it changed; a file
-open in the editor with unsaved changes is left alone.
+The command `affogato.updateWorkspace` updates every package of the workspace,
+as `affogato update .` does.
 
 == Modules, flakes and devenv
 
