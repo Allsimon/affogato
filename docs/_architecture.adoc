@@ -17,6 +17,7 @@ affogato/
 ├── lint/ <.>
 ├── lsp/ <.>
 ├── evaluator/ <.>
+├── update/ <.>
 ├── web/ <.>
 └── cli/ <.>
 ----
@@ -35,12 +36,15 @@ errors and going on where `Parser` stops.
 <.> The builtins.
 <.> Nix's `derivation.nix` and `fetchurl.nix`, vendored from NixOS/nix.
 <.> The formatter.
-<.> The linter.
+<.> The linter, and `Packages`, which finds the packages fetched from GitHub
+and the edits that move them to another version.
 <.> The language server over stdio: the linter's diagnostics, the formatter,
 and navigation over the parser's tree. `Analysis` answers its questions
 without the protocol, so that an editor can call it in-process.
 <.> The language server's evaluator: nixpkgs and option sets evaluated by the
 interpreter, for the server and for editors that call it in-process.
+<.> The updater behind `affogato update`, the language server and the editors:
+it finds each package's latest version and computes its new hashes.
 <.> The language server compiled to JavaScript by TeaVM, for the playground.
 <.> The command line, plus its native-image build.
 

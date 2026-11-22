@@ -82,10 +82,7 @@ public final class Linter {
             if (d.fix().isEmpty() || d.fix().stream().anyMatch(e -> overlaps(e, accepted))) continue;
             accepted.addAll(d.fix());
         }
-        accepted.sort(Comparator.comparingInt(Edit::start).reversed());
-        StringBuilder sb = new StringBuilder(src);
-        for (Edit e : accepted) sb.replace(e.start(), e.end(), e.replacement());
-        return sb.toString();
+        return Edit.apply(src, accepted);
     }
 
     private static boolean overlaps(Edit e, List<Edit> accepted) {

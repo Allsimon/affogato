@@ -10,7 +10,7 @@
  */
 module org.affogato.lsp {
     requires org.affogato.format;
-    requires org.affogato.lint;
+    requires transitive org.affogato.lint;
     requires transitive org.affogato.parser;
 
     exports org.affogato.lsp;
