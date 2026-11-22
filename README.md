@@ -27,6 +27,7 @@ affogato check .                      # lint
 affogato fix .                        # apply the lint fixes, then format
 affogato eval --strict -E 'builtins.map (x: x * 2) [ 1 2 3 ]'
 affogato lsp                          # language server over stdio
+nix develop .#zed -c zed-affogato .   # Zed (or .#vscodium -c codium-affogato) with the language server
 affogato drv-path -I nixpkgs=/path/to/nixpkgs -E 'import <nixpkgs> {}' -A hello
 ```
 

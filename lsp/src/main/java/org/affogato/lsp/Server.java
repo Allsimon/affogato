@@ -854,7 +854,8 @@ public final class Server {
 
     /**
      * For each finding the range touches: its fix, when it has one, and the comments that switch its rule off on its
-     * line or in the file; and, when the client asks for {@code source.fixAll}, all the fixes.
+     * line or in the file; and, when the client asks for {@code source.fixAll}, all the fixes. Of those, the kinds in
+     * the client's {@code only}, as Zed sends every kind the server supports there.
      */
     private Object codeActions(Map<?, ?> params) {
         Document document = document(params);
@@ -864,14 +865,13 @@ public final class Server {
         int end = lines.offset((Map<?, ?>) range.get("end"));
         String uri = uri(params);
         List<Object> actions = new ArrayList<>();
-        if (params.get("context") instanceof Map<?, ?> c
-                && c.get("only") instanceof List<?> only
-                && (only.contains("source") || only.contains("source.fixAll"))) {
+        List<?> only = params.get("context") instanceof Map<?, ?> c && c.get("only") instanceof List<?> o ? o : null;
+        if (only != null && kindIn("source.fixAll", only)) {
             String fixed;
             try {
                 fixed = Linter.fix(document.text(), rules);
             } catch (RuntimeException e) {
-                return actions;
+                fixed = document.text();
             }
             if (!fixed.equals(document.text())) {
                 Map<String, Object> action = action(
@@ -881,8 +881,8 @@ public final class Server {
                 action.put("kind", "source.fixAll");
                 actions.add(action);
             }
-            return actions;
         }
+        if (only != null && !kindIn("quickfix", only) && !kindIn("refactor.rewrite", only)) return actions;
         Analysis analysis = analysis(params);
         for (Analysis.Rewrite rewrite : analysis.bindings(start)) rewrite(actions, uri, lines, rewrite);
         Analysis.Rewrite quotes = analysis.attributeQuotes(start);
@@ -913,7 +913,15 @@ public final class Server {
                     uri,
                     List.of(Map.of("range", lines.range(0, 0), "newText", Suppressions.ignoreFile(d.rule()) + "\n"))));
         }
+        if (only != null) actions.removeIf(a -> !kindIn((String) ((Map<?, ?>) a).get("kind"), only));
         return actions;
+    }
+
+    /** Whether {@code only} asks for {@code kind}, as {@code refactor} asks for {@code refactor.rewrite}. */
+    private static boolean kindIn(String kind, List<?> only) {
+        for (Object k : only)
+            if (kind.equals(k) || k instanceof String prefix && kind.startsWith(prefix + ".")) return true;
+        return false;
     }
 
     private static void rewrite(List<Object> actions, String uri, Lines lines, Analysis.Rewrite rewrite) {
