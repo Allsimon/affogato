@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import org.affogato.evaluator.SessionEvaluator;
 import org.affogato.lsp.Server;
+import org.affogato.update.Updater;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -31,7 +32,7 @@ public final class Lsp implements Callable<Integer> {
                 "",
                 SessionEvaluator::printConfig)) {
             evaluator.inputs(SessionEvaluator::copyInput);
-            Server.serve(System.in, System.out, evaluator.main());
+            Server.serve(System.in, System.out, evaluator.main(), new Updater(Updater.Options.defaults()));
         }
         return 0;
     }

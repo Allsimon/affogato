@@ -12,6 +12,7 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -28,6 +29,7 @@ import org.affogato.format.Formatter;
 import org.affogato.lint.Diagnostic;
 import org.affogato.lint.Edit;
 import org.affogato.lint.Linter;
+import org.affogato.lint.Packages;
 import org.affogato.lint.Rule;
 import org.affogato.lint.Suppressions;
 import org.affogato.parser.Highlighter;
@@ -62,6 +64,18 @@ public final class Server {
 
     private static final int BATCH = 64;
 
+    /** The command that updates a package: its arguments are the document's URI and the package's index in it. */
+    public static final String UPDATE = "affogato.updatePackage";
+
+    /** The command that refreshes the hashes of a package, with the arguments of {@link #UPDATE}. */
+    public static final String REFRESH = "affogato.refreshHashes";
+
+    /** The command that updates the packages of the workspace folders, or of the {@code file:} URIs it is given. */
+    public static final String UPDATE_WORKSPACE = "affogato.updateWorkspace";
+
+    /** The code of the diagnostics that say a package has a newer version. */
+    public static final String OUTDATED = "outdated";
+
     private static final int WORKSPACE_FILES = 20_000;
 
     private static final Set<String> SKIPPED = Set.of("node_modules", "result", "target");
@@ -71,11 +85,21 @@ public final class Server {
 
     private static final Map<String, Object> ORIGIN = Map.of("line", 0L, "character", 0L);
 
-    private final Map<String, Document> documents = new HashMap<>();
+    /** Read by the thread an update ends on, to check that the document did not change meanwhile. */
+    private final Map<String, Document> documents = Collections.synchronizedMap(new HashMap<>());
+
     private final Evaluator evaluator;
+    private final Updates updates;
     private final Consumer<Map<String, Object>> send;
     private final AtomicBoolean refreshing = new AtomicBoolean();
     private final AtomicInteger progressTokens = new AtomicInteger();
+    private final AtomicInteger editRequests = new AtomicInteger();
+    /** What cancels the work each progress token shows. */
+    private final Map<String, Runnable> cancels = Collections.synchronizedMap(new HashMap<>());
+    /** The newer version of each package checked, by URI and {@link #key}. */
+    private final Map<String, Map<String, String>> outdated = Collections.synchronizedMap(new HashMap<>());
+
+    private boolean checkUpdates = true;
     private boolean refreshSupport;
     private boolean progressSupport;
     private boolean snippetSupport;
@@ -103,13 +127,25 @@ public final class Server {
 
     /** Sends the requests the server makes of its own, as {@code workspace/inlayHint/refresh}, with {@code send}. */
     public Server(Evaluator evaluator, Consumer<Map<String, Object>> send) {
+        this(evaluator, null, send);
+    }
+
+    /** Offers to update the packages of a document with {@code updates}, when not null and {@code send} is not. */
+    public Server(Evaluator evaluator, Updates updates, Consumer<Map<String, Object>> send) {
         this.evaluator = evaluator;
+        this.updates = send == null ? null : updates;
         this.send = send;
     }
 
     /** Serves {@code in} until the client says {@code exit}. */
     public static void serve(InputStream in, OutputStream out, Evaluator evaluator) throws IOException {
-        Server server = new Server(evaluator, message -> {
+        serve(in, out, evaluator, null);
+    }
+
+    /** Serves {@code in} until the client says {@code exit}, updating packages with {@code updates}. */
+    public static void serve(InputStream in, OutputStream out, Evaluator evaluator, Updates updates)
+            throws IOException {
+        Server server = new Server(evaluator, updates, message -> {
             try {
                 write(out, message);
             } catch (IOException e) {
@@ -278,6 +314,11 @@ public final class Server {
                 yield null;
             }
             case "$/cancelRequest", "$/setTrace" -> null;
+            case "window/workDoneProgress/cancel" -> {
+                Runnable cancel = cancels.remove(String.valueOf(params.get("token")));
+                if (cancel != null) cancel.run();
+                yield null;
+            }
             case "workspace/didChangeConfiguration" -> {
                 if (params.get("settings") instanceof Map<?, ?> settings && settings.get("affogato") != null)
                     reconfigure(settings.get("affogato"), out);
@@ -292,6 +333,7 @@ public final class Server {
             case "textDocument/didOpen" -> {
                 Map<?, ?> document = (Map<?, ?>) params.get("textDocument");
                 open((String) document.get("uri"), (String) document.get("text"), out);
+                checkUpdates((String) document.get("uri"));
                 yield null;
             }
             case "textDocument/didChange" -> {
@@ -305,10 +347,12 @@ public final class Server {
                 String saved = path(uri(params));
                 if (evaluator != null && saved != null) evaluator.saved(saved);
                 else if (evaluator != null) evaluator.reset();
+                checkUpdates(uri(params));
                 yield null;
             }
             case "textDocument/didClose" -> {
                 documents.remove(uri(params));
+                outdated.remove(uri(params));
                 out.add(notification(
                         "textDocument/publishDiagnostics", Map.of("uri", uri(params), "diagnostics", List.of())));
                 yield null;
@@ -338,6 +382,7 @@ public final class Server {
             case "textDocument/semanticTokens/full" -> Map.of("data", semanticTokens(document(params)));
             case "affogato/injections" -> injections(document(params));
             case "textDocument/codeAction" -> codeActions(params);
+            case "workspace/executeCommand" -> executeCommand(params);
             default -> {
                 if (method.startsWith("$/")) yield null;
                 throw new UnsupportedOperationException(method);
@@ -365,7 +410,9 @@ public final class Server {
         capabilities.put("documentLinkProvider", Map.of());
         capabilities.put(
                 "codeActionProvider",
-                Map.of("codeActionKinds", List.of("quickfix", "refactor.rewrite", "source.fixAll")));
+                Map.of("codeActionKinds", List.of("quickfix", "refactor", "refactor.rewrite", "source.fixAll")));
+        if (updates != null)
+            capabilities.put("executeCommandProvider", Map.of("commands", List.of(UPDATE, REFRESH, UPDATE_WORKSPACE)));
         capabilities.put(
                 "semanticTokensProvider",
                 Map.of(
@@ -383,6 +430,37 @@ public final class Server {
      */
     /** Shows {@code title} in the client until the returned end runs, from any thread. */
     private Runnable beginProgress(String title) {
+        String token = createProgress();
+        send.accept(progress(token, Map.of("kind", "begin", "title", title)));
+        return () -> send.accept(progress(token, Map.of("kind", "end")));
+    }
+
+    /** Work done progress with a percentage: the steps it reports, its end, and its token, null without one. */
+    private record Bar(Updates.Progress steps, Runnable end, String token) {}
+
+    /**
+     * Shows {@code title} in the client at 0%, then each step reported, until the end runs, from any thread; the
+     * client may cancel it, which runs what {@link #cancellable} gives.
+     */
+    private Bar beginBar(String title) {
+        if (!progressSupport) return new Bar(Updates.Progress.NONE, () -> {}, null);
+        String token = createProgress();
+        send.accept(progress(token, Map.of("kind", "begin", "title", title, "percentage", 0L, "cancellable", true)));
+        return new Bar(
+                (step, done) -> send.accept(progress(
+                        token, Map.of("kind", "report", "message", step, "percentage", Math.round(done * 100)))),
+                () -> {
+                    cancels.remove(token);
+                    send.accept(progress(token, Map.of("kind", "end")));
+                },
+                token);
+    }
+
+    private void cancellable(Bar bar, Runnable cancel) {
+        if (bar.token() != null && cancel != null) cancels.put(bar.token(), cancel);
+    }
+
+    private String createProgress() {
         String token = "affogato-progress-" + progressTokens.incrementAndGet();
         Map<String, Object> create = new LinkedHashMap<>();
         create.put("jsonrpc", "2.0");
@@ -390,8 +468,7 @@ public final class Server {
         create.put("method", "window/workDoneProgress/create");
         create.put("params", Map.of("token", token));
         send.accept(create);
-        send.accept(progress(token, Map.of("kind", "begin", "title", title)));
-        return () -> send.accept(progress(token, Map.of("kind", "end")));
+        return token;
     }
 
     private static Map<String, Object> progress(String token, Map<String, Object> value) {
@@ -425,6 +502,7 @@ public final class Server {
         if (!(settings instanceof Map<?, ?> s)) return;
         if (s.get("width") instanceof Long w) width = (int) (long) w;
         if (s.get("strict") instanceof Boolean b) strict = b;
+        if (s.get("checkUpdates") instanceof Boolean b) checkUpdates = b;
         if (s.get("rules") instanceof List<?> ids) {
             rules = ids.isEmpty() ? EnumSet.allOf(Rule.class) : EnumSet.noneOf(Rule.class);
             for (Object id : ids) rules.add(Rule.byId((String) id));
@@ -443,6 +521,12 @@ public final class Server {
     private void open(String uri, String text, List<Map<String, Object>> out) {
         Document document = Document.of(text);
         documents.put(uri, document);
+        out.add(diagnostics(uri, document));
+    }
+
+    /** The notification of the diagnostics of {@code document}: its findings, and its packages that are outdated. */
+    private Map<String, Object> diagnostics(String uri, Document document) {
+        String text = document.text();
         List<Object> diagnostics = new ArrayList<>();
         for (Diagnostic d : Linter.lint(text, rules)) {
             Map<String, Object> diagnostic = new LinkedHashMap<>();
@@ -459,7 +543,79 @@ public final class Server {
             diagnostic.put("message", d.message());
             diagnostics.add(diagnostic);
         }
-        out.add(notification("textDocument/publishDiagnostics", Map.of("uri", uri, "diagnostics", diagnostics)));
+        Map<String, String> newer = outdated.get(uri);
+        if (newer != null && !newer.isEmpty()) {
+            for (Packages.Package p : packages(text)) {
+                String version = newer.get(key(p));
+                if (version == null) continue;
+                Map<String, Object> diagnostic = new LinkedHashMap<>();
+                diagnostic.put("range", document.lines().range(versionStart(p), versionEnd(p)));
+                diagnostic.put("severity", 3L);
+                diagnostic.put("code", OUTDATED);
+                diagnostic.put("source", "affogato");
+                diagnostic.put(
+                        "message", (p.name() != null ? p.name() : "The package") + " " + version + " is available");
+                diagnostics.add(diagnostic);
+            }
+        }
+        return notification("textDocument/publishDiagnostics", Map.of("uri", uri, "diagnostics", diagnostics));
+    }
+
+    private static List<Packages.Package> packages(String text) {
+        try {
+            return Packages.find(text);
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    /** What a package is, whatever its index: its first source and its version, which an update changes. */
+    private static String key(Packages.Package p) {
+        if (p.sources().isEmpty()) return null;
+        Packages.Source s = p.sources().getFirst();
+        return s.kind() + " " + s.domain() + " " + s.owner() + " " + s.repo() + " " + s.template() + " " + p.version()
+                + " " + p.commit();
+    }
+
+    /** Where the diagnostic of an outdated package goes: its version, else its tag, else its start. */
+    private static int versionStart(Packages.Package p) {
+        if (p.versionStart() >= 0) return p.versionStart();
+        Packages.Source s = p.sources().getFirst();
+        return s.revStart() >= 0 ? s.revStart() : p.start();
+    }
+
+    private static int versionEnd(Packages.Package p) {
+        if (p.versionStart() >= 0) return p.versionEnd();
+        Packages.Source s = p.sources().getFirst();
+        return s.revStart() >= 0 ? s.revEnd() : p.start();
+    }
+
+    /** Asks, in the background, for the newer version of each package of the document, to show those outdated. */
+    private void checkUpdates(String uri) {
+        if (updates == null || !checkUpdates) return;
+        Document document = documents.get(uri);
+        String file = path(uri);
+        if (document == null || file == null) return;
+        String text = document.text();
+        List<Packages.Package> packages = packages(text);
+        Map<String, String> found = Collections.synchronizedMap(new HashMap<>());
+        outdated.put(uri, found);
+        for (int i = 0; i < packages.size(); i++) {
+            Packages.Package p = packages.get(i);
+            if (!p.updatable(false)) continue;
+            String key = key(p);
+            updates.newer(
+                    file,
+                    text,
+                    i,
+                    version -> {
+                        if (version == null || outdated.get(uri) != found) return;
+                        found.put(key, version);
+                        Document now = documents.get(uri);
+                        if (now != null) send.accept(diagnostics(uri, now));
+                    },
+                    error -> {});
+        }
     }
 
     private String formatted(Document document, Map<?, ?> params) {
@@ -883,6 +1039,7 @@ public final class Server {
             }
         }
         if (only != null && !kindIn("quickfix", only) && !kindIn("refactor.rewrite", only)) return actions;
+        if (updates != null) update(actions, uri, document.text(), start, end, outdated.get(uri), params);
         Analysis analysis = analysis(params);
         for (Analysis.Rewrite rewrite : analysis.bindings(start)) rewrite(actions, uri, lines, rewrite);
         Analysis.Rewrite quotes = analysis.attributeQuotes(start);
@@ -922,6 +1079,184 @@ public final class Server {
         for (Object k : only)
             if (kind.equals(k) || k instanceof String prefix && kind.startsWith(prefix + ".")) return true;
         return false;
+    }
+
+    /**
+     * Offers to update the package around {@code offset}, or says why it cannot be; as the quick fix of its diagnostic
+     * when it is known to be outdated.
+     */
+    private static void update(
+            List<Object> actions,
+            String uri,
+            String text,
+            int offset,
+            int end,
+            Map<String, String> outdated,
+            Map<?, ?> params) {
+        List<Packages.Package> packages = packages(text);
+        for (int i = 0; i < packages.size(); i++) {
+            Packages.Package p = packages.get(i);
+            if (end < p.start() || offset > p.end()) continue;
+            String name = p.name() != null ? p.name() : "the package";
+            String newer = outdated == null || p.sources().isEmpty() ? null : outdated.get(key(p));
+            Map<String, Object> update = newer != null
+                    ? command("Update " + name + " to " + newer, UPDATE, uri, i, "quickfix")
+                    : command("Update " + name, UPDATE, uri, i, "refactor");
+            if (newer != null) {
+                update.put("isPreferred", true);
+                List<Object> fixed = new ArrayList<>();
+                if (params.get("context") instanceof Map<?, ?> c && c.get("diagnostics") instanceof List<?> ds)
+                    for (Object d : ds) if (d instanceof Map<?, ?> m && OUTDATED.equals(m.get("code"))) fixed.add(d);
+                if (!fixed.isEmpty()) update.put("diagnostics", fixed);
+            }
+            if (!p.updatable(false)) update.put("disabled", Map.of("reason", p.skipped()));
+            actions.add(update);
+            if (!p.sources().isEmpty())
+                actions.add(command("Refresh the hashes of " + name, REFRESH, uri, i, "refactor"));
+        }
+    }
+
+    private static Map<String, Object> command(String title, String command, String uri, int index, String kind) {
+        Map<String, Object> action = new LinkedHashMap<>();
+        action.put("title", title);
+        action.put("kind", kind);
+        action.put("command", Map.of("title", title, "command", command, "arguments", List.of(uri, (long) index)));
+        return action;
+    }
+
+    /**
+     * Runs {@link #UPDATE} or {@link #REFRESH} on the package its arguments name: it goes on in the background, shown
+     * as work done progress, and its edits reach the client as a {@code workspace/applyEdit} request, unless the
+     * document changed meanwhile.
+     */
+    private Object executeCommand(Map<?, ?> params) {
+        Object command = params.get("command");
+        if (updates != null && UPDATE_WORKSPACE.equals(command)) return updateWorkspace(params);
+        if (updates == null || !UPDATE.equals(command) && !REFRESH.equals(command))
+            throw new UnsupportedOperationException("workspace/executeCommand " + command);
+        if (!(params.get("arguments") instanceof List<?> args
+                && args.size() == 2
+                && args.get(0) instanceof String uri
+                && args.get(1) instanceof Long index)) throw new IllegalArgumentException("expected [uri, index]");
+        Document document = documents.get(uri);
+        String file = path(uri);
+        if (document == null || file == null) throw new IllegalArgumentException("not an open file: " + uri);
+        List<Packages.Package> packages = Packages.find(document.text());
+        if (index < 0 || index >= packages.size()) throw new IllegalArgumentException("no package " + index);
+        Packages.Package p = packages.get(index.intValue());
+        String name = p.name() != null ? p.name() : "the package";
+        boolean refresh = REFRESH.equals(command);
+        String title = refresh ? "Refresh the hashes of " + name : "Update " + name;
+        Bar bar = beginBar(refresh ? "Refreshing the hashes of " + name : "Updating " + name);
+        Runnable end = bar.end();
+        Consumer<Updates.Update> done = update -> {
+            end.run();
+            if (update == null || update.edits().isEmpty()) {
+                showMessage(
+                        3,
+                        refresh
+                                ? "The hashes of " + name + " are up to date"
+                                : name + " " + p.version() + " is up to date");
+                return;
+            }
+            Document now = documents.get(uri);
+            if (now == null || !now.text().equals(document.text())) {
+                showMessage(2, "Not changing " + name + ": the document changed meanwhile");
+                return;
+            }
+            List<Object> edits = new ArrayList<>();
+            for (Edit e : update.edits())
+                edits.add(Map.of("range", document.lines().range(e.start(), e.end()), "newText", e.replacement()));
+            Map<String, Object> changes = new LinkedHashMap<>();
+            changes.put(uri, edits);
+            for (Map.Entry<String, Updates.Change> f : update.files().entrySet())
+                changes.put(fileUri(f.getKey()), replace(f.getValue()));
+            applyEdit(title, changes);
+            String left = update.notUpdated().isEmpty()
+                    ? ""
+                    : " (" + String.join(", ", update.notUpdated()) + " not updated)";
+            showMessage(
+                    3,
+                    (refresh
+                                    ? "Refreshed the hashes of " + name
+                                    : name + ": " + p.version() + " -> " + update.version())
+                            + left);
+        };
+        Consumer<String> failed = error -> {
+            end.run();
+            showMessage(1, (refresh ? "Refreshing the hashes of " : "Updating ") + name + " failed: " + error);
+        };
+        cancellable(
+                bar,
+                refresh
+                        ? updates.refresh(file, document.text(), index.intValue(), bar.steps(), done, failed)
+                        : updates.update(file, document.text(), index.intValue(), bar.steps(), done, failed));
+        return null;
+    }
+
+    /**
+     * Runs {@link #UPDATE_WORKSPACE}: updates the packages below the workspace folders, or the paths of the URIs it is
+     * given, in the background, then sends their edits; a file open with other changes than on disk is left alone.
+     */
+    private Object updateWorkspace(Map<?, ?> params) {
+        List<String> paths = new ArrayList<>();
+        if (params.get("arguments") instanceof List<?> args)
+            for (Object a : args) if (a instanceof String u && path(u) != null) paths.add(path(u));
+        if (paths.isEmpty()) paths.addAll(roots);
+        if (paths.isEmpty()) throw new IllegalArgumentException("no workspace folder to update");
+        Bar bar = beginBar("Updating the packages of the workspace");
+        Runnable end = bar.end();
+        Consumer<Updates.WorkspaceUpdate> done = update -> {
+            end.run();
+            Map<String, Object> changes = new LinkedHashMap<>();
+            List<String> skipped = new ArrayList<>();
+            for (Map.Entry<String, Updates.Change> f : update.files().entrySet()) {
+                String uri = fileUri(f.getKey());
+                Document open = documents.get(uri);
+                if (open != null && !open.text().equals(f.getValue().before())) skipped.add(f.getKey());
+                else changes.put(uri, replace(f.getValue()));
+            }
+            if (!changes.isEmpty()) applyEdit("Update the packages", changes);
+            List<String> lines = new ArrayList<>(update.summary());
+            for (String f : skipped) lines.add(f + ": not changed, as it has unsaved changes");
+            showMessage(
+                    lines.stream().anyMatch(l -> l.contains(": error: ")) ? 2 : 3,
+                    lines.isEmpty() ? "Every package is up to date" : String.join("\n", lines));
+        };
+        Consumer<String> failed = error -> {
+            end.run();
+            showMessage(1, "Updating the packages failed: " + error);
+        };
+        cancellable(bar, updates.updateWorkspace(paths, bar.steps(), done, failed));
+        return null;
+    }
+
+    private void applyEdit(String label, Map<String, Object> changes) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("jsonrpc", "2.0");
+        request.put("id", "affogato-edit-" + editRequests.incrementAndGet());
+        request.put("method", "workspace/applyEdit");
+        request.put("params", Map.of("label", label, "edit", Map.of("changes", changes)));
+        send.accept(request);
+    }
+
+    /** The edit that replaces the whole text of a file. */
+    private static List<Object> replace(Updates.Change change) {
+        Lines lines = Document.of(change.before()).lines();
+        return List.of(Map.of("range", lines.range(0, change.before().length()), "newText", change.after()));
+    }
+
+    /** The {@code file:} URI of an absolute path. */
+    private static String fileUri(String path) {
+        try {
+            return new URI("file", "", path, null).toString();
+        } catch (URISyntaxException e) {
+            return "file://" + path;
+        }
+    }
+
+    private void showMessage(int type, String message) {
+        send.accept(notification("window/showMessage", Map.of("type", (long) type, "message", message)));
     }
 
     private static void rewrite(List<Object> actions, String uri, Lines lines, Analysis.Rewrite rewrite) {

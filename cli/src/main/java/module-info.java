@@ -24,6 +24,7 @@ module org.affogato.cli {
     requires org.affogato.lint;
     requires org.affogato.lsp;
     requires org.affogato.parser;
+    requires org.affogato.update;
 
     exports org.affogato.cli;
 

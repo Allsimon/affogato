@@ -47,6 +47,33 @@ into scope, it gives completion, a hover with a package's version and
 description or a function's doc comment, go to definition, and inlay hints with
 package versions. Long evaluations report their progress.
 
+== Packages
+
+In a package fetched from a forge, a registry or a URL with its version, as
+`affogato update` finds them, the code action *Update hello* runs what
+`affogato update` does for that package, in the background with its progress
+shown: it finds the latest version, prefetches the source and builds the
+dependencies, such as `cargoDeps`, with a fake hash to learn theirs. The edits,
+with those of its lock files, then reach the editor as a `workspace/applyEdit`
+request, unless the document changed meanwhile; the file on disk is left to the
+editor to save. Cancelling the progress stops the fetch or build under way. The
+action's command, `affogato.updatePackage`, takes the document's URI and the
+index of the package in it.
+
+*Refresh the hashes of hello*, `affogato.refreshHashes`, does the same at the
+version the package has, or at the commit it is pinned to, as
+`affogato update --refresh` does: after a version changed by hand, say.
+
+When a document opens or is saved, the server asks in the background for the
+latest version of each of its packages, and shows those that have a newer one
+as an information diagnostic, `outdated`, on their version, whose quick fix is
+the update. What it learns is kept an hour, to stay under GitHub's rate limit.
+
+The command `affogato.updateWorkspace` updates every package below the
+workspace folders, or below the `file:` URIs it is given, as
+`affogato update .` does, and sends the edits of every file it changed; a file
+open in the editor with unsaved changes is left alone.
+
 == Modules, flakes and devenv
 
 * in a NixOS or home-manager module: completion of option names, a hover with
@@ -68,6 +95,7 @@ The `affogato` section of the client's settings, or the
 | `rules` | the ids of the <<lint-rules,lint rules>> to report, all when empty
 | `nixpkgs.expr` | the expression nixpkgs is evaluated from, `import <nixpkgs> { }` unless `--nixpkgs` says otherwise
 | `options.<name>.expr` | a set of options, NixOS's unless `--nixos-options` says otherwise; as in nixd, home-manager is one more name
+| `checkUpdates` | whether to look for the latest version of the packages of the documents opened, `true` by default
 |===
 
 == Embedded languages

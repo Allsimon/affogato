@@ -53,6 +53,9 @@ xref:affogato-check.adoc[*check*]::
 xref:affogato-fix.adoc[*fix*]::
   Apply the linter's fixes to Nix files in place, then format them.
 
+xref:affogato-update.adoc[*update*]::
+  Update the packages fetched from a forge, a registry or a URL to their latest version: their version, their hashes and their lock files.
+
 xref:affogato-lsp.adoc[*lsp*]::
   Run a language server for Nix over stdin and stdout.
 
