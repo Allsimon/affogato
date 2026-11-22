@@ -12,7 +12,7 @@ import org.affogato.Parallel;
 import org.affogato.runtime.*;
 import org.affogato.store.Hashes;
 
-final class Strings {
+public final class Strings {
     private Strings() {}
 
     static void register(Builtins b) {
@@ -299,7 +299,7 @@ final class Strings {
         return c1.compareTo(c2) < 0;
     }
 
-    static int compareVersions(String v1, String v2) {
+    public static int compareVersions(String v1, String v2) {
         int[] p1 = {0};
         int[] p2 = {0};
         while (p1[0] < v1.length() || p2[0] < v2.length()) {

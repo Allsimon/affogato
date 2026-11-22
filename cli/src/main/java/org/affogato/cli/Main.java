@@ -12,7 +12,16 @@ import picocli.CommandLine.ScopeType;
 @Command(
         name = "affogato",
         description = "A Nix language implementation in Java.",
-        subcommands = {Format.class, Check.class, Fix.class, Lsp.class, Eval.class, DrvPath.class, Completion.class})
+        subcommands = {
+            Format.class,
+            Check.class,
+            Fix.class,
+            Update.class,
+            Lsp.class,
+            Eval.class,
+            DrvPath.class,
+            Completion.class
+        })
 public final class Main {
     @Option(
             names = {"-h", "--help"},

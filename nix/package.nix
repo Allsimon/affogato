@@ -35,6 +35,7 @@ let
           ../lsp/src/main
           ../parser/src/main
           ../store/src/main
+          ../update/src/main
         ]
         ++ paths
       );
@@ -150,6 +151,7 @@ let
         ../lsp/src/main
         ../parser/src/main
         ../store/src/main
+        ../update/src/main
       ];
     };
     nativeBuildInputs = [ jdk ];
@@ -163,7 +165,7 @@ let
     installPhase = ''
       runHook preInstall
       mkdir -p $out/org/affogato
-      cp -r target/stage/maven/output/org/affogato/{org.affogato,org.affogato.parser,org.affogato.format,org.affogato.lint,org.affogato.store,org.affogato.lsp,org.affogato.evaluator} $out/org/affogato
+      cp -r target/stage/maven/output/org/affogato/{org.affogato,org.affogato.parser,org.affogato.format,org.affogato.lint,org.affogato.store,org.affogato.lsp,org.affogato.evaluator,org.affogato.update} $out/org/affogato
       runHook postInstall
     '';
   };

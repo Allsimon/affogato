@@ -110,7 +110,7 @@ abstract class Rewrite implements Callable<Integer> {
         return failed > 0 || check && changed > 0 ? 1 : 0;
     }
 
-    private static String duration(long nanos) {
+    static String duration(long nanos) {
         long millis = nanos / 1_000_000;
         return millis < 1000 ? millis + "ms" : String.format(Locale.ROOT, "%.1fs", millis / 1000.0);
     }

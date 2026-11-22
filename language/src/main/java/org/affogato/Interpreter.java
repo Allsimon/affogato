@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.affogato.builtins.Json;
+import org.affogato.builtins.Strings;
 import org.affogato.nodes.NixNode;
 import org.affogato.runtime.Apply;
 import org.affogato.runtime.Coerce;
@@ -47,6 +48,11 @@ public final class Interpreter {
     public static final long STACK_SIZE = 64L << 20;
 
     private Interpreter() {}
+
+    /** {@code builtins.compareVersions}. */
+    public static int compareVersions(String a, String b) {
+        return Strings.compareVersions(a, b);
+    }
 
     /**
      * Evaluates {@code content}, read from {@code file}, or an expression relative to the working directory when

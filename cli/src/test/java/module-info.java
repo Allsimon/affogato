@@ -10,7 +10,9 @@
  */
 module org.affogato.cli.test {
     requires org.affogato.cli;
+    requires org.affogato.update;
     requires info.picocli;
+    requires jdk.httpserver;
     requires org.junit.jupiter;
     requires org.assertj.core;
 }

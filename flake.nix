@@ -59,18 +59,37 @@
           '';
       });
 
-      devShells = forAllSystems (pkgs: {
-        default = pkgs.mkShell {
-          packages = [
-            pkgs.jdk25_headless
-            (nixFor pkgs)
-            pkgs.vendir
-          ];
-          JAVA_HOME = pkgs.jdk25_headless;
-          # Jenesis looks for native-image there before the running JDK.
-          GRAALVM_HOME = pkgs.graalvmPackages.graalvm-ce-musl;
-        };
-      });
+      devShells = forAllSystems (
+        pkgs:
+        let
+          inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) affogato;
+          editor =
+            file:
+            pkgs.mkShell {
+              packages = [
+                affogato
+                (pkgs.callPackage file {
+                  inherit affogato;
+                  settings.nixpkgs.expr = "import ${nixpkgs} { }";
+                })
+              ];
+            };
+        in
+        {
+          vscodium = editor ./nix/editors/vscodium.nix;
+          zed = editor ./nix/editors/zed.nix;
+          default = pkgs.mkShell {
+            packages = [
+              pkgs.jdk25_headless
+              (nixFor pkgs)
+              pkgs.vendir
+            ];
+            JAVA_HOME = pkgs.jdk25_headless;
+            # Jenesis looks for native-image there before the running JDK.
+            GRAALVM_HOME = pkgs.graalvmPackages.graalvm-ce-musl;
+          };
+        }
+      );
 
       formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
     };

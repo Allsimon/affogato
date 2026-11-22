@@ -1,0 +1,121 @@
+// tag::picocli-generated-full-manpage[]
+// tag::picocli-generated-man-section-header[]
+:doctype: manpage
+:revnumber: 
+:manmanual: Affogato Manual
+:mansource: 
+:man-linkstyle: pass:[blue R < >]
+= affogato-update(1)
+
+// end::picocli-generated-man-section-header[]
+
+// tag::picocli-generated-man-section-name[]
+== Name
+
+affogato-update - Update the packages fetched from a forge, a registry or a URL to their latest version: their version, their hashes and their lock files.
+
+// end::picocli-generated-man-section-name[]
+
+// tag::picocli-generated-man-section-synopsis[]
+== Synopsis
+
+*affogato update* [*-chv*] [*--branch*] [*--build*] [*--no-build*] [*--no-eval*]
+                [*--no-update-script*] [*--refresh*] [*--test*] [*--github-api*=_URL_]
+                [*-j*=_N_] [*--nixpkgs*=_PATH_] [_PATH|NAME_...]
+
+// end::picocli-generated-man-section-synopsis[]
+
+// tag::picocli-generated-man-section-description[]
+== Description
+
+Update the packages fetched from a forge, a registry or a URL to their latest version: their version, their hashes and their lock files.
+
+// end::picocli-generated-man-section-description[]
+
+// tag::picocli-generated-man-section-options[]
+== Options
+
+*--branch*::
+  Also update the packages pinned to a commit whose version is not 0-unstable-YYYY-MM-DD to the head of their default branch, as VERSION-unstable-YYYY-MM-DD.
+
+*--build*::
+  Build each package updated before writing it, and leave it as it was when the build fails.
+
+*-c*, *--check*::
+  Write nothing, and fail if a package has an update, or with --refresh a hash that is wrong.
+
+*--github-api*=_URL_::
+  GitHub's API; https://api.github.com by default.
+
+*-h*, *--help*::
+  Show this help and exit.
+
+*-j*, *--jobs*=_N_::
+  Check, and update, N packages at a time; 8 by default.
+
+*--nixpkgs*=_PATH_::
+  The nixpkgs whose callPackage builds the dependencies of a package outside a flake and a nixpkgs checkout.
+
+*--no-build*::
+  Build nothing to update the hashes of dependencies, such as cargoHash, and the lock files; list them instead.
+
+*--no-eval*::
+  Do not evaluate the flake.nix of a directory, whose package attribute names are otherwise used.
+
+*--no-update-script*::
+  Update the packages that have a passthru.updateScript as the others, instead of running it.
+
+*--refresh*::
+  Refresh the hashes of each package at the version it has, or the commit it is pinned to, instead of updating it.
+
+*--test*::
+  Build the passthru.tests of each package updated as well, as --build does.
+
+*-v*, *--verbose*::
+  Also list the packages that are up to date or skipped.
+
+// end::picocli-generated-man-section-options[]
+
+// tag::picocli-generated-man-section-arguments[]
+== Arguments
+
+[_PATH|NAME_...]::
+  Files, or directories to search for .nix files, . by default; and the names of the packages to update, every one by default.
+
+// end::picocli-generated-man-section-arguments[]
+
+// tag::picocli-generated-man-section-commands[]
+// end::picocli-generated-man-section-commands[]
+
+// tag::picocli-generated-man-section-exit-status[]
+==  Exit status
+
+*0*::
+  Every package was checked, and updated unless --check is given.
+
+*1*::
+  A package failed, or one has an update under --check.
+
+*2*::
+  The command line is invalid.
+
+// end::picocli-generated-man-section-exit-status[]
+
+// tag::picocli-generated-man-section-footer[]
+==  Packages
+
+[%hardbreaks]
+A package is a call of fetchFromGitHub, fetchFromGitLab, fetchFromGitea, fetchFromCodeberg, fetchFromSourcehut or fetchFromBitbucket whose tag is a string, or follows a version binding as in rev = "v${version}"; of fetchPypi or fetchCrate; or of fetchurl or fetchzip whose URL has the version. Its newest version is the latest release of the repository, else its newest tag, of the same shape as the current tag; the newest version on PyPI, crates.io, npm, RubyGems or Hackage; else the newest file of the directory listing of the URL. Pre-releases count only when the current version is one. A package pinned to a commit, whose version is 0-unstable-YYYY-MM-DD, moves to the head of the default branch. The hash of a source is that of nix-prefetch-url; with fetchSubmodules or another option that changes it, the source is built with lib.fakeHash.
+
+[%hardbreaks]
+A hash of dependencies, such as cargoHash, vendorHash or the hash of cargoDeps = fetchCargoVendor { }, is set to lib.fakeHash, then to the hash Nix reports when it builds what the hash is of: the package of the flake whose attribute names it, else nixpkgs' callPackage of its file. That nixpkgs is the checkout the file is in, else --nixpkgs, else <nixpkgs>. The Cargo.lock of cargoLock.lockFile is copied from the new source; the nugetDeps of buildDotnetModule and the data of gradle.fetchDeps are written by their fetch-deps and updateScript. When a build fails, the files are left as they were.
+
+[%hardbreaks]
+A package with a passthru.updateScript of its own, rather than nix-update-script or gitUpdater, is updated by running it, unless --no-update-script is given.
+
+[%hardbreaks]
+GITHUB_TOKEN, else GH_TOKEN, authenticates the requests to GitHub, whose rate limit is otherwise 60 an hour.
+
+// end::picocli-generated-man-section-footer[]
+
+// end::picocli-generated-full-manpage[]
