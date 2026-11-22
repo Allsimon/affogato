@@ -9,6 +9,22 @@ vim.lsp.config('affogato', { cmd = { 'affogato', 'lsp' }, filetypes = { 'nix' } 
 vim.lsp.enable('affogato')
 ----
 
+[[example-editors]]
+== Example editors
+
+To try the server without configuring an editor, the flake provides VSCodium
+and Zed already set up for it. From a checkout, run either of:
+
+[source,shell]
+----
+nix develop .#vscodium -c codium-affogato path/to/folder
+nix develop .#zed -c zed-affogato path/to/folder
+----
+
+Or enter the shell first, then run `codium-affogato` or `zed-affogato` with
+the paths to open, as the editor's own command takes them. The shell also puts
+`affogato` on the `PATH`.
+
 == Any Nix file
 
 * the linter's findings as diagnostics, with code actions for its fixes,
@@ -40,6 +56,7 @@ package versions. Long evaluations report their progress.
   options, such as `languages.rust.enable`, read from the `devenv` command,
   which must be on the `PATH`.
 
+[[language-server-settings]]
 == Settings
 
 The `affogato` section of the client's settings, or the
