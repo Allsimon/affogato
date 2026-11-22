@@ -43,11 +43,8 @@ and navigation over the parser's tree. `Analysis` answers its questions
 without the protocol, so that an editor can call it in-process.
 <.> The language server's evaluator: nixpkgs and option sets evaluated by the
 interpreter, for the server and for editors that call it in-process.
-<.> The updater behind `affogato update`, the server's update code action and
-editors that call it in-process: the latest version on a forge, a registry or
-a directory listing, the hashes from `nix-prefetch-url`, and those of the
-sources and dependencies that need it from a build of a copy of the file with a
-fake hash.
+<.> The updater behind `affogato update`, the language server and the editors:
+it finds each package's latest version and computes its new hashes.
 <.> The language server compiled to JavaScript by TeaVM, for the playground.
 <.> The command line, plus its native-image build.
 
